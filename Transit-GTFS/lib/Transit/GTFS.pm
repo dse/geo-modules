@@ -137,6 +137,9 @@ sub clear_tables {
 	$dbh->do("drop table if exists fare_attributes;");
 	$dbh->do("drop table if exists fare_rules;");
 	$dbh->do("drop table if exists shapes;");
+	$dbh->do("drop table if exists frequencies;");
+	$dbh->do("drop table if exists transfers;");
+	$dbh->do("drop table if exists feed_info;");
 	$dbh->commit();		# stfu dbi
 	warn("  Done deleting tables.\n");
 }
@@ -152,7 +155,7 @@ create table if not exists mtime (
 END
 	$dbh->do(<<"END");
 create table if not exists agency (
-  agency_id         varchar(64)   primary key,           -- optional if we have only one agency --
+  agency_id         varchar(64)   primary key, -- optional if we have only one agency --
   agency_name       varchar(64)   not null,
   agency_url        varchar(256)  not null,
   agency_timezone   varchar(256)  not null,
@@ -163,26 +166,33 @@ create table if not exists agency (
 END
 	$dbh->do(<<"END");
 create table if not exists stops (
-  stop_id           varchar(16)   primary key not null, -- internal codes --
-  stop_code         varchar(16),                        -- displayed to users --
+  stop_id           varchar(16)   primary key not null, -- internal codes
+  stop_code         varchar(16),                        -- displayed to users, like for telephone services
   stop_name         varchar(64)   not null,
   stop_desc         text,
-  stop_lat          real          not null,
-  stop_lon          real          not null,
-  zone_id           varchar(16),
+  stop_lat          real          not null,             -- WGS84
+  stop_lon          real          not null,             -- WGS84
+  zone_id           varchar(16)   references fare_attributes(fare_id), -- required when using fare_rules.txt
   stop_url          varchar(256),
-  location_type     integer       default 0,
-  parent_station    varchar(64)
+  location_type     integer       default 0,            -- 0=stop; 1=station w/1+ stops
+  parent_station    varchar(16)   references stops(stop_id)
 );
 END
 	$dbh->do(<<"END");
 create table if not exists routes (
   route_id          varchar(16)   primary key not null,
-  agency_id         varchar(16),
-  route_short_name  varchar(16)   not null,
-  route_long_name   varchar(64)   not null,
+  agency_id         varchar(16)   references agency(agency_id),
+  route_short_name  varchar(16)   not null, -- e.g., "32", "100X", "Green"
+  route_long_name   varchar(64)   not null, 
   route_desc        text,
-  route_type        integer       not null,
+  route_type        integer       not null,     -- * 0 = tram, streetcar, light rail;
+						--   1 = subway, metro;
+						--   2 = rail (intercity or long-distance);
+						--   3 = bus;
+						--   4 = ferry;
+						--   5 = cable car;
+						--   6 = gondola;
+						--   7 = funicular
   route_url         varchar(256),
   route_color       varchar(6),
   route_text_color  varchar(6)
@@ -190,76 +200,117 @@ create table if not exists routes (
 END
 	$dbh->do(<<"END");
 create table if not exists trips (
-  route_id          varchar(16)   not null,
-  service_id        varchar(16)   not null,
+  route_id          varchar(16)   not null references routes(route_id),
+  service_id        varchar(16)   not null,     -- references calendar.txt or calendar_dates.txt
   trip_id           varchar(16)   not null unique,
   trip_headsign     varchar(64),
   trip_short_name   varchar(64),
-  direction_id      integer,
-  block_id          varchar(16),
-  shape_id          varchar(16)
+  direction_id      integer,			-- for distinguishing between bi-directional trips within the same route_id
+						--   0 = one direction (e.g., outbound); 1 = opposite direction (e.g., inbound)
+  block_id          varchar(16),		-- block = 2+ sequential trips with same vehicle
+  shape_id          varchar(16) references shapes(shape_id) -- FIXME: references shapes.txt
 );
 END
 	$dbh->do(<<"END");
 create table if not exists stop_times (
-  trip_id           varchar(16)   not null,
-  arrival_time      varchar(8)    not null,
-  departure_time    varchar(8)    not null,
-  stop_id           varchar(16)   not null,
+  trip_id           varchar(16)   not null references trips(trip_id),
+  arrival_time      varchar(8)    not null,	-- measured from 'noon minus 12 hours'
+  departure_time    varchar(8)    not null,	-- 
+  stop_id           varchar(16)   not null references stops(stop_id),
   stop_sequence     integer       not null,
   stop_headsign     varchar(64),
-  pickup_type       integer       default 0,
-  drop_off_type     integer       default 0,
-  shape_dist_traveled  real
+  pickup_type       integer       default 0,	-- 0 = regularly scheduled pickup; 
+						-- 1 = no pickup available;
+						-- 2 = must phone agency;
+						-- 3 = must coordinate with driver
+  drop_off_type     integer       default 0,	-- 0 = regularly scheduled dropoff;
+						-- 1 = no dropoff available;
+						-- 2 = must phone agency;
+						-- 3 = must coordinate with driver
+  shape_dist_traveled  real			
 );
 END
 	$dbh->do(<<"END");
 create table if not exists calendar (
-  service_id        varchar(16)   not null,
-  monday            integer       not null,
+  service_id        varchar(16)   not null,	-- FIXME: references trips(service_id)
+  monday            integer       not null,	
   tuesday           integer       not null,
   wednesday         integer       not null,
   thursday          integer       not null,
   friday            integer       not null,
   saturday          integer       not null,
   sunday            integer       not null,
-  start_date        varchar(8)    not null,
-  end_date          varchar(8)    not null
+  start_date        varchar(8)    not null,	-- 'YYYYMMDD' format
+  end_date          varchar(8)    not null	-- 'YYYYMMDD' format
 );
 END
 	$dbh->do(<<"END");
 create table if not exists calendar_dates (
-  service_id        varchar(16)   not null,
-  date              varchar(8)    not null,
-  exception_type    integer       not null
+  service_id        varchar(16)   not null,	-- FIXME: references trips(service_id)
+  date              varchar(8)    not null,	-- 'YYYYMMDD' format
+  exception_type    integer       not null	-- 1 = added; 2 = removed
 );
 END
 	$dbh->do(<<"END");
 create table if not exists fare_attributes (
   fare_id           varchar(16)   primary key not null,
   price             real          not null,
-  currency_type     varchar(3)    not null,
-  payment_method    integer       not null,
-  transfers         integer,
-  transfer_duration integer
+  currency_type     varchar(3)    not null, -- e.g., 'USD'
+  payment_method    integer       not null, -- * 0 = paid on board; 1=paid before boarding
+  transfers         integer,                -- * 0 = no transfers pemitted on this fare;
+                                            --   1 = passenger may transfer once;
+					    --   2 = passenger may transfer twice;
+                                            --   empty = unlimited transfers are permitted
+					    --   required per GTFS spec, but do not specify 'not null' here
+  transfer_duration integer                 -- * in seconds
 );
 END
 	$dbh->do(<<"END");
 create table if not exists fare_rules (
   fare_id           varchar(16)   primary key not null,
-  route_id          varchar(16),
-  origin_id         varchar(16),
-  destination_id    varchar(16),
-  contains_id       varchar(16)
+  route_id          varchar(16),		-- FIXME: references routes.txt
+  origin_id         varchar(16),		-- FIXME: references stops.txt
+  destination_id    varchar(16),		-- FIXME: references stops.txt
+  contains_id       varchar(16)			-- FIXME: references stops.txt
 );
 END
 	$dbh->do(<<"END");
 create table if not exists shapes (
-  shape_id          varchar(16)   not null,
-  shape_pt_lat      real          not null,
-  shape_pt_lon      real          not null,
-  shape_pt_sequence integer       not null,
-  shape_dist_traveled real
+  shape_id          varchar(16)   not null,	-- NOT unique
+  shape_pt_lat      real          not null,	-- WGS84
+  shape_pt_lon      real          not null,	-- WGS84
+  shape_pt_sequence integer       not null,	
+  shape_dist_traveled real			-- 
+);
+END
+	$dbh->do(<<"END");
+create table if not exists frequencies (
+  trip_id		varchar(16)	not null,		-- FIXME: references trips.txt
+  start_time		varchar(8)	not null,
+  end_time		varchar(8)	not null,
+  headway_secs		integer		not null,		-- in seconds
+  exact_times		integer		not null default 0	-- 0 = frequency-based trips are not exactly scheduled
+								-- 1 = exactly scheduled
+								--     trip_start_time = start_time + x * headway_secs
+								--       for all x in (0, 1, 2, ...) where trip_start_time < end_time
+);
+END
+	$dbh->do(<<"END");
+create table if not exists transfers (
+  from_stop_id		varchar(16)	not null references stops(stop_id),
+  to_stop_id		varchar(16)	not null references stops(stop_id),
+  transfer_type		integer		default 0,
+  min_transfer_time	integer					-- in seconds
+);
+END
+	$dbh->do(<<"END");
+create table if not exists feed_info (
+  feed_publisher_name	varchar(64)	not null,
+  feed_publisher_url	varchar(256)	not null,
+  feed_lang		varchar(32)	not null,	-- IETF BCP 47 language code
+  feed_start_date	varchar(8),
+  feed_end_date		varchar(8),
+  feed_version		varchar(64)
 );
 END
 	$dbh->commit();		# stfu dbi
@@ -285,6 +336,9 @@ sub populate_tables {
 	$self->populate_data($zip, "fare_attributes");
 	$self->populate_data($zip, "fare_rules");
 	$self->populate_data($zip, "shapes");
+	$self->populate_data($zip, "frequencies");
+	$self->populate_data($zip, "transfers");
+	$self->populate_data($zip, "feed_info");
 }
 
 use Archive::Zip::MemberRead;
