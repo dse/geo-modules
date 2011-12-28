@@ -1,0 +1,36 @@
+rect { fill: none; stroke: blue; stroke-width: 4; }
+polyline { fill: none; }
+polyline, polygon {
+        stroke-linecap: round;
+        stroke-linejoin: round;
+}
+polygon  { fill: black; }
+polygon.water,  polygon.river,  polygon.stream  { fill: #99c; }
+polyline.water, polyline.river, polyline.stream { stroke: #99c; stroke-width: 0.25; }
+.park, .forest                 { fill: #cfc; }
+.parking                       { fill: #f7f7f7; }
+.building                      { fill: #eee; }
+.industrial, .commercial       { fill: #eee; }
+.university, .college, .school { fill: #ccf; }
+.golf_course                   { fill: #cfc; }
+.cemetery                      { fill: #cfc; }
+.highway                { fill: none; stroke: #eee; stroke-width: 0.25; }
+.highway.residential    { stroke: #ddd; stroke-width: 0.5; }
+.highway.unclassified   { stroke: #ddd; stroke-width: 0.7; }
+.highway.tertiary_link  { stroke: #ddd; stroke-width: 0.7; }
+.highway.tertiary       { stroke: #ddd; stroke-width: 0.7; }
+.highway.secondary_link { stroke: #ddd; stroke-width: 0.5; }
+.highway.secondary      { stroke: #ddd; stroke-width: 0.7; }
+.highway.primary_link   { stroke: #ddd; stroke-width: 0.5; }
+.highway.primary        { stroke: #ddd; stroke-width: 0.7; }
+.highway.motorway_link  { stroke: #ddd; stroke-width: 0.5; }
+.highway.motorway       { stroke: #ddd; stroke-width: 1.0; }
+.highway.road           { stroke: #ddd; stroke-width: 0.7; }
+.highway.trunk          { stroke: #ddd; stroke-width: 0.7; }
+.railway.rail           { stroke: #999; stroke-width: 0.25; }
+polygon.aeroway.apron     { fill: #ddd; }
+polygon.aeroway.terminal  { fill: #ccc; }
+polyline.aeroway.apron    { stroke: #ddd; stroke-width: 0.25; }
+polyline.aeroway.terminal { stroke: #ddd; stroke-width: 0.25; }
+.aeroway.runway           { stroke: #ddd; stroke-width: 2; }
+.aeroway.taxiway          { stroke: #ddd; stroke-width: 2; }

@@ -2,49 +2,85 @@ package Transit::GTFS;
 
 use warnings;
 use strict;
-
+	
 =head1 NAME
-
-Transit::GTFS - The great new Transit::GTFS!
-
+	
+Transit::GTFS - Provides a database frontend to GTFS data.
+	
 =head1 VERSION
+	
+Version 0.02
+	
+=cut
+	
 
-Version 0.01
+our $VERSION = '0.02';
+	
+	
+=head1 SYNOPSIS
+	
+    use Transit::GTFS;
+
+    my $gtfs = Transit::GTFS->new("http://developer.trimet.org/schedule/gtfs.zip");
+
+    $gtfs->update();		# update mirror if needed
+    $gtfs->repopulate();	# repopulate data if needed
+
+    my $dbh = $gtfs->dbh();
+	
+=head1 DESCRIPTION
+	
+Transit::GTFS provides a SQLite frontend to Google Transit data.
 
 =cut
 
-our $VERSION = '0.01';
 
+use fields qw(url
+	      verbose
+	      _dbh
+	      _dir
+	      _zip_filename
+	      _sqlite_filename);
 
-=head1 SYNOPSIS
+=head1 CONSTRUCTOR
 
-Quick summary of what the module does.
+The following is the usual scenario for creating an object of this
+class:
 
-Perhaps a little code snippet.
+    my $feed_url = "http://developer.trimet.org/schedule/gtfs.zip";
+    my $gtfs = Transit::GTFS->new($feed_url);
 
-    use Transit::GTFS;
+You usually just pass one argument to the constructor: a URL pointing
+directly to the transit feed's ZIP file.  That argument is required.
 
-    my $foo = Transit::GTFS->new();
-    ...
+See L</"SEE ALSO"> for lists of transit agency feeds worldwide.
+
+You may also pass an optional options argument in the form of an
+anonymous hash:
+
+    my $options = {
+        verbose => 1
+    };
+    my $gtfs = Transit::GTFS->new($feed_url, $options);
 
 =cut
 
 sub new {
 	my ($class, $url, $options) = @_;
-	my $self = bless({}, $class);
+	my $self = fields::new($class);
 	$self->{url} = $url;
+	$self->{verbose} = 0;
 	if ($options) {
 		while (my ($k, $v) = each(%$options)) {
 			$self->{$k} = $v;
 		}
 	}
-	$self->init();
 	return $self;
 }
 
 sub DESTROY {
 	my ($self) = @_;
-	$self->destroy_dbh();
+	$self->_DESTROY_DBH();	# stfu, DBI!
 }
 
 use LWP::Simple;
@@ -55,78 +91,81 @@ use DBI;
 use File::Path qw(mkpath);
 use File::Basename;
 
-sub init {
+sub update {
 	my ($self) = @_;
 	my $url = $self->{url};
-	my $zip_filename = $self->zip_filename();
+	my $zip_filename = $self->get_zip_filename();
+
 	mkpath(dirname($zip_filename));
-	if ($self->{force_update}) {
-		unlink($zip_filename);
-	}
-	warn("Updating $url ...\n");
 	my $rc = mirror($url, $zip_filename);
-	warn("  $url => $rc\n");
+
 	if ($rc == RC_NOT_MODIFIED) {
-		$self->populate();
+		# nothing further needs to be done, i guess.
 	}
 	elsif (is_success($rc)) {
-		$self->populate();
+		$self->_flag_as_dirty(); # force repopulation
 	}
 	else {
 		croak("Failure: $url => $rc\n");
 	}
+	$self->commit();
 }
 
-sub populate {
+sub force_update {
 	my ($self) = @_;
-	my $zip_filename = $self->zip_filename();
-	if (!-e $zip_filename) {
-		return;
+	my $url = $self->{url};
+
+	# force redownload
+	my $zip_filename = $self->get_zip_filename();
+	unlink($zip_filename);
+
+	$self->update();
+}
+
+sub repopulate {
+	my ($self, $force) = @_;
+	if (!$force) {
+		my $zip_filename = $self->get_zip_filename();
+		my $file_mtime = (stat($zip_filename))[9];
+		if (!$file_mtime) {
+			die("could not get mtime of local copy of GTFS data " .
+			    "($zip_filename): $!");
+		}
+		my $get_populated_mtime = $self->get_populated_mtime();
+		if ($get_populated_mtime &&
+		    $file_mtime == $get_populated_mtime) {
+			return;
+		}
 	}
-	my $file_mtime = (stat($zip_filename))[9];
-	if (!$file_mtime) {
-		return;
-	}
-	if ($self->{force_update} || $self->{force_repopulate}) {
-		$self->force_repopulate();
-		return;
-	}
-	my $db_mtime = $self->db_mtime();
-	my $dbh = $self->dbh();
-	if (!$db_mtime) {
-		$self->force_repopulate();
-	}
-	elsif ($file_mtime != $db_mtime) {
-		$self->force_repopulate();
-	}
+	$self->_create_tables();
+	$self->_repopulate_tables();
+	$self->_update_populated_mtime();
+
+	warn("Committing...\n") if $self->{verbose};
+	$self->commit();
+	warn("Done.\n") if $self->{verbose};
 }
 
 sub force_repopulate {
 	my ($self) = @_;
-	if ($self->{force}) {
-		$self->clear_tables();
-	}
-	$self->create_tables();
-	$self->populate_tables();
-	$self->populate_mtime();
+	$self->_flag_as_dirty();
+	$self->repopulate(1);
 }
 
-sub db_mtime {
+sub get_populated_mtime {
 	my ($self) = @_;
 	my $dbh = $self->dbh();
 	my $sth = $dbh->table_info('%', '%', 'mtime');
 	$sth->execute();
 	return undef unless $sth->fetchrow_arrayref();
 	my ($mtime) = $dbh->selectrow_array("select mtime from mtime");
-	$dbh->commit();		# stfu
 	return $mtime;
 }
 
-sub clear_tables {
+sub drop_tables {
 	my ($self) = @_;
 	my $dbh = $self->dbh();
-	warn("Deleting tables...\n");
-	$dbh->do("drop table if exists mtime;");
+	warn("Deleting tables...\n") if $self->{verbose};
 	$dbh->do("drop table if exists agency;");
 	$dbh->do("drop table if exists stops;");
 	$dbh->do("drop table if exists routes;");
@@ -140,14 +179,14 @@ sub clear_tables {
 	$dbh->do("drop table if exists frequencies;");
 	$dbh->do("drop table if exists transfers;");
 	$dbh->do("drop table if exists feed_info;");
-	$dbh->commit();		# stfu dbi
-	warn("  Done deleting tables.\n");
+	$dbh->do("drop table if exists mtime;");
+	warn("  Done deleting tables.\n") if $self->{verbose};
 }
 
-sub create_tables {
+sub _create_tables {
 	my ($self) = @_;
 	my $dbh = $self->dbh();
-	warn("Creating tables...\n");
+	warn("Creating tables...\n") if $self->{verbose};
 	$dbh->do(<<"END");
 create table if not exists mtime (
 	mtime             integer
@@ -347,44 +386,48 @@ create table if not exists feed_info (
 	feed_version		varchar(64)
 );
 END
-	$dbh->commit();		# stfu dbi
-	warn("Done creating tables.\n");
+	warn("Done creating tables.\n") if $self->{verbose};
 }
 
-sub populate_tables {
+sub _repopulate_tables {
 	my ($self) = @_;
-	my $zip_filename = $self->zip_filename();
-
+	my $zip_filename = $self->get_zip_filename();
+	
 	my $zip = Archive::Zip->new();
 	unless ($zip->read($zip_filename) == AZ_OK) {
 		die("Error reading $zip_filename\n");
 	}
 
-	$self->populate_data($zip, "agency");
-	$self->populate_data($zip, "stops");
-	$self->populate_data($zip, "routes");
-	$self->populate_data($zip, "trips");
-	$self->populate_data($zip, "stop_times");
-	$self->populate_data($zip, "calendar");
-	$self->populate_data($zip, "calendar_dates");
-	$self->populate_data($zip, "fare_attributes");
-	$self->populate_data($zip, "fare_rules");
-	$self->populate_data($zip, "shapes");
-	$self->populate_data($zip, "frequencies");
-	$self->populate_data($zip, "transfers");
-	$self->populate_data($zip, "feed_info");
+	$self->_repopulate_data($zip, "agency", 1);
+	$self->_repopulate_data($zip, "stops", 1);
+	$self->_repopulate_data($zip, "routes", 1);
+	$self->_repopulate_data($zip, "trips", 1);
+	$self->_repopulate_data($zip, "stop_times", 1);
+	$self->_repopulate_data($zip, "calendar", 1);
+	$self->_repopulate_data($zip, "calendar_dates");
+	$self->_repopulate_data($zip, "fare_attributes");
+	$self->_repopulate_data($zip, "fare_rules");
+	$self->_repopulate_data($zip, "shapes");
+	$self->_repopulate_data($zip, "frequencies");
+	$self->_repopulate_data($zip, "transfers");
+	$self->_repopulate_data($zip, "feed_info");
 }
 
 use Archive::Zip::MemberRead;
 use Text::CSV;
 
-sub populate_data {
-	my ($self, $zip, $table) = @_;
+sub _repopulate_data {
+	my ($self, $zip, $table, $required) = @_;
+
 	my $member = "$table.txt";
-	my $fullpath = $self->dir() . "/" . $member;
+	my $fullpath = $self->get_dir() . "/" . $member;
 	if (!$zip->memberNamed($member)) {
-		warn("No member named $member\n");
-		return;
+		if ($required) {
+			die("$member not found");
+		}
+		else {
+			return;
+		}
 	}
 	if ($zip->extractMember($member, $fullpath) != AZ_OK) {
 		die("could not extract $member");
@@ -394,11 +437,13 @@ sub populate_data {
 	my $fields = $csv->getline($fh);
 	die("no fields in $fullpath\n") unless $fields or scalar(@$fields);
 
-	warn("Populating $table...\n");
-
 	my $dbh = $self->dbh();
+
+	warn("Deleting rows from $table...\n") if $self->{verbose};
 	$dbh->do("delete from $table;");
-	$dbh->commit();
+	warn("Done.\n") if $self->{verbose};
+
+	warn("Repopulating into $table...\n") if $self->{verbose};
 	my $sql = sprintf("insert into $table(%s) values(%s);",
 			  join(", ", @$fields),
 			  join(", ", ('?') x scalar(@$fields)));
@@ -407,41 +452,64 @@ sub populate_data {
 	while (defined(my $row = $csv->getline($fh))) {
 		$sth->execute(@$row);
 		++$rows;
-		print STDERR ("  $rows rows\r") if $rows % 100 == 0;
+		print STDERR ("  $rows rows\r") if
+			$self->{verbose} && $rows % 100 == 0;
 	}
-	print STDERR ("  $rows rows.  Committing...\n");
-	$dbh->commit();
-	print STDERR ("  Done.\n");
+	print STDERR ("Done.  $rows rows.\n") if $self->{verbose};
 	return;
 }
 
-sub populate_mtime {
-	my ($self) = @_;
-	my $zip_filename = $self->zip_filename();
-	my $mtime = (stat($zip_filename))[9];
+sub _update_populated_mtime {
+	my ($self, $mtime) = @_;
+	if (!defined $mtime) {
+		my $zip_filename = $self->get_zip_filename();
+		my $mtime = (stat($zip_filename))[9];
+	}
 	my $dbh = $self->dbh();
 	$dbh->do("delete from mtime;");
 	$dbh->do("insert into mtime (mtime) values(?)", {}, $mtime);
-	$dbh->commit();
+}
+
+sub _flag_as_dirty {
+	my ($self) = @_;
+	$self->_update_populated_mtime(-1);
 }
 
 sub dbh {
 	my ($self) = @_;
-	my $sqlite_filename = $self->sqlite_filename();
+	my $sqlite_filename = $self->get_sqlite_filename();
 	return $self->{_dbh} //= do {
-		return DBI->connect("dbi:SQLite:$sqlite_filename", "", "",
-				    { RaiseError => 1, AutoCommit => 0 });
+		DBI->connect("dbi:SQLite:$sqlite_filename", "", "",
+			     { RaiseError => 1, AutoCommit => 0 });
 	};
 }
 
-sub destroy_dbh {
+sub commit {
+	my ($self) = @_;
+	my $dbh = $self->dbh();
+	return $dbh->commit();
+}
+
+sub rollback {
+	my ($self) = @_;
+	my $dbh = $self->dbh();
+	return $dbh->rollback();
+}
+
+sub do {
+	my ($self, $statement, $attr, @bind_values) = @_;
+	my $dbh = $self->dbh();
+	return $dbh->do($statement, $attr, @bind_values);
+}
+
+sub _DESTROY_DBH {
 	my ($self) = @_;
 	if ($self->{_dbh}) {
-		$self->{_dbh}->commit(); # shut up dbi
+		$self->{_dbh}->rollback(); # shut up dbi
 	}
 }
 
-sub dir {
+sub get_dir {
 	my ($self) = @_;
 	return $self->{_dir} //= do {
 		my $u = URI->new($self->{url});
@@ -450,26 +518,55 @@ sub dir {
 		$path =~ s{^/|/$}{}g;
 		$path =~ s{/}{__}g;
 		$path =~ s{\.zip$}{}i;
-		return sprintf("%s/.transit-gtfs/%s/%s",
-			       $ENV{HOME}, $host, $path);
+		sprintf("%s/.transit-gtfs/%s/%s", $ENV{HOME}, $host, $path);
 	};
 }
 
-sub zip_filename {
+sub get_zip_filename {
 	my ($self) = @_;
-	return $self->{_zip_filename} //= do {
-		return sprintf("%s/google_transit.zip",
-			       $self->dir());
-	};
+	return $self->{_zip_filename} //=
+		sprintf("%s/google_transit.zip", $self->get_dir());
 }
 
-sub sqlite_filename {
+sub get_sqlite_filename {
 	my ($self) = @_;
-	return $self->{_sqlite_filename} //= do {
-		return sprintf("%s/google_transit.sqlite",
-			       $self->dir());
-	};
+	return $self->{_sqlite_filename} //=
+		sprintf("%s/google_transit.sqlite", $self->get_dir());
 }
+
+=head1 SEE ALSO
+
+=over 4
+
+=item * Google's General Transit Feed Specification
+
+http://code.google.com/transit/spec/transit_feed_specification.html
+
+=back
+
+Transit data sources:
+
+=over 4
+
+=item * Google's list of publicly-accessible transit data feeds:
+
+L<http://code.google.com/p/googletransitdatafeed/wiki/PublicFeeds>
+
+=item * GTFS Data Exchange's list of official transit feeds:
+
+L<http://www.gtfs-data-exchange.com/agencies#filter_official>
+
+=item * GTFS Data Exchange's list of all transit feeds:
+
+L<http://www.gtfs-data-exchange.com/agencies#filter_all>
+(includes both official and unofficial data)
+
+=back
+
+Note that while some feed URLs listed at the above resources may point
+to "about this feed" pages instead of ZIP files directly, you must
+provide a direct link to the ZIP file as an argument to the object
+constructor.
 
 =head1 AUTHOR
 
