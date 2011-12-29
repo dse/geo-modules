@@ -57,19 +57,31 @@ elsif ($command eq "download-test-map-data") {
 					north => 38.25,
 					west  => -85.80,
 					east  => -85.74,
-				map_data_south => $south,
-				map_data_north => $north,
-				map_data_west  => $west,
-				map_data_east  => $east,
 					paper_width  => 8.5 * 90,
 					paper_height => 11 * 90,
 					paper_margin => 0.25 * 90);
 	$mm->download_map_data();
 	$mm->plot_osm_layers();
+	$mm->create_all_layers();
 }
 elsif ($command eq "download-map-data") {
 	$mm->download_map_data();
 	$mm->plot_osm_layers();
+	$mm->create_all_layers();
+}
+elsif ($command eq "refresh-osm-styles") {
+	$mm->refresh_osm_styles();
+	$mm->create_all_layers();
+}
+elsif ($command eq "update-transit-stops") {
+	$mm->transit_feed($gtfs);
+	$mm->update_transit_stops();
+	$mm->create_all_layers();
+}
+elsif ($command eq "update-transit-routes") {
+	$mm->transit_feed($gtfs);
+	$mm->update_transit_routes();
+	$mm->create_all_layers();
 }
 else {
 	die("No such command: '$command'\n");

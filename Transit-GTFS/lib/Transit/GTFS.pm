@@ -387,6 +387,10 @@ create table if not exists feed_info (
 );
 END
 	warn("Done creating tables.\n") if $self->{verbose};
+
+	warn("Creating indexes...\n");
+	$dbh->do("create index if not exists idx_shapes_id on shapes(shape_id);");
+	warn("Done creating indexes.\n");
 }
 
 sub _repopulate_tables {

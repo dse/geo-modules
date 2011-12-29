@@ -41,7 +41,6 @@ our $VERSION = '0.01';
 
 
 use fields qw(filename
-	      transit_feed
 
 	      north
 	      south
@@ -146,6 +145,7 @@ use Carp qw(croak);
 use File::Path qw(mkpath);
 use File::Basename;
 use List::MoreUtils qw(all);
+use YAML;
 
 sub file_get_contents {		# php-like lol
 	my ($filename) = @_;
@@ -236,16 +236,16 @@ sub init_xml {
 	my ($self) = @_;
 	my $parser = XML::LibXML->new();
 	my $doc = eval {
-		$parser->parse_file($self->{filename});
+		warn("Loading $self->{filename}...\n");
+		my $d = $parser->parse_file($self->{filename});
+		warn("Done.\n");
+		return $d;
 	};
 	if (!$doc) {
 		$doc = $parser->parse_string(<<"END");
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<?xml-stylesheet href="map.css" type="text/css"?>
-
 <!-- Not created with Inkscape (http://www.inkscape.org/) -->
 <!-- (However, a very early version of this template was.) -->
-
 <svg
    xmlns:dc="http://purl.org/dc/elements/1.1/"
    xmlns:cc="http://creativecommons.org/ns#"
@@ -349,62 +349,62 @@ BEGIN {
 <<"END";
 END
 
-our $layers;
+our $LAYER_INFO;
 BEGIN {
-	$layers = {
-		   "osm:natural=water"            => { z => 1010 },
-		   "osm:waterway=river"           => { z => 1020 },
-		   "osm:waterway=stream"          => { z => 1030 },
-		   "osm:amenity=park"             => { z => 1040 },
-		   "osm:leisure=park"             => { z => 1050 },
-		   "osm:landuse=forest"           => { z => 1060 },
-		   "osm:amenity=parking"          => { z => 1070 },
-		   "osm:building=yes"             => { z => 1080 },
-		   "osm:building=office"          => { z => 1081 },
-		   "osm:landuse=industrial"       => { z => 1090 },
-		   "osm:landuse=commercial"       => { z => 1091 },
-		   "osm:amenity=university"       => { z => 1100 },
-		   "osm:amenity=college"          => { z => 1101 },
-		   "osm:amenity=school"           => { z => 1102 },
-		   "osm:leisure=golf_course"      => { z => 1110 },
-		   "osm:landuse=cemetery"         => { z => 1120 },
-		   "osm:highway=unrecognized"     => { z => 2000 },
-		   "osm:highway=track"            => { z => 2010 },
-		   "osm:highway=footway"          => { z => 2020 },
-		   "osm:highway=service"          => { z => 2030 },
-		   "osm:highway=living_street"    => { z => 2040 },
-		   "osm:highway=residential"      => { z => 2050 },
-		   "osm:highway=unclassified"     => { z => 2060 },
-		   "osm:highway=tertiary_link"    => { z => 2070 },
-		   "osm:highway=tertiary"         => { z => 2075 },
-		   "osm:highway=secondary_link"   => { z => 2080 },
-		   "osm:highway=secondary"        => { z => 2090 },
-		   "osm:highway=primary_link"     => { z => 2100 },
-		   "osm:highway=primary"          => { z => 2110 },
-		   "osm:highway=motorway_link"    => { z => 2120 },
-		   "osm:highway=motorway"         => { z => 2130 },
-		   "osm:highway=road"             => { z => 2140 },
-		   "osm:highway=trunk"            => { z => 2150 },
-		   "osm:railway=rail"             => { z => 3000 },
-		   "osm:aeroway=apron"    => { z => 4000 },
-		   "osm:aeroway=runway"   => { z => 4001 },
-		   "osm:aeroway=taxiway"  => { z => 4002 },
-		   "osm:aeroway=terminal" => { z => 4003 },
+	$LAYER_INFO = {
+		       "osm:natural=water"            => { z_index => 1010, style => { fill => '#bbd', stroke => '#bbd', stroke_width => 0.25 } },
+		       "osm:waterway=river"           => { z_index => 1020, style => { fill => '#bbd', stroke => '#bbd', stroke_width => 0.25 } },
+		       "osm:waterway=stream"          => { z_index => 1030, style => { fill => '#bbd', stroke => '#bbd', stroke_width => 0.25 } },
+		       "osm:amenity=park"             => { z_index => 1040, style => { fill => '#cfc' } },
+		       "osm:leisure=park"             => { z_index => 1050, style => { fill => '#cfc' } },
+		       "osm:landuse=forest"           => { z_index => 1060, style => { fill => '#cfc' } },
+		       "osm:amenity=parking"          => { z_index => 1070, style => { fill => '#f7f7f7' } },
+		       "osm:building=yes"             => { z_index => 1080, style => { fill => '#e6e6e6' } },
+		       "osm:building=office"          => { z_index => 1081, style => { fill => '#e6e6e6' } },
+		       "osm:landuse=industrial"       => { z_index => 1090, style => { fill => '#eee' } },
+		       "osm:landuse=commercial"       => { z_index => 1091, style => { fill => '#eee' } },
+		       "osm:amenity=university"       => { z_index => 1100, style => { fill => '#ddf' } },
+		       "osm:amenity=college"          => { z_index => 1101, style => { fill => '#ddf' } },
+		       "osm:amenity=school"           => { z_index => 1102, style => { fill => '#ddf' } },
+		       "osm:leisure=golf_course"      => { z_index => 1110, style => { fill => '#ffc' } },
+		       "osm:landuse=cemetery"         => { z_index => 1120, style => { fill => '#cfc' } },
+		       "osm:highway=track"            => { z_index => 2010, style => { fill => 'none', stroke => '#ddd', stroke_width => 0.25 } },
+		       "osm:highway=footway"          => { z_index => 2020, style => { fill => 'none', stroke => '#ddd', stroke_width => 0.25 } },
+		       "osm:highway=service"          => { z_index => 2030, style => { fill => 'none', stroke => '#ddd', stroke_width => 0.25 } },
+		       "osm:highway=living_street"    => { z_index => 2040, style => { fill => 'none', stroke => '#ddd', stroke_width => 0.25 } },
+		       "osm:highway=residential"      => { z_index => 2050, style => { fill => 'none', stroke => '#ddd', stroke_width => 0.50 } },
+		       "osm:highway=unclassified"     => { z_index => 2060, style => { fill => 'none', stroke => '#ddd', stroke_width => 0.70 } },
+		       "osm:highway=tertiary_link"    => { z_index => 2070, style => { fill => 'none', stroke => '#ddd', stroke_width => 0.70 } },
+		       "osm:highway=tertiary"         => { z_index => 2075, style => { fill => 'none', stroke => '#ddd', stroke_width => 0.70 } },
+		       "osm:highway=secondary_link"   => { z_index => 2080, style => { fill => 'none', stroke => '#ddd', stroke_width => 0.70 } },
+		       "osm:highway=secondary"        => { z_index => 2090, style => { fill => 'none', stroke => '#ddd', stroke_width => 0.70 } },
+		       "osm:highway=primary_link"     => { z_index => 2100, style => { fill => 'none', stroke => '#ddd', stroke_width => 0.70 } },
+		       "osm:highway=primary"          => { z_index => 2110, style => { fill => 'none', stroke => '#ddd', stroke_width => 0.70 } },
+		       "osm:highway=motorway_link"    => { z_index => 2120, style => { fill => 'none', stroke => '#ddd', stroke_width => 0.70 } },
+		       "osm:highway=motorway"         => { z_index => 2130, style => { fill => 'none', stroke => '#ddd', stroke_width => 0.70 } },
+		       "osm:highway=road"             => { z_index => 2140, style => { fill => 'none', stroke => '#ddd', stroke_width => 0.70 } },
+		       "osm:highway=trunk"            => { z_index => 2150, style => { fill => 'none', stroke => '#ddd', stroke_width => 0.70 } },
+		       "osm:railway=rail"             => { z_index => 3000, style => { fill => 'none', stroke => '#999', stroke_width => 0.25 } },
+		       "osm:aeroway=apron"            => { z_index => 4000, style => { fill => '#ddd', stroke => '#ddd', stroke_width => 0.25 } },
+		       "osm:aeroway=terminal"         => { z_index => 4003, style => { fill => '#ccc', stroke => '#ccc', stroke_width => 0.25 } },
+		       "osm:aeroway=runway"           => { z_index => 4001, style => { fill => 'none', stroke => '#ddd', stroke_width => 2 } },
+		       "osm:aeroway=taxiway"          => { z_index => 4002, style => { fill => 'none', stroke => '#ddd', stroke_width => 2 } },
 
-		   "highway-route-markers"    => { z => 5000 },
+		       "highway-route-markers"        => { z_index => 5000 },
 
-		   # bus routes, 6000 => 6999
+		       # transit routes, 6000 => 6999
 
-		   "bus-stops"          => { z => 9000 },
-		   "bus-route-numbers"  => { z => 9010 },
-		   "park-and-ride-lots" => { z => 9020 },
-		   "one-way-indicators" => { z => 9030 },
-		   "points-of-interest" => { z => 9040 },
-		   "street-names"       => { z => 9050 },
-		   "place-names"        => { z => 9060 },
-		   "test-layer"         => { z => 9500, unclipped => 1 },
-		   "legend"             => { z => 10000, unclipped => 1 }
-		  };
+		       "gtfs:transit-stops"           => { z_index => 7000 },
+		       "transit-route-numbers"        => { z_index => 7010 },
+		       "park-and-ride-lots"           => { z_index => 7020 },
+		       "one-way-indicators"           => { z_index => 7030 },
+
+		       "points-of-interest"           => { z_index => 9040 },
+		       "street-names"                 => { z_index => 9050 },
+		       "place-names"                  => { z_index => 9060 },
+		       "test-layer"                   => { z_index => 9500, unclipped => 1 },
+		       "legend"                       => { z_index => 10000, unclipped => 1 }
+		      };
 }
 
 sub add_clipping_path {
@@ -438,6 +438,29 @@ sub add_clipping_path {
 	$clipPath->appendChild($path);
 }
 
+sub refresh_osm_styles {
+	my ($self) = @_;
+	$self->update_scale();
+	warn("Refreshing styles...\n");
+	foreach my $layer_name (grep { m{^osm:} } keys(%$LAYER_INFO)) {
+		warn("  $layer_name...\n");
+		my $layer = $self->svg_layer($layer_name, 1);
+		my $style = $LAYER_INFO->{$layer_name}->{style};
+		foreach my $polyline ($layer->findnodes("svg:polyline")) {
+			# TODO: delete attributes unless it's something like points
+			$self->apply_styles($polyline, $style) if $style;
+			$polyline->setAttribute("fill" => "none"); # override
+			$polyline->setAttribute("stroke-linecap" => "round");
+			$polyline->setAttribute("stroke-linejoin" => "round");
+		}
+		foreach my $polygon ($layer->findnodes("svg:polygon")) {
+			# TODO: delete attributes unless it's something like points
+			$self->apply_styles($polygon, $style) if $style;
+		}
+	}
+	warn("Done updating styles.\n");
+}
+
 sub plot_osm_layers {
 	my ($self) = @_;
 
@@ -449,7 +472,7 @@ sub plot_osm_layers {
 
 	my %skipped;
 
-	foreach my $layer_name (grep { m{^osm:} } keys(%$layers)) {
+	foreach my $layer_name (grep { m{^osm:} } keys(%$LAYER_INFO)) {
 		$self->svg_layer($layer_name)->removeChildNodes();
 	}
 	
@@ -463,7 +486,6 @@ sub plot_osm_layers {
 			my $id = $node->getAttribute("id");
 			my $svgx = $self->lon2x($lon);
 			my $svgy = $self->lat2y($lat);
-			my $circle = $self->{_svg_doc}->createElement("circle");
 			$self->{_nodes}->{$id} = { svgx => $svgx, svgy => $svgy };
 		}
 		warn("  Ways...\n");
@@ -487,11 +509,11 @@ sub plot_osm_layers {
 			}
 			if (!defined $layer_name) {
 				my @stuff = (grep { ($_->nodeType() ne XML_TEXT_NODE &&
-							  $_->nodeName() ne "nd" &&
-							  !($_->nodeName() eq "tag" && $_->getAttribute("k") eq "admin_level") &&
-							  !($_->nodeName() eq "tag" && $_->getAttribute("k") =~ /^tiger:/)
+						     $_->nodeName() ne "nd" &&
+						     !($_->nodeName() eq "tag" && $_->getAttribute("k") eq "admin_level") &&
+						     !($_->nodeName() eq "tag" && $_->getAttribute("k") =~ /^tiger:/)
 						    ) }
-						  $way->childNodes());
+					     $way->childNodes());
 				if (@stuff) {
 					warn("We found a 'way' node that we don't know how to deal with yet:");
 					foreach my $node (@stuff) {
@@ -508,7 +530,7 @@ sub plot_osm_layers {
 			}
 
 			my @nd = $way->findnodes("nd");
-			my $closed = (scalar(@nd) > 2 && 
+			my $closed = (scalar(@nd) > 2 &&
 				      $nd[0]->getAttribute("ref") eq $nd[-1]->getAttribute("ref"));
 			my $is_polygon = $closed;
 
@@ -516,7 +538,7 @@ sub plot_osm_layers {
 				pop(@nd);
 			}
 			my @points = map { $self->{_nodes}->{$_->getAttribute("ref")} } @nd;
-			my $points = join(" ", 
+			my $points = join(" ",
 					  map { sprintf("%.2f,%.2f", $_->{svgx}, $_->{svgy}) }
 					  # %.2f is accurate/precise enough to within
 					  # 1/9000'th of an inch
@@ -534,39 +556,40 @@ sub plot_osm_layers {
 			if (all { $_->{svgy} >= $self->{_svg_south} } @points) {
 				next;
 			}
+
+			my $style = $LAYER_INFO->{$layer_name}->{style};
 			
 			if ($is_polygon) {
 				my $polygon = $self->{_svg_doc}->createElement("polygon");
 				$polygon->setAttribute("points", $points);
-				$polygon->setAttribute("class", join(" ", @class)) if @class;
+				$self->apply_styles($polygon, $style) if $style;
 				$layer->appendChild($polygon);
 				$layer->appendText("\n");
 			}
 			else {
 				my $polyline = $self->{_svg_doc}->createElement("polyline");
 				$polyline->setAttribute("points", $points);
-				$polyline->setAttribute("class", join(" ", @class)) if @class;
+				$self->apply_styles($polyline, $style) if $style;
+				$polyline->setAttribute("fill" => "none"); # override
+				$polyline->setAttribute("stroke-linecap" => "round");
+				$polyline->setAttribute("stroke-linejoin" => "round");
 				$layer->appendChild($polyline);
 				$layer->appendText("\n");
 			}
 		}
 		foreach my $relation ($doc->findnodes("/osm/relation")) {
-			# eh?
 		}
 	}
 
 	my $test_layer = $self->svg_layer("test-layer");
 	$test_layer->removeChildNodes();
 	{
-
 		my $rect = $self->{_svg_doc}->createElement("rect");
 		$rect->setAttribute("x",       $self->lon2x($self->{west}));
 		$rect->setAttribute("y",       $self->lat2y($self->{north}));
 		$rect->setAttribute("width",   $self->lon2x($self->{east}) - $self->lon2x($self->{west}));
 		$rect->setAttribute("height",  $self->lat2y($self->{south}) - $self->lat2y($self->{north}));
-		$rect->setAttribute("fill", "none");
-		$rect->setAttribute("stroke", "black");
-		$rect->setAttribute("stroke-width", "2");
+		$rect->setAttribute("style", "fill:none;stroke:blue;stroke-width:4;");
 		$test_layer->appendChild($rect);
 	}
 
@@ -577,18 +600,28 @@ sub plot_osm_layers {
 
 our %layer;
 sub svg_layer {
-	my ($self, $name) = @_;
-	if (defined $layer{$name}) {
-		return $layer{$name};
+	my ($self, $arg, $justfind) = @_;
+
+	my $z_index;
+	my $unclipped;
+	my $name;
+
+	if (ref($arg) eq "HASH") {
+		$name = $arg->{name};
+		$z_index = $arg->{z_index};
+		$unclipped = $arg->{unclipped};
 	}
-	my $zindex = $layers->{$name}->{z};
-	my $unclipped = $layers->{$name}->{unclipped};
-	if (!defined $zindex) {
-		return undef;
+	else {
+		$name = $arg;
+		$z_index = $LAYER_INFO->{$name}->{z_index};
+		$unclipped = $LAYER_INFO->{$name}->{unclipped};
 	}
-	$zindex += 0;
-	my $id = "layer$zindex";
+	if (defined $layer{$name}) { return $layer{$name}; }
+	if (!defined $z_index) { return undef; }
+	$z_index += 0;
+	my $id = "layer$z_index";
 	my ($layer) = $self->{_svg_doc}->findnodes("//svg:g[\@inkscape:label='$name']");
+	if ($justfind && !$layer) { return undef; }
 	if (!$layer) {
 		$layer = $self->{_svg_doc}->createElement("g");
 		$layer->setAttribute("inkscape:label", $name);
@@ -597,13 +630,15 @@ sub svg_layer {
 		$layer->appendText("\n");
 
 		my ($svg)  = $self->{_svg_doc}->documentElement();
-		my @layers = $self->{_svg_doc}->findnodes("//g");
+		my @layers = (grep { my $id = $_->getAttribute("id");
+				     $id && $id =~ m{^layer(\d+)$} } 
+			      $self->{_svg_doc}->findnodes("//svg:g"));
 
 		my $i;
 		for ($i = 0; $i < scalar(@layers); $i += 1) {
-			last unless $layers[$i]->getAttribute("id") =~ m{^layer(\d+)$};
+			next unless $layers[$i]->getAttribute("id") =~ m{^layer(\d+)$};
 			my $checkid = $1 + 0;
-			last unless $checkid <= $zindex;
+			last unless $checkid <= $z_index;
 		}
 		if ($i >= scalar(@layers)) {
 			$svg->appendText("\n");
@@ -628,11 +663,174 @@ sub svg_layer {
 	return $layer;
 }
 
+sub transit_feed {
+	my ($self, $gtfs) = @_;
+	if (!$gtfs->isa("Transit::GTFS")) {
+		$gtfs = Transit::GTFS->new($gtfs);
+	}
+	$self->{gtfs} = $gtfs;
+}
+
+sub update_transit_stops {
+	my ($self) = @_;
+	my $gtfs = $self->{gtfs};
+	if (!$gtfs) { return; }
+
+	warn("Updating transit stops...\n");
+
+	$self->update_scale();
+
+	{
+		my @existing_layers = (grep { my $label = $_->getAttribute("inkscape:label");
+					      $label && $label =~ m{^gtfs:transit-stops$} }
+				       $self->{_svg_doc}->findnodes("//svg:g"));
+		foreach my $layer (@existing_layers) {
+			$layer->parentNode()->removeChild($layer);
+		}
+	}
+
+	my $dbh = $gtfs->dbh();
+	
+	my $bus_stops_layer = $self->svg_layer("gtfs:transit-stops");
+	$bus_stops_layer->appendText("\n");
+
+	my $sth = $dbh->prepare("select * from stops");
+	$sth->execute();
+	while (my $hash = $sth->fetchrow_hashref()) {
+		my $stop_id = $hash->{stop_id};
+		my $stop_code = $hash->{stop_code};
+		my $lat = $hash->{stop_lat};
+		my $lon = $hash->{stop_lon};
+
+		my $g = $self->{_svg_doc}->createElement("g");
+		$g->appendText("\n");
+		
+		my $circle1 = $self->{_svg_doc}->createElement("circle");
+		$circle1->setAttribute("cx", $self->lon2x($lon));
+		$circle1->setAttribute("cy", $self->lat2y($lat));
+		$circle1->setAttribute("r", 0.5);
+		$circle1->setAttribute("style", "fill:#666;stroke-width:0;stroke:none;");
+		$g->appendChild($circle1);
+		$g->appendText("\n");
+
+		my $circle2 = $self->{_svg_doc}->createElement("circle");
+		$circle2->setAttribute("cx", $self->lon2x($lon));
+		$circle2->setAttribute("cy", $self->lat2y($lat));
+		$circle2->setAttribute("r", 0.3);
+		$circle2->setAttribute("style", "fill:white;stroke-width:0;stroke:none;");
+		$g->appendChild($circle2);
+		$g->appendText("\n");
+
+		my $circle3 = $self->{_svg_doc}->createElement("circle");
+		$circle3->setAttribute("cx", $self->lon2x($lon));
+		$circle3->setAttribute("cy", $self->lat2y($lat));
+		$circle3->setAttribute("r", 0.1);
+		$circle3->setAttribute("style", "fill:black;stroke-width:0;stroke:none;");
+		$g->appendChild($circle3);
+		$g->appendText("\n");
+
+		$bus_stops_layer->appendChild($g);
+		$bus_stops_layer->appendText("\n");
+
+	}
+	warn("Done.\n");
+}
+
+sub update_transit_routes {
+	my ($self) = @_;
+	my $gtfs = $self->{gtfs};
+	if (!$gtfs) { return; }
+
+	$self->update_scale();
+
+	{
+		my @existing_layers = (grep { my $label = $_->getAttribute("inkscape:label");
+					      $label && $label =~ m{^gtfs:route:} }
+				       $self->{_svg_doc}->findnodes("/svg:svg/svg:g"));
+		foreach my $layer (@existing_layers) {
+			$layer->parentNode()->removeChild($layer);
+		}
+	}
+
+	my $z_index = 6000;
+
+	my @routes = ();
+
+	my $dbh = $gtfs->dbh();
+
+	my $routes_sth = $dbh->prepare("select * from routes");
+	my $trips_sth = $dbh->prepare(qq{select distinct shape_id from trips where route_id = ?});
+	my $shapes_sth = $dbh->prepare(qq{select shape_pt_lon, shape_pt_lat
+                                          from shapes
+                                          where shape_id = ?
+                                          order by shape_pt_sequence asc});
+
+	$routes_sth->execute();
+	while (my $route = $routes_sth->fetchrow_hashref()) {
+		printf("  Route %s - %s\n", $route->{route_short_name}, $route->{route_long_name});
+		push(@routes, $route);
+		my $name = sprintf("gtfs:route:%s:%s",
+				   $route->{route_short_name},
+				   $route->{route_long_name});
+		my $layer = $self->svg_layer({ name => $name, z_index => $z_index++ });
+		$layer->appendText("\n");
+
+		my $style = "fill:none;stroke:red;stroke-width:0.7;";
+
+		$trips_sth->execute($route->{route_id});
+		while (my ($shape_id) = $trips_sth->fetchrow_array()) {
+			printf("    Shape %s\n", $shape_id);
+
+			my $polyline = $self->{_svg_doc}->createElement("polyline");
+			$polyline->setAttribute("style", $style);
+			my @points;
+
+			$shapes_sth->execute($shape_id);
+			while (my ($lon, $lat) = $shapes_sth->fetchrow_array()) {
+				push(@points, [$self->lon2x($lon),
+					       $self->lat2y($lat)]);
+			}
+			$shapes_sth->finish();
+
+			my $points = join(" ",
+					  map { sprintf("%.2f,%.2f", @$_) }
+					  # %.2f is accurate/precise enough to within
+					  # 1/9000'th of an inch
+					  @points);
+			$polyline->setAttribute("points", $points);
+			$polyline->setAttribute("stroke-linecap" => "round");
+			$polyline->setAttribute("stroke-linejoin" => "round");
+
+			$layer->appendChild($polyline);
+			$layer->appendText("\n");
+		}
+		$trips_sth->finish();
+	}
+	$routes_sth->finish();
+}
+
+sub apply_styles {
+	my ($self, $object, $style) = @_;
+	while (my ($k, $v) = each(%$style)) {
+		$k =~ s{_}{-}g;
+		$object->setAttribute($k, $v);
+	}
+}
+
+sub create_all_layers {
+	my ($self) = @_;
+	foreach my $layer_name (keys %{$LAYER_INFO}) {
+		$self->svg_layer($layer_name);
+	}
+}
+
 sub finish_xml {
 	my ($self) = @_;
 	open(my $fh, ">", $self->{filename}) or
 		die("cannot write $self->{filename}: $!\n");
+	warn("Writing $self->{filename} ...\n");
 	$self->{_svg_doc}->toFH($fh, 2);
+	warn("Done.\n");
 }
 
 1;
