@@ -748,7 +748,7 @@ sub update_transit_routes {
 					      $label && $label =~ m{^gtfs:route:} }
 				       $self->{_svg_doc}->findnodes("/svg:svg/svg:g"));
 		foreach my $layer (@existing_layers) {
-			$layer->parentNode()->removeChild($layer);
+			$layer->removeChildNodes();
 		}
 	}
 
@@ -775,17 +775,17 @@ sub update_transit_routes {
 		my $layer = $self->svg_layer({ name => $name, z_index => $z_index++ });
 		$layer->appendText("\n");
 
-		my $style = "fill:none;stroke:red;stroke-width:0.7;";
+		my $style1 = "fill:none;stroke:white;stroke-width:1.1;";
+		my $style2 = "fill:none;stroke:red;stroke-width:0.7;";
+
+		my @shapes = ();
 
 		$trips_sth->execute($route->{route_id});
 		while (my ($shape_id) = $trips_sth->fetchrow_array()) {
 			printf("    Shape %s\n", $shape_id);
 
-			my $polyline = $self->{_svg_doc}->createElement("polyline");
-			$polyline->setAttribute("style", $style);
-			my @points;
-
 			$shapes_sth->execute($shape_id);
+			my @points = ();
 			while (my ($lon, $lat) = $shapes_sth->fetchrow_array()) {
 				push(@points, [$self->lon2x($lon),
 					       $self->lat2y($lat)]);
@@ -797,14 +797,29 @@ sub update_transit_routes {
 					  # %.2f is accurate/precise enough to within
 					  # 1/9000'th of an inch
 					  @points);
-			$polyline->setAttribute("points", $points);
-			$polyline->setAttribute("stroke-linecap" => "round");
-			$polyline->setAttribute("stroke-linejoin" => "round");
-
-			$layer->appendChild($polyline);
-			$layer->appendText("\n");
+			push(@shapes, $points);
 		}
 		$trips_sth->finish();
+
+		foreach my $points (@shapes) {
+			my $polyline1 = $self->{_svg_doc}->createElement("polyline");
+			$polyline1->setAttribute("style", $style1);
+			$polyline1->setAttribute("points", $points);
+			$polyline1->setAttribute("stroke-linecap" => "round");
+			$polyline1->setAttribute("stroke-linejoin" => "round");
+			$layer->appendChild($polyline1);
+			$layer->appendText("\n");
+		}
+
+		foreach my $points (@shapes) {
+			my $polyline2 = $self->{_svg_doc}->createElement("polyline");
+			$polyline2->setAttribute("style", $style2);
+			$polyline2->setAttribute("points", $points);
+			$polyline2->setAttribute("stroke-linecap" => "round");
+			$polyline2->setAttribute("stroke-linejoin" => "round");
+			$layer->appendChild($polyline2);
+			$layer->appendText("\n");
+		}
 	}
 	$routes_sth->finish();
 }
