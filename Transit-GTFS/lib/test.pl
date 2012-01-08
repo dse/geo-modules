@@ -43,16 +43,26 @@ if (!defined $command) {
 	die("Not gonna do anything.\n");
 }
 elsif ($command eq "update") {
-	$mm->{gtfs}->update();
+	$mm->gtfs()->update();
+	$mm->gtfs()->repopulate();
+	$mm->create_all_layers();
+	$mm->download_map_data();
+	$mm->plot_osm_layers();
+	$mm->update_transit_stops();
+	$mm->update_transit_routes();
+	$mm->update_grid();
 }
-elsif ($command eq "force-update") {
-	$mm->{gtfs}->force_update();
+elsif ($command eq "gtfs-update") {
+	$mm->gtfs()->update();
 }
-elsif ($command eq "repopulate") {
-	$mm->{gtfs}->repopulate();
+elsif ($command eq "force-gtfs-update") {
+	$mm->gtfs()->force_update();
 }
-elsif ($command eq "force-repopulate") {
-	$mm->{gtfs}->force_repopulate();
+elsif ($command eq "gtfs-repopulate") {
+	$mm->gtfs()->repopulate();
+}
+elsif ($command eq "force-gtfs-repopulate") {
+	$mm->gtfs()->force_repopulate();
 }
 elsif ($command eq "update-osm-map") {
 	$mm->create_all_layers();
@@ -75,6 +85,14 @@ elsif ($command eq "update-transit") {
 	$mm->create_all_layers();
 	$mm->update_transit_stops();
 	$mm->update_transit_routes();
+}
+elsif ($command eq "update-grid") {
+	$mm->create_all_layers();
+	$mm->update_grid();
+}
+elsif ($command eq "update-map-border") {
+	$mm->create_all_layers();
+	$mm->update_map_border();
 }
 else {
 	die("No such command: '$command'\n");
