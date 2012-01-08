@@ -3,7 +3,7 @@
 use Test::More tests => 1;
 
 BEGIN {
-	use_ok( 'Transit::GTFS' );
+	use_ok( 'Transit::MapMaker' );
 }
 
-diag( "Testing Transit::GTFS $Transit::GTFS::VERSION, Perl $], $^X" );
+diag( "Testing Transit::MapMaker $Transit::MapMaker::VERSION, Perl $], $^X" );
