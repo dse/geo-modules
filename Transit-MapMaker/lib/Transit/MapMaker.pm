@@ -36,6 +36,31 @@ our $VERSION = '0.01';
     $mm->gtfs("http://developer.trimet.org/schedule/gtfs.zip");
     $mm->plot_transit_stops();
 
+=head1 DESCRIPTION
+
+If you want to create and edit your own to-scale map of your favorite
+transit system, this module performs some of the work for you.  It
+takes care of the following:
+
+=over 4
+
+=item *
+
+Download and render data from OpenStreetMap.org, including streets and
+highways, parks, golf courses, lakes, rivers, streams, educational
+institutions, industrial areas, and other forms of land use.
+
+=item *
+
+Download and render transit routes (and stops!) from GTFS data.
+
+=back
+
+On first run this module creates an SVG file with a bunch of layers
+containing the necessary data.  On each subsequent run this module
+will update the appropriate layers in the SVG file as needed without
+affecting manually-edited layers.
+
 =cut
 
 
