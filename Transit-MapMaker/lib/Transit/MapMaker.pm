@@ -5,7 +5,7 @@ use strict;
 
 =head1 NAME
 	
-Transit::MapMaker - Generate SVG layers from GTFS and OSM data.
+Transit::MapMaker - Create semi-usable transit maps from GTFS and OSM data.
 
 =head1 VERSION
 
