@@ -728,14 +728,20 @@ sub svg_layer_node {
 }
 
 sub gtfs_url {
-	my ($self, $gtfs_url) = @_;
+	my $self = shift();
+	return $self->{_gtfs_url} unless @_;
+	
+	my $gtfs_url = shift();
 	$self->{_gtfs_url} = $gtfs_url;
 	$self->{_gtfs} = Transit::GTFS->new($gtfs_url);
+	return $self->{_gtfs_url};
 }
 
 sub gtfs {
-	my ($self, $gtfs) = @_;
-	if (!$gtfs) { return $self->{_gtfs}; }
+	my $self = shift();
+	return $self->{_gtfs} unless @_;
+
+	my $gtfs = shift();
 	$self->{_gtfs} = $gtfs;
 	$self->{_gtfs_url} = $gtfs->{url};
 	return $self->{_gtfs};
