@@ -5,7 +5,7 @@ use strict;
 	
 =head1 NAME
 	
-Transit::GTFS - Provides a database frontend to GTFS data.
+Transit::GTFS - Maintain a SQLite database of GTFS data
 	
 =head1 VERSION
 	
@@ -29,8 +29,11 @@ our $VERSION = '0.02';
     my $dbh = $gtfs->dbh();
 	
 =head1 DESCRIPTION
-	
-Transit::GTFS provides a SQLite frontend to Google Transit data.
+
+Transit::GTFS creates and maintains a SQLite database of GTFS data.
+You supply a GTFS feed URL, and this module downloads it, extracts all
+the data from it, creates a SQLite database, populates it with that
+data, and gives you a database handle.
 
 =cut
 
