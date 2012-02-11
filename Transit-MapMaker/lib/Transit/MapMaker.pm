@@ -1,7 +1,7 @@
 package Transit::MapMaker;
 use warnings;
 use strict;
-
+use Carp qw(croak);
 
 =head1 NAME
 	
@@ -70,20 +70,29 @@ BEGIN {
 		      north south east west
 		      map_data_north map_data_south map_data_east map_data_west
 		      paper_width paper_height paper_margin
+		      classes
+		      layers
+		      route_colors
+		      route_overrides
 		      grid
 		      grid_sprintf
+		      osm_layers
+		      selected_trips_only
+		      inset_maps
+		      _map_areas
 		      _gtfs_url
 		      _gtfs
 		      _parser
 		      _svg_doc
+		      _svg_doc_elt
+		      _xpc
 		      _map_xml_filenames
 		      _nodes
 		      _ways
 		      _scale
 		      _south_y _north_y _east_x _west_x
-		      _rad_width _rad_height
 		      _svg_west _svg_east _svg_north _svg_south
-		      _updated_clip_path_node
+		      _cache
 		    );
 }
 use fields @_FIELDS;
@@ -91,6 +100,7 @@ use fields @_FIELDS;
 sub new {
 	my ($class, %options) = @_;
 	my $self = fields::new($class);
+	$self->{_cache} = {};
 	$self->{paper_width}  = 90 * 8.5;
 	$self->{paper_height} = 90 * 11;
 	$self->{paper_margin} = 90 * 0.25;
@@ -162,7 +172,7 @@ use URI;
 use Carp qw(croak);
 use File::Path qw(mkpath);
 use File::Basename;
-use List::MoreUtils qw(all);
+use List::MoreUtils qw(all firstidx uniq);
 use YAML;
 
 sub file_get_contents {		# php-like lol
@@ -200,7 +210,7 @@ sub _download_map_data {
 				   $ENV{HOME}, $west, $south, $east, $north);
 	my $xml_filename = sprintf("%s/.transit-mapmaker/map_%.8f_%.8f_%.8f_%.8f_bbox.xml",
 				   $ENV{HOME}, $west, $south, $east, $north);
-	
+
 	mkpath(dirname($xml_filename));
 	my $status = eval { file_get_contents($txt_filename); };
 
@@ -250,17 +260,28 @@ sub update_map_data {
 	$self->download_map_data(1);
 }
 
+our %NS;
+BEGIN {
+	$NS{"svg"}              = "http://www.w3.org/2000/svg";
+	$NS{"inkscape"}         = "http://www.inkscape.org/namespaces/inkscape";
+	$NS{"sodipodi"}         = "http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd";
+	$NS{"mapmaker"} = "http://webonastick.com/namespaces/transit-mapmaker";
+}
+
 sub init_xml {
 	my ($self) = @_;
 	my $parser = XML::LibXML->new();
+	$parser->keep_blanks(0);
 	my $doc = eval {
-		warn("Loading $self->{filename}...\n");
+		print STDERR ("Parsing $self->{filename} ... ");
 		my $d = $parser->parse_file($self->{filename});
-		warn("Done.\n");
+		print STDERR ("Done.\n");
 		return $d;
 	};
+	my $doc_is_new = 0;
 	if (!$doc) {
-		$doc = $parser->parse_string(<<"END");
+		$doc_is_new = 1;
+		$doc = $parser->parse_string(<<'END');
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!-- Not created with Inkscape (http://www.inkscape.org/) -->
 <!-- (However, a very early version of this template was.) -->
@@ -272,13 +293,13 @@ sub init_xml {
    xmlns="http://www.w3.org/2000/svg"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:mapmaker="http://webonastick.com/namespaces/transit-mapmaker"
    width="765"
    height="990"
    id="svg2"
    version="1.1"
    inkscape:version="0.48.1 "
    sodipodi:docname="Map">
-  <defs id="defs4" />
   <sodipodi:namedview
      id="base"
      pagecolor="#ffffff"
@@ -305,23 +326,50 @@ sub init_xml {
   </metadata>
 </svg>
 END
-		my ($view) = $doc->findnodes("//sodipodi:namedview[\@id='base']");
-		if ($view) {
-			$view->setAttribute("inkscape:cx", $self->{paper_width} / 2);
-			$view->setAttribute("inkscape:cy", $self->{paper_height} / 2);
-		}
 	}
+
+	my $doc_elt = $doc->documentElement();
+
 	$self->{_parser} = $parser;
 	$self->{_svg_doc} = $doc;
-	$doc->documentElement()->setAttribute("width", $self->{paper_width});
-	$doc->documentElement()->setAttribute("height", $self->{paper_height});
+	$self->{_svg_doc_elt} = $doc_elt;
+
+	$doc_elt->setAttribute("width", $self->{paper_width});
+	$doc_elt->setAttribute("height", $self->{paper_height});
+	$doc_elt->setNamespace($NS{"svg"}, "svg", 0);
+
+	my $xpc = XML::LibXML::XPathContext->new($doc);
+	$xpc->registerNs("svg"      => $NS{"svg"});
+	$xpc->registerNs("inkscape" => $NS{"inkscape"});
+	$xpc->registerNs("sodipodi" => $NS{"sodipodi"});
+	$xpc->registerNs("mapmaker" => $NS{"mapmaker"});
+	$self->{_xpc} = $xpc;
+
+	if ($doc_is_new) {
+		my ($view) = $doc->findnodes("//sodipodi:namedview[\@id='base']");
+		if ($view) {
+			$view->setAttributeNS($NS{"inkscape"}, "inkscape:cx", $self->{paper_width} / 2);
+			$view->setAttributeNS($NS{"inkscape"}, "inkscape:cy", $self->{paper_height} / 2);
+		}
+	}
+
+	$self->{_map_areas} = [ { is_main => 1, name => "Main Map" }, @{$self->{inset_maps}} ];
+	my $map_area_idx = 0;
+	foreach my $map_area (@{$self->{_map_areas}}) {
+		$map_area->{idx} = $map_area_idx++;
+	}
+}
+
+sub findnodes {
+	my ($self, @args) = @_;
+	return $self->{_xpc}->findnodes(@args);
 }
 
 BEGIN {
 	my $d2r = atan2(1, 1) / 45;
 	my $r2d = 45 / atan2(1, 1);
 	sub update_scale {
-		my ($self) = @_;
+		my ($self, $map_area) = @_;
 		my $w = $self->{west};			 # in degrees
 		my $e = $self->{east};			 # in degrees
 		my $n = $self->{north};			 # in degrees
@@ -330,21 +378,51 @@ BEGIN {
 		my $ex = $self->{_east_x} = _lon2x($e);	 # units
 		my $ny = $self->{_north_y} = _lat2y($n); # units
 		my $sy = $self->{_south_y} = _lat2y($s); # units
-		my $width  = $self->{_rad_width}  = $ex - $wx; # units
-		my $height = $self->{_rad_height} = $ny - $sy; # units
+		my $width  = $ex - $wx;			 # units
+		my $height = $ny - $sy;			 # units
 		my $pww = $self->{paper_width}  - 2 * $self->{paper_margin}; # in px
 		my $phh = $self->{paper_height} - 2 * $self->{paper_margin}; # in px
 		if ($width / $height <= $pww / $phh) {
 			$self->{_scale} = $phh / $height; # px/unit
-		}
-		else {
+		} else {
 			$self->{_scale} = $pww / $width; # px/unit
 		}
-		$self->{_svg_west}  = $self->lon2x($self->{west});
+		$self->{_svg_west}  = $self->{paper_margin}; # $self->lon2x($self->{west});
+		$self->{_svg_north} = $self->{paper_margin}; # $self->lat2y($self->{north});
 		$self->{_svg_east}  = $self->lon2x($self->{east});
-		$self->{_svg_north} = $self->lat2y($self->{north});
 		$self->{_svg_south} = $self->lat2y($self->{south});
-		$self->{_updated_clip_path_node} = 0;
+		if (!$map_area->{is_main}) {
+			# recalculate
+			$w = $map_area->{west};
+			$e = $map_area->{east};
+			$n = $map_area->{north};
+			$s = $map_area->{south};
+			$wx = $self->{_west_x}  = _lon2x($w); # units
+			$ex = $self->{_east_x}  = _lon2x($e); # units
+			$ny = $self->{_north_y} = _lat2y($n); # units
+			$sy = $self->{_south_y} = _lat2y($s); # units
+			$width  = $ex - $wx;		      # units
+			$height = $ny - $sy;		      # units
+			if (exists $map_area->{zoom}) {
+				$self->{_scale} *= $map_area->{zoom};
+			}
+			if (exists $map_area->{left}) {
+				$self->{_svg_west} += $map_area->{left};
+				$self->{_svg_east} = $self->{_svg_west} + $self->{_scale} * $width;
+			}
+			elsif (exists $map_area->{right}) {
+				$self->{_svg_east} -= $map_area->{right};
+				$self->{_svg_west} = $self->{_svg_east} - $self->{_scale} * $width;
+			}
+			if (exists $map_area->{top}) {
+				$self->{_svg_north} += $map_area->{top};
+				$self->{_svg_south} = $self->{_svg_north} + $self->{_scale} * $height;
+			}
+			elsif (exists $map_area->{bottom}) {
+				$self->{_svg_south} -= $map_area->{bottom};
+				$self->{_svg_north} = $self->{_svg_south} - $self->{_scale} * $height;
+			}
+		}
 	}
 	sub _lon2x {
 		my ($lon) = @_;
@@ -357,399 +435,423 @@ BEGIN {
 	}
 	sub lon2x {
 		my ($self, $lon) = @_;
-		return $self->{paper_margin} + $self->{_scale} * (_lon2x($lon) - $self->{_west_x});
+		return $self->{_svg_west} + $self->{_scale} * (_lon2x($lon) - $self->{_west_x});
 	}
 	sub lat2y {
 		my ($self, $lat) = @_;
-		return $self->{paper_margin} + $self->{_scale} * ($self->{_north_y} - _lat2y($lat));
+		return $self->{_svg_north} + $self->{_scale} * ($self->{_north_y} - _lat2y($lat));
 	}
 }
 
-our $LAYER_INFO;
-BEGIN {
-	$LAYER_INFO = {"osm:natural=water"            => { z_index => 1010, style => "fill:#bbd;stroke:#bbd;stroke-width:0.25;" },
-		       "osm:waterway=river"           => { z_index => 1020, style => "fill:#bbd;stroke:#bbd;stroke-width:0.25;" },
-		       "osm:waterway=stream"          => { z_index => 1030, style => "fill:#bbd;stroke:#bbd;stroke-width:0.25;" },
-		       "osm:amenity=park"             => { z_index => 1040, style => "fill:#cfc;" },
-		       "osm:leisure=park"             => { z_index => 1050, style => "fill:#cfc;" },
-		       "osm:landuse=forest"           => { z_index => 1060, style => "fill:#cfc;" },
-		       "osm:amenity=parking"          => { z_index => 1070, style => "fill:#f7f7f7;" },
-		       "osm:building=yes"             => { z_index => 1080, style => "fill:#e6e6e6;" },
-		       "osm:building=office"          => { z_index => 1081, style => "fill:#e6e6e6;" },
-		       "osm:landuse=industrial"       => { z_index => 1090, style => "fill:#eee;" },
-		       "osm:landuse=commercial"       => { z_index => 1091, style => "fill:#eee;" },
-		       "osm:amenity=university"       => { z_index => 1100, style => "fill:#ddf;" },
-		       "osm:amenity=college"          => { z_index => 1101, style => "fill:#ddf;" },
-		       "osm:amenity=school"           => { z_index => 1102, style => "fill:#ddf;" },
-		       "osm:leisure=golf_course"      => { z_index => 1110, style => "fill:#ffc;" },
-		       "osm:landuse=cemetery"         => { z_index => 1120, style => "fill:#cfc;" },
-		       "osm:highway=track"            => { z_index => 2010, style => "fill:none;stroke:#ddd;stroke-width:0.25;" },
-		       "osm:highway=footway"          => { z_index => 2020, style => "fill:none;stroke:#ddd;stroke-width:0.25;" },
-		       "osm:highway=service"          => { z_index => 2030, style => "fill:none;stroke:#ddd;stroke-width:0.25;" },
-		       "osm:highway=living_street"    => { z_index => 2040, style => "fill:none;stroke:#ddd;stroke-width:0.25;" },
-		       "osm:highway=residential"      => { z_index => 2050, style => "fill:none;stroke:#ddd;stroke-width:0.50;" },
-		       "osm:highway=unclassified"     => { z_index => 2060, style => "fill:none;stroke:#ddd;stroke-width:0.70;" },
-		       "osm:highway=tertiary_link"    => { z_index => 2070, style => "fill:none;stroke:#ddd;stroke-width:0.70;" },
-		       "osm:highway=tertiary"         => { z_index => 2075, style => "fill:none;stroke:#ddd;stroke-width:0.70;" },
-		       "osm:highway=secondary_link"   => { z_index => 2080, style => "fill:none;stroke:#ddd;stroke-width:0.70;" },
-		       "osm:highway=secondary"        => { z_index => 2090, style => "fill:none;stroke:#ddd;stroke-width:0.70;" },
-		       "osm:highway=primary_link"     => { z_index => 2100, style => "fill:none;stroke:#ddd;stroke-width:0.70;" },
-		       "osm:highway=primary"          => { z_index => 2110, style => "fill:none;stroke:#ddd;stroke-width:0.70;" },
-		       "osm:highway=motorway_link"    => { z_index => 2120, style => "fill:none;stroke:#ddd;stroke-width:0.70;" },
-		       "osm:highway=motorway"         => { z_index => 2130, style => "fill:none;stroke:#ddd;stroke-width:0.70;" },
-		       "osm:highway=road"             => { z_index => 2140, style => "fill:none;stroke:#ddd;stroke-width:0.70;" },
-		       "osm:highway=trunk"            => { z_index => 2150, style => "fill:none;stroke:#ddd;stroke-width:0.70;" },
-		       "osm:railway=rail"             => { z_index => 3000, style => "fill:none;stroke:#999;stroke-width:0.25;" },
-		       "osm:aeroway=apron"            => { z_index => 4000, style => "fill:#ddd;stroke:#ddd;stroke-width:0.25;" },
-		       "osm:aeroway=terminal"         => { z_index => 4003, style => "fill:#ccc;stroke:#ccc;stroke-width:0.25;" },
-		       "osm:aeroway=runway"           => { z_index => 4001, style => "fill:none;stroke:#ddd;stroke-width:2;" },
-		       "osm:aeroway=taxiway"          => { z_index => 4002, style => "fill:none;stroke:#ddd;stroke-width:2;" },
-		       "highway-route-markers"        => { z_index => 5000 }, # user-edited
-		       # transit routes are layers 6000 - 6999
-		       "gtfs:transit-stops"           => { z_index => 7000 },
-		       "transit-route-numbers"        => { z_index => 7010 }, # user-edited
-		       "park-and-ride-lots"           => { z_index => 7020 }, # user-edited
-		       "one-way-indicators"           => { z_index => 7030 }, # user-edited
-		       "points-of-interest"           => { z_index => 9040 }, # user-edited
-		       "street-names"                 => { z_index => 9050 }, # user-edited
-		       "place-names"                  => { z_index => 9060 }, # user-edited
-		       "generated:map-border"         => { z_index => 9500,  unclipped => 1, style => "fill:none;stroke:black;stroke-width:4;" },
-		       "legend"                       => { z_index => 10000, unclipped => 1 }, # user-edited
-		       "generated:grid"               => { z_index => 11000, unclipped => 1,
-							   style => "fill:none;stroke:#ccf;stroke-width:0.25;",
-							   text_style => ("font-family:Arial;font-size:6px;font-style:normal;font-variant:normal;font-weight:normal;" .
-									  "font-stretch:normal;" .
-									  "text-align:center;text-anchor:middle;" .
-									  "line-height:100%;" .
-									  "writing-mode:lr-tb;" .
-									  "fill:black;fill-opacity:1;stroke:none;") },
-		      };
-}
-
-sub update_clip_path_node {
+sub clip_path_d {
 	my ($self) = @_;
-	if ($self->{_updated_clip_path_node}) { return; }
-	
-	my $svg_doc = $self->{_svg_doc};
-	my $svg_doc_element = $svg_doc->documentElement();
-	my ($defs) = $svg_doc->findnodes("//svg:defs");
-	if (!$defs) {
-		$defs = $svg_doc->createElement("defs");
-		$svg_doc_element->insertBefore($defs, $svg_doc_element->firstChild());
-	}
-
-	my ($clipPath) = $defs->findnodes("clipPath[\@id='documentClipPath']");
-	if ($clipPath) {
-		$clipPath->parentNode()->removeChild($clipPath);
-	}
-
-	$clipPath = $svg_doc->createElement("clipPath");
-	$clipPath->setAttribute("id", "documentClipPath");
-	$defs->appendChild($clipPath);
-	
-	my $left   = $self->lon2x($self->{west});
-	my $right  = $self->lon2x($self->{east});
-	my $top    = $self->lat2y($self->{north});
-	my $bottom = $self->lat2y($self->{south});
-
+	my $left   = $self->{_svg_west};
+	my $right  = $self->{_svg_east};
+	my $top    = $self->{_svg_north};
+	my $bottom = $self->{_svg_south};
 	my $d = sprintf("M %f %f H %f V %f H %f Z",
-			#  #1 #2   #3   #4   #5
 			$left, $top, $right, $bottom, $left);
-	#               #1     #2    #3      #4       #5
-			
-	my $path = $svg_doc->createElement("path");
-	$path->setAttribute("id" => "documentClipPathPath");
-	$path->setAttribute("d" => $d);
-	$path->setAttribute("inkscape:connector-curvature" => 0);
-	$clipPath->appendChild($path);
-
-	$self->{_updated_clip_path_node} = 1;
+	return $d;
 }
 
-sub refresh_osm_styles {
+sub erase_autogenerated_clip_paths {
 	my ($self) = @_;
-	$self->update_scale();
-	$self->update_clip_path_node();
-
-	warn("Refreshing styles...\n");
-	foreach my $layer_name (grep { m{^osm:} } keys(%$LAYER_INFO)) {
-		warn("  $layer_name...\n");
-		my ($layer, $group) = $self->svg_layer_node($layer_name, { nocreate => 1 });
-		next unless $layer;
-		my $style = $LAYER_INFO->{$layer_name}->{style};
-		foreach my $polyline ($group->findnodes("svg:polyline")) {
-			if ($style) {
-				$style =~ s{(^|;)(?:fill|stroke-linecap|stroke-linejoin):[^;]*(;|$)}{$1$2}gi;
-				$style =~ s{;{2,}}{;}g;
-				$style =~ s{^;}{};
-				$style .= "fill:none;stroke-linecap:round;stroke-linejoin:round;";
-				$polyline->setAttribute("style", $style);
-			}
-		}
-		foreach my $polygon ($group->findnodes("svg:polygon")) {
-			if ($style) {
-				$polygon->setAttribute("style", $style);
-			}
-		}
-		foreach my $path ($group->findnodes("svg:path")) {
-			if ($style) {
-				$path->setAttribute("style", $style);
-			}
-		}
+	my $defs = $self->defs_node();
+	my $doc = $self->{_svg_doc};
+	my @cpnodes = $doc->findnodes("svg:clipPath[\@mapmaker:autogenerated]");
+	foreach my $cpnode (@cpnodes) {
+		$cpnode->unbindNode();
 	}
-	warn("Done updating styles.\n");
 }
 
-sub plot_osm_layers {
+sub defs_node {
 	my ($self) = @_;
-	$self->update_scale();
-	$self->update_clip_path_node();
-
-	$self->{_nodes} = {};
-	$self->{_ways} = {};
-
-	my %skipped;
-
-	foreach my $layer_name (grep { m{^osm:} } keys(%$LAYER_INFO)) {
-		$self->svg_layer_node($layer_name, { clear => 1 });
+	my ($defs) = $self->findnodes("//svg:defs");
+	my $doc = $self->{_svg_doc};
+	my $doc_elt = $doc->documentElement();
+	if (!$defs) {
+		$defs = $doc->createElementNS($NS{"svg"}, "defs");
+		$doc_elt->insertBefore($defs, $doc_elt->firstChild());
 	}
+	return $defs;
+}
+
+sub create_clip_path {
+	my ($self, $map_area) = @_;
+	my $defs = $self->defs_node();
+	my $doc = $self->{_svg_doc};
+
+	my $idx       = $map_area ? $map_area->{idx}          : 0;
+	my $cpnode_id = $map_area ? "map_area_${idx}_cp"      : "main_map_cp";
+	my $path_id   = $map_area ? "map_area_${idx}_cp_path" : "main_map_cp_path";
 	
-	foreach my $filename (@{$self->{_map_xml_filenames}}) {
-		warn("Working through $filename ... \n");
-		my $doc = $self->{_parser}->parse_file($filename);
-		warn("  Nodes...\n");
-		foreach my $node ($doc->findnodes("/osm/node")) {
-			my $lat = 0 + $node->getAttribute("lat");
-			my $lon = 0 + $node->getAttribute("lon");
-			my $id = $node->getAttribute("id");
-			my $svgx = $self->lon2x($lon);
-			my $svgy = $self->lat2y($lat);
-			$self->{_nodes}->{$id} = { svgx => $svgx, svgy => $svgy };
-		}
-		warn("  Ways...\n");
-		foreach my $way ($doc->findnodes("/osm/way")) {
-			my $id = $way->getAttribute("id");
-			next if defined $self->{_ways}->{$id};
-			$self->{_ways}->{$id} = 1;
+	my $cpnode = $doc->createElementNS($NS{"svg"}, "clipPath");
+	$cpnode->setAttribute("id", $cpnode_id);
+	$defs->appendChild($cpnode);
 
-			my $layer_name;
-			my @class;
-			foreach my $type (qw(railway highway building
-					     landuse amenity leisure
-					     natural waterway boundary
-					     power man_made aeroway
-					     sport barrier parking
-					     tourism bridge)) {
-				my $value = $way->findnodes("tag[\@k='$type']/\@v");
-				next if !defined $value || $value eq "";
-				$layer_name = "osm:$type=$value" unless defined $layer_name;
-				push(@class, $type, $value);
+	my $path = $doc->createElementNS($NS{"svg"}, "path");
+	$path->setAttribute("id" => $path_id);
+	$path->setAttributeNS($NS{mapmaker}, "mapmaker:autogenerated" => "true");
+	$path->setAttribute("d" => $self->clip_path_d());
+	$path->setAttributeNS($NS{"inkscape"}, "inkscape:connector-curvature" => 0);
+	$cpnode->appendChild($path);
+
+	return $cpnode_id;
+}
+
+use constant POINT_X => 0;
+use constant POINT_Y => 1;
+use constant POINT_X_ZONE => 2;
+use constant POINT_Y_ZONE => 3;
+
+sub erase_autogenerated_map_layers {
+	my ($self) = @_;
+	my $doc = $self->{_svg_doc};
+	foreach my $layer ($doc->findnodes("/svg:svg/svg:g[\@inkscape:groupmode=\"layer\"][\@mapmaker:autogenerated]")) {
+		$layer->unbindNode();
+	}
+	foreach my $layer ($doc->findnodes("/svg:svg/svg:g[\@inkscape:groupmode=\"layer\"][\@mapmaker:inset-map]")) {
+		$layer->unbindNode();
+	}
+	foreach my $layer ($doc->findnodes("/svg:svg/svg:g[\@inkscape:groupmode=\"layer\"][\@mapmaker:main-map]")) {
+		$layer->unbindNode();
+	}
+}
+
+sub layer_insertion_point {
+	my ($self) = @_;
+	my $doc = $self->{_svg_doc};
+	my ($insertion_point) = $doc->findnodes(<<'END');
+		/svg:svg/svg:g
+			[@inkscape:groupmode="layer"]
+			[not(@mapmaker:autogenerated) and
+			 not(@mapmaker:inset-map) and
+			 not(@mapmaker:main-map)]
+END
+	return $insertion_point;
+}
+
+sub create_map_area_layer {
+	my ($self, $map_area) = @_;
+	my $doc = $self->{_svg_doc};
+	my $insertion_point = $self->layer_insertion_point();
+	my $map_area_layer = $self->create_layer(name => ($map_area->{name} // 
+							  ("Inset " . $map_area->{idx})),
+						 writable => 1);
+	if ($map_area->{is_main}) {
+		$map_area_layer->setAttributeNS($NS{mapmaker}, "mapmaker:main-map", "true");
+	}
+	else {
+		$map_area_layer->setAttributeNS($NS{mapmaker}, "mapmaker:inset-map", "true");
+	}
+	$map_area_layer->setAttributeNS($NS{mapmaker}, "mapmaker:autogenerated", "true");
+	if ($insertion_point) {
+		$doc->documentElement()->insertBefore($map_area_layer, $insertion_point);
+	}
+	else {
+		$doc->documentElement()->appendChild($map_area_layer);
+	}
+	return $map_area_layer;
+}
+
+sub create_background_layer {
+	my ($self, $map_layer) = @_;
+	my $background = $self->create_layer(name => "Background Color");
+	my $rect = $self->create_rectangle(x      => $self->{_svg_west},
+					   y      => $self->{_svg_north},
+					   width  => $self->{_svg_east} - $self->{_svg_west},
+					   height => $self->{_svg_south} - $self->{_svg_north},
+					   style  => $self->compose_style_string({}, "background"));
+	$background->appendChild($rect);
+	$map_layer->appendChild($background);
+}
+
+sub create_border_layer {
+	my ($self, $map_layer) = @_;
+	my $border = $self->create_layer(name => "Border");
+	my $rect = $self->create_rectangle(x      => $self->{_svg_west},
+					   y      => $self->{_svg_north},
+					   width  => $self->{_svg_east} - $self->{_svg_west},
+					   height => $self->{_svg_south} - $self->{_svg_north},
+					   style  => $self->compose_style_string({}, "map-border", { fill => "none", stroke_linejoin => "square" }));
+	$border->appendChild($rect);
+	$map_layer->appendChild($border);
+}
+
+sub create_openstreetmap_layer {
+	my ($self, $map_layer) = @_;
+	my $osm_layer = $self->create_layer(name => "OpenStreetMap");
+	$map_layer->appendChild($osm_layer);
+	return $osm_layer;
+}
+
+sub plot_osm_maps {
+	my ($self) = @_;
+	my $doc = $self->{_svg_doc};
+
+	my %index_tag;
+	foreach my $info (@{$self->{osm_layers}}) {
+		$info->{tags} = $self->normalize_tags($info->{tags});
+		foreach my $tag (@{$info->{tags}}) {
+			$index_tag{$tag->{k}} = 1;
+		}
+	}
+
+	$self->erase_autogenerated_map_layers();
+	$self->erase_autogenerated_clip_paths();
+
+	foreach my $map_area (@{$self->{_map_areas}}) {
+		$self->update_scale($map_area);
+		my $map_area_layer = $self->create_map_area_layer($map_area);
+		my $cpnode_id = $self->create_clip_path($map_area);
+		$self->create_background_layer($map_area_layer);
+		my $osm_layer = $self->create_openstreetmap_layer($map_area_layer);
+		foreach my $info (@{$self->{osm_layers}}) {
+			my $layer = $self->create_layer(name => $info->{name});
+			my $group = $self->create_clipped_group($cpnode_id);
+			$layer->appendChild($group);
+			$osm_layer->appendChild($layer);
+			$info->{_map_area_layer} //= [];
+			$info->{_map_area_group} //= [];
+			push(@{$info->{_map_area_layer}}, $layer);
+			push(@{$info->{_map_area_group}}, $group);
+		}
+		$self->create_border_layer($map_area_layer);
+	}
+
+	foreach my $filename (@{$self->{_map_xml_filenames}}) {
+		print STDERR ("Parsing $filename ... ");
+		my $doc = $self->{_parser}->parse_file($filename);
+		print STDERR ("done.\n");
+
+		print STDERR ("  Finding <node> elements ... ");
+		my @nodes = $doc->findnodes("/osm/node");
+		my %nodes;
+		print STDERR (scalar(@nodes) . " elements found.\n");
+		foreach my $map_area (@{$self->{_map_areas}}) {
+			$self->update_scale($map_area);
+			my $idx = $map_area->{idx};
+			my $area_name = $map_area->{name};
+			print STDERR ("    Indexing for map area $area_name ... ");
+			my $svg_west  = $self->{_svg_west};
+			my $svg_east  = $self->{_svg_east};
+			my $svg_north = $self->{_svg_north};
+			my $svg_south = $self->{_svg_south};
+			foreach my $node (@nodes) {
+				my $id  = $node->getAttribute("id");
+				my $lat = 0 + $node->getAttribute("lat");
+				my $lon = 0 + $node->getAttribute("lon");
+				my $svgx = $self->lon2x($lon);
+				my $svgy = $self->lat2y($lat);
+				my $xzone = ($svgx <= $svg_west)  ? -1 : ($svgx >= $svg_east)  ? 1 : 0;
+				my $yzone = ($svgy <= $svg_north) ? -1 : ($svgy >= $svg_south) ? 1 : 0;
+				my $result = [$svgx, $svgy, $xzone, $yzone];
+				$nodes{$id}[$idx] = $result;
 			}
-			if (!defined $layer_name) {
-				my @stuff = (grep { ($_->nodeType() ne XML_TEXT_NODE &&
-						     $_->nodeName() ne "nd" &&
-						     !($_->nodeName() eq "tag" && $_->getAttribute("k") eq "admin_level") &&
-						     !($_->nodeName() eq "tag" && $_->getAttribute("k") =~ /^tiger:/)
-						    ) }
-					     $way->childNodes());
-				if (@stuff) {
-					warn("We found a 'way' node that we don't know how to deal with yet:");
-					foreach my $node (@stuff) {
-						warn("\t", $node->toString(), "\n");
+			print STDERR ("done.\n");
+		}
+		print STDERR ("done.\n");
+
+		print STDERR ("  Finding <way> elements ... ");
+		my @ways = $doc->findnodes("/osm/way");
+		my %ways;
+		my %ways_index;
+		print STDERR (scalar(@ways) . " elements found; indexing ... ");
+		foreach my $way (@ways) {
+			my $id = $way->getAttribute("id");
+			my @nodeid = map { $_->getAttribute("ref"); } $way->findnodes("nd");
+			my $closed = (scalar(@nodeid)) > 2 && ($nodeid[0] == $nodeid[-1]);
+			pop(@nodeid) if $closed;
+
+			my $result = { id     => $id,
+				       nodeid => \@nodeid,
+				       closed => $closed,
+				       points => []
+				     };
+			$ways{$id} = $result;
+			
+			my @tag = $way->findnodes("tag");
+			foreach my $tag (@tag) {
+				my $k = $tag->getAttribute("k");
+				my $v = $tag->getAttribute("v");
+				next unless $index_tag{$k};
+				push(@{$ways_index{$k}}, $result);
+				push(@{$ways_index{$k, $v}}, $result);
+			}
+		}
+		print STDERR ("done.\n");
+
+		foreach my $map_area (@{$self->{_map_areas}}) {
+			$self->update_scale($map_area);
+			my $idx = $map_area->{idx};
+			my $area_name = $map_area->{name};
+			print STDERR ("    Indexing for map area $area_name ... ");
+			foreach my $way (@ways) {
+				my $id = $way->getAttribute("id");
+				my @nodeid = @{$ways{$id}{nodeid}};
+				my @points = map { $nodes{$_}[$idx] } @nodeid;
+				$ways{$id}{points}[$idx] = \@points;
+			}
+			print STDERR ("done.\n");
+		}
+
+		foreach my $map_area (@{$self->{_map_areas}}) {
+			$self->update_scale($map_area);
+			my $idx = $map_area->{idx};
+			my $area_name = $map_area->{name};
+			print STDERR ("Adding objects for map area $area_name ...\n");
+
+			foreach my $info (@{$self->{osm_layers}}) {
+				my $name = $info->{name};
+				my $tags = $info->{tags};
+				my $class = $info->{class};
+				my $group = $info->{_map_area_group}[$idx];
+
+				print STDERR ("  Layer $name\n");
+
+				my @ways;
+				foreach my $tag (@$tags) {
+					my $k = $tag->{k};
+					my $v = $tag->{v};
+					if (defined $v) {
+						eval { push(@ways, @{$ways_index{$k, $v}}); };
+					} else {
+						eval { push(@ways, @{$ways_index{$k}}); };
 					}
 				}
-				next;
-			}
+				@ways = uniq @ways;
+				print STDERR (scalar(@ways), " objects found; processing ... ");
 
-			my ($layer, $group) = $self->svg_layer_node($layer_name);
-			if (!defined $layer) {
-				$skipped{$layer_name} += 1;
-				next;
-			}
-
-			my @nd = $way->findnodes("nd");
-			my $closed = (scalar(@nd) > 2 &&
-				      $nd[0]->getAttribute("ref") eq $nd[-1]->getAttribute("ref"));
-			if ($closed) {
-				pop(@nd);
-			}
-			my @points = map { $self->{_nodes}->{$_->getAttribute("ref")} } @nd;
-			my $points = join(" ",
-					  map { sprintf("%.2f,%.2f", $_->{svgx}, $_->{svgy}) }
-					  # %.2f is accurate/precise enough to within
-					  # 1/9000'th of an inch
-					  @points);
-
-			# if every point in a polyline/polygon is past
-			# one of the borders, you're not going to see
-			# it.
-			if (all { $_->{svgx} <= $self->{_svg_west}  } @points) { next; }
-			if (all { $_->{svgx} >= $self->{_svg_east}  } @points) { next; }
-			if (all { $_->{svgy} <= $self->{_svg_north} } @points) { next; }
-			if (all { $_->{svgy} >= $self->{_svg_south} } @points) { next; }
-
-			my $style = $LAYER_INFO->{$layer_name}->{style};
-			
-			if ($closed) {
-				my $path = $self->{_svg_doc}->createElement("path");
-				$path->setAttribute("d", "M $points Z");
-				if ($style) {
-					$path->setAttribute("style", $style);
-				}
-				$group->appendText("      ");
-				$group->appendChild($path);
-				$group->appendText("\n");
-			}
-			else {
-				my $path = $self->{_svg_doc}->createElement("path");
-				$path->setAttribute("d", "M $points");
-
-				if ($style) {
-					$style =~ s{(^|;)(?:fill|stroke-linecap|stroke-linejoin):[^;]*(;|$)}{$1$2}gi;
-					$style =~ s{;{2,}}{;}g;
-					$style =~ s{^;}{};
-					$style .= "fill:none;stroke-linecap:round;stroke-linejoin:round;";
-					$path->setAttribute("style", $style);
+				my $options = {};
+				if ($map_area->{scale_stroke_width} && exists $map_area->{zoom}) {
+					$options->{scale} = $map_area->{zoom};
 				}
 
-				$group->appendText("      ");
-				$group->appendChild($path);
-				$group->appendText("\n");
+				my $open_style   = $self->compose_style_string({ %$options, open => 1 }, $info->{class});
+				my $closed_style = $self->compose_style_string({ %$options, open => 0 }, $info->{class});
+
+				foreach my $way (@ways) {
+					my $points = $way->{points}[$idx];
+
+					if (all { $_->[POINT_X_ZONE] == -1 } @$points) { next; }
+					if (all { $_->[POINT_X_ZONE] ==  1 } @$points) { next; }
+					if (all { $_->[POINT_Y_ZONE] == -1 } @$points) { next; }
+					if (all { $_->[POINT_Y_ZONE] ==  1 } @$points) { next; }
+
+					if ($way->{closed}) {
+						my $polygon = $self->create_polygon(points => $points, style => $closed_style);
+						$group->appendChild($polygon);
+					} else {
+						my $polyline = $self->create_polyline(points => $points, style => $open_style);
+						$group->appendChild($polyline);
+					}
+				}
+				print STDERR ("done.\n");
 			}
+
+			print STDERR ("Done.\n");
 		}
-		foreach my $relation ($doc->findnodes("/osm/relation")) {
-			# eh?
-		}
-	}
-
-	foreach my $skipped (sort keys(%skipped)) {
-		warn(sprintf("Skipped %d %s ways\n", $skipped{$skipped}, $skipped));
-	}
-
-	$self->update_map_border();
-}
-
-sub update_map_border {
-	my ($self) = @_;
-	$self->update_scale();
-	$self->update_clip_path_node();
-	
-	my ($map_border, $map_border_group) = $self->svg_layer_node("generated:map-border", { clear => 1 });
-	{
-		my $rect = $self->{_svg_doc}->createElement("rect");
-		$rect->setAttribute("x",       $self->lon2x($self->{west}));
-		$rect->setAttribute("y",       $self->lat2y($self->{north}));
-		$rect->setAttribute("width",   $self->lon2x($self->{east}) - $self->lon2x($self->{west}));
-		$rect->setAttribute("height",  $self->lat2y($self->{south}) - $self->lat2y($self->{north}));
-		$rect->setAttribute("style",   $LAYER_INFO->{"generated:map-border"}->{"style"});
-		$map_border_group->appendChild($rect);
 	}
 }
-
-our %layer;
-sub svg_layer_node {
-	my ($self, $arg, $opts) = @_;
-
-	$opts //= {};
-
-	my $z_index;
-	my $unclipped;
-	my $name;
-
-	if (ref($arg) eq "HASH") {
-		$name = $arg->{name};
-		$z_index = $arg->{z_index};
-		$unclipped = $arg->{unclipped};
+sub create_polygon {
+	my ($self, %args) = @_;
+	my $path = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
+	$path->setAttribute("d", $self->points_to_path(1, @{$args{points}}));
+	$path->setAttribute("style", $args{style});
+	return $path;
+}
+sub create_polyline {
+	my ($self, %args) = @_;
+	my $path = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
+	$path->setAttribute("d", $self->points_to_path(0, @{$args{points}}));
+	$path->setAttribute("style", $args{style});
+	return $path;
+}
+sub points_to_path {
+	my ($self, $closed, @points) = @_;
+	my @coords = map { [ int($_->[POINT_X] * 100 + 0.5) / 100,
+			     int($_->[POINT_Y] * 100 + 0.5) / 100 ] } @points;
+	my $result = sprintf("m %.2f,%.2f", @{$coords[0]});
+	for (my $i = 1; $i < scalar(@coords); $i += 1) {
+		$result .= sprintf(" %.2f,%.2f", 
+				   $coords[$i][POINT_X] - $coords[$i - 1][POINT_X],
+				   $coords[$i][POINT_Y] - $coords[$i - 1][POINT_Y]);
 	}
-	else {
-		$name = $arg;
-		$z_index = $LAYER_INFO->{$name}->{z_index};
-		$unclipped = $LAYER_INFO->{$name}->{unclipped};
+	$result .= " z" if $closed;
+	return $result;
+}
+sub normalize_tags {
+	my ($self, $tags) = @_;
+	$tags ||= [];
+	if (ref($tags) ne "ARRAY") {
+		$tags = [$tags];
 	}
-
-	if (defined $layer{$name}) {
-		if ($opts->{clear}) {
-			$layer{$name}->{group}->removeChildNodes();
-			$layer{$name}->{group}->appendText("\n");
-		}
-		if (wantarray) {
-			return ($layer{$name}->{layer},
-				$layer{$name}->{group});
-		}
-		else {
-			return $layer{$name}->{group};
-		}
-	}
-	if (!defined $z_index) {
-		return undef;
-	}
-	$z_index += 0;
-	my $id = "layer$z_index";
-
-	my ($layer) = $self->{_svg_doc}->findnodes("//svg:g[\@inkscape:label='$name']");
-	if ($opts->{nocreate} && !$layer) {
-		return undef;
-	}
-
-	my $group;			# whatever is actually returned
-	if ($layer) {
-		($group) = (grep { ($_->nodeType() == XML_ELEMENT_NODE &&
-				    $_->nodeName() eq "g") }
-			    $layer->childNodes());
-	}
-	else {
-		$layer = $self->{_svg_doc}->createElement("g");
-		$layer->setAttribute("inkscape:label", $name);
-		$layer->setAttribute("id", $id);
-		$layer->setAttribute("inkscape:groupmode", "layer");
-		$layer->appendText("\n");
-
-		$group = $self->{_svg_doc}->createElement("g");
-		$group->appendText("\n");
-
-		$layer->appendText("    ");
-		$layer->appendChild($group);
-		$layer->appendText("\n");
-
-		my ($svg_doc_element) = $self->{_svg_doc}->documentElement();
-		my @layers = (grep { eval { ( $_->nodeType() == XML_ELEMENT_NODE &&
-					      $_->nodeName() eq "g" &&
-					      $_->getAttribute("id") =~ m{^layer(\d+)$} ) } }
-			      $svg_doc_element->nonBlankChildNodes());
-
-		my $i;
-		my $insertBefore = undef;
-		for ($i = 0; $i < scalar(@layers); $i += 1) {
-			my $layer__id = $layers[$i]->getAttribute("id");
-			next unless defined $layer__id;
-			next unless $layer__id =~ m{^layer(\d+)$};
-			my $checkid = $1 + 0;
-			if ($checkid > $z_index) {
-				$insertBefore = $layers[$i];
-				last;
+	my $limit = "";
+	if (scalar(@$tags)) {
+		my $tag;
+		foreach $tag (@$tags) {
+			if (ref($tag) ne "HASH") {
+				$tag = { k => $tag };
 			}
 		}
-
-		$svg_doc_element->insertBefore($layer, $insertBefore);
 	}
-
-	if ($unclipped) {
-		$group->removeAttribute("clip-path");
-		$group->removeAttribute("clip-rule");
+	return $tags;
+}
+sub create_clipped_group {
+	my ($self, $id) = @_;
+	my $group = $self->{_svg_doc}->createElementNS($NS{"svg"}, "g");
+	$group->setAttribute("clip-path" => "url(#${id})");
+	$group->setAttribute("clip-rule" => "nonzero");
+	return $group;
+}
+sub create_layer {
+	my ($self, %args) = @_;
+	my $layer = $self->{_svg_doc}->createElementNS($NS{"svg"}, "g");
+	$layer->setAttributeNS($NS{"inkscape"}, "inkscape:groupmode", "layer");
+	$layer->setAttributeNS($NS{"inkscape"}, "inkscape:label", $args{name}) if defined $args{name};
+	$layer->setAttributeNS($NS{"sodipodi"}, "sodipodi:insensitive", $args{writable} ? "true" : "false");
+	return $layer;
+}
+sub create_rectangle {
+	my ($self, %args) = @_;
+	my $rect = $self->{_svg_doc}->createElementNS($NS{"svg"}, "rect");
+	$rect->setAttribute("x",      $args{x});
+	$rect->setAttribute("y",      $args{y});
+	$rect->setAttribute("width",  $args{width});
+	$rect->setAttribute("height", $args{height});
+	$rect->setAttribute("style",  $args{style});
+	return $rect;
+}
+sub compose_style_string {
+	my ($self, $options, @classes) = @_;
+	return $self->_compose_style_string($options, "style", @classes);
+}
+sub _compose_style_string {
+	my ($self, $options, $style_attr_name, @classes) = @_;
+	@classes = (grep { /\S/ }
+		    map { ref($_) eq "HASH" ? $_ : split(/\s+/, $_) }
+		    map { ref($_) eq "ARRAY" ? @$_ : $_ }
+		    @classes);
+	my %style = ();
+	foreach my $class (@classes) {
+		my $add = (ref($class) eq "HASH") ? $class : $self->{classes}->{$class}->{$style_attr_name};
+		if ($add) {
+			%style = (%style, %$add);
+		}
 	}
-	else {
-		$group->setAttribute("clip-path" => "url(#documentClipPath)");
-		$group->setAttribute("clip-rule" => "nonzero");
+	if ($options && $options->{open} && scalar(keys(%style))) {
+		$style{"fill"}              = "none";
+		$style{"stroke-linecap"}  //= "round";
+		$style{"stroke-linejoin"} //= "round";
 	}
-
-	$layer{$name} = { layer => $layer,
-			  group => $group };
-	if (wantarray) {
-		return ($layer, $group);
+	if ($options && exists $options->{scale} && exists $style{"stroke-width"}) {
+		$style{"stroke-width"} *= $options->{scale};
 	}
-	else {
-		return $group;
-	}
+	return join(";",
+		    map { $_ . ":" . $style{$_} }
+		    sort  
+		    grep { $_ ne "r" }
+		    keys %style);
 }
 
 sub gtfs_url {
@@ -775,7 +877,6 @@ sub gtfs {
 sub update_transit_stops {
 	my ($self) = @_;
 	$self->update_scale();
-	$self->update_clip_path_node();
 
 	my $gtfs = $self->{_gtfs};
 	if (!$gtfs) { return; }
@@ -784,57 +885,101 @@ sub update_transit_stops {
 
 	my $dbh = $gtfs->dbh();
 	
-	my ($bus_stops_layer, $bus_stops_group) =
-		$self->svg_layer_node("gtfs:transit-stops", { clear => 1 });
+	my ($layer, $group, $group_2) = $self->svg_layer_node("gtfs:transit-stops", { clear => 1 });
 
 	my $sth = $dbh->prepare("select * from stops");
 	$sth->execute();
+
+	my $style = $self->layer_style("gtfs:transit-stops");
+	my $r = $style->{r} // 0.5;
+	my $style_string = $style->as_string();
+	
+	my $style_2 = $self->layer_style("gtfs:transit-stops", style_attr_name => "style_2");
+	my $r_2 = $style_2->{r} // 0.5;
+	my $style_2_string = $style_2->as_string();
+	
 	while (my $hash = $sth->fetchrow_hashref()) {
 		my $stop_id = $hash->{stop_id};
 		my $stop_code = $hash->{stop_code};
 		my $lat = $hash->{stop_lat};
 		my $lon = $hash->{stop_lon};
 
-		my $circle = $self->{_svg_doc}->createElement("circle");
+		my $title = join(" - ", grep { $_ }
+				 $hash->{stop_code},
+				 $hash->{stop_name},
+				 $hash->{stop_desc});
+
+		my $circle = $self->{_svg_doc}->createElementNS($NS{"svg"}, "circle");
 		$circle->setAttribute("cx", $self->lon2x($lon));
 		$circle->setAttribute("cy", $self->lat2y($lat));
-		$circle->setAttribute("r", 0.5);
-		$circle->setAttribute("style", "fill:#000000;stroke-width:0;stroke:none;");
+		$circle->setAttribute("r", $r);
+		$circle->setAttribute("style", $style_string);
+		$circle->setAttribute("title", $title) if $title;
+		$circle->setAttributeNS($NS{"mapmaker"}, "mapmaker:group", "1");
+		$group->appendChild($circle);
 
-		$bus_stops_group->appendText("      ");
-		$bus_stops_group->appendChild($circle);
-		$bus_stops_group->appendText("\n");
+		if (!($style_2->is_empty())) {
+			my $circle_2 = $self->{_svg_doc}->createElementNS($NS{"svg"}, "circle");
+			$circle_2->setAttribute("cx", $self->lon2x($lon));
+			$circle_2->setAttribute("cy", $self->lat2y($lat));
+			$circle_2->setAttribute("r", $r_2);
+			$circle_2->setAttribute("style", $style_2_string);
+			$circle_2->setAttribute("title", $title) if $title;
+			$circle_2->setAttributeNS($NS{"mapmaker"}, "mapmaker:group", "2");
+			if ($style_2->{group}) {
+				$group_2->appendChild($circle_2);
+			}
+			else {
+				$group->appendChild($circle_2);
+			}
+		}
 	}
 	warn("Done.\n");
 }
 
+sub transit_route_color {
+	my ($self, $route_short_name) = @_;
+	my $gtfs = $self->{_gtfs};
+	if (!$gtfs) { return; }
+	my $dbh = $gtfs->dbh();
+
+	my $sth = $dbh->prepare(qq(select route_color from routes where route_short_name = ?));
+	$sth->execute($route_short_name);
+	if (my ($color) = $sth->fetchrow_array()) {
+		warn("$route_short_name => $color\n") if $ENV{DEBUG};
+		return "#" . lc($color);
+	}
+	return undef;
+}
+
+sub transit_route_paint_order {
+	my ($self, $route_short_name) = @_;
+	my $gtfs = $self->{_gtfs};
+	if (!$gtfs) { return; }
+	
+	my $paint_order = eval { $self->{route_overrides}->{$route_short_name}->{paint_order} };
+	return $paint_order if defined $paint_order;
+
+	my $route_color = $self->transit_route_color($route_short_name);
+	return unless defined $route_color;
+	
+	$paint_order = eval { $self->{route_colors}->{$route_color}->{paint_order} };
+	return $paint_order if defined $paint_order;
+
+	return undef;
+}
+
+our $LAYER_INFO = {};
 sub update_transit_routes {
-	my ($self) = @_;
+	my ($self, @routes) = @_;
 	$self->update_scale();
-	$self->update_clip_path_node();
 
 	my $gtfs = $self->{_gtfs};
 	if (!$gtfs) { return; }
 
-	warn("  Deleting existing route layers...\n");
-	{
-		my @existing_layers = (grep { my $label = $_->getAttribute("inkscape:label");
-					      $label && $label =~ m{^gtfs:route:} }
-				       $self->{_svg_doc}->findnodes("/svg:svg/svg:g"));
-		foreach my $layer (@existing_layers) {
-			my ($group) = $layer->nonBlankChildNodes();
-			if ($group) {
-				$group->removeChildNodes();
-				$group->appendText("\n");
-			}
-		}
-	}
-
 	warn("Updating transit route layers...\n");
 
-	my $z_index = 6000;
-
-	my @routes = ();
+	my $z_index = $LAYER_INFO->{"gtfs:transit-routes"}->{z_index};
 
 	my $dbh = $gtfs->dbh();
 
@@ -847,144 +992,288 @@ sub update_transit_routes {
 
 	$routes_sth->execute();
 	while (my $route = $routes_sth->fetchrow_hashref()) {
-		warn(sprintf("  Creating layer for Route %s - %s\n",
-			     $route->{route_short_name},
-			     $route->{route_long_name}));
-		push(@routes, $route);
-		my $name = sprintf("gtfs:route:%s:%s",
-				   $route->{route_short_name},
-				   $route->{route_long_name});
-		my ($layer, $group) =
-			$self->svg_layer_node({ name => $name,
-						z_index => $z_index++ });
+		my $route_short_name = $route->{route_short_name};
+		my $route_long_name = $route->{route_long_name};
+		my $route_desc = $route->{route_desc};
 
-		my @shapes = ();
+		next if scalar(@routes) && !grep { $_ eq $route_short_name } @routes;
+		
+		my @existing_layers = $self->findnodes('/svg:svg/svg:g[@mapmaker:class="gtfs:transit-route"]' .
+						       '[@mapmaker:route-short-name="' . $route_short_name . '"]');
+		foreach my $layer (@existing_layers) {
+			warn("  Deleting existing route layer for $route_short_name\n");
+			$layer->parentNode()->removeChild($layer);
+		}
+
+		my $route_title = join(" - ", grep { $_ } ($route_short_name, $route_long_name, $route_desc));
+		my $google_route_color = $route->{route_color};
+		if ($google_route_color) {
+			$google_route_color = "#" . lc($google_route_color);
+		}
+
+		warn(sprintf("  Creating layer for Route %s - %s\n", $route_short_name, $route_long_name));
+		my $name = sprintf("gtfs:route:%s:%s", $route_short_name, $route_long_name);
+		my ($layer, $group, $group_2) = $self->svg_layer_node({ name => $name, z_index => $z_index++ });
+		my $paint_order = (
+				   eval { $self->{route_overrides}->{$route_short_name}->{paint_order} } //
+				   eval { $self->{route_colors}->{$google_route_color}->{paint_order} }
+				  );
+		if (defined $paint_order) {
+			$layer->setAttributeNS($NS{"mapmaker"},
+					       "mapmaker:paint-order", $paint_order);
+		}
+		$layer->setAttributeNS($NS{"mapmaker"}, "mapmaker:class", "gtfs:transit-route");
+		$layer->setAttributeNS($NS{"mapmaker"}, "mapmaker:route-short-name", $route_short_name) if defined $route_short_name;
+		$layer->setAttributeNS($NS{"mapmaker"}, "mapmaker:route-long-name", $route_long_name)   if defined $route_long_name;
+		$layer->setAttributeNS($NS{"mapmaker"}, "mapmaker:route-desc", $route_desc)             if defined $route_desc;
+
+		my $node_id_counter = 0;
+		my %xy_to_node_id = ();
+		my %node = ();	# map id to [x,y]
+		my @paths = ();	# each member an arrayref containing node_ids
 
 		$trips_sth->execute($route->{route_id});
 		while (my ($shape_id) = $trips_sth->fetchrow_array()) {
+			my $path = [];
 			$shapes_sth->execute($shape_id);
-			my @points = ();
 			while (my ($lon, $lat) = $shapes_sth->fetchrow_array()) {
-				push(@points, [$self->lon2x($lon),
-					       $self->lat2y($lat)]);
+				my $x = $self->lon2x($lon);
+				my $y = $self->lat2y($lat);
+				if (exists $xy_to_node_id{$x,$y}) {
+					push(@$path, $xy_to_node_id{$x,$y});
+				}
+				else {
+					$xy_to_node_id{$x,$y} = ++$node_id_counter;
+					$node{$node_id_counter} = [$x,$y];
+					push(@$path, $node_id_counter);
+				}
 			}
+			push(@paths, $path);
 			$shapes_sth->finish();
-
-			my $points = join(" ",
-					  map { sprintf("%.2f,%.2f", @$_) }
-					  # %.2f is accurate/precise enough to within
-					  # 1/9000'th of an inch
-					  @points);
-			push(@shapes, $points);
 		}
 		$trips_sth->finish();
 
-		my $style = "fill:none;stroke:red;stroke-width:0.7;stroke-linecap:round;stroke-linejoin:round;";
-		foreach my $points (@shapes) {
-			my $path = $self->{_svg_doc}->createElement("path");
-			$path->setAttribute("d", "M $points");
-			$path->setAttribute("style", $style);
+		my $route_override_style = eval { My::MapMaker::Style->new($self->{route_overrides}->{$route_short_name}->{style}) };
+		my $route_color_style    = eval { My::MapMaker::Style->new($self->{route_colors}->{$google_route_color}->{style}) };
 
-			$group->appendText("      ");
-			$group->appendChild($path);
-			$group->appendText("\n");
+		my $style = $self->layer_style("gtfs:transit-routes");
+		$style->set($route_color_style)    if $route_color_style;
+		$style->set($route_override_style) if $route_override_style;
+		$style->default("stroke", $google_route_color // "#000000");
+		my $style_string = $style->as_string();
+
+		my $route_override_style_2 = eval { My::MapMaker::Style->new($self->{route_overrides}->{$route_short_name}->{style_2}) };
+		my $route_color_style_2    = eval { My::MapMaker::Style->new($self->{route_colors}->{$google_route_color}->{style_2}) };
+		my $style_2 = $self->layer_style("gtfs:transit-routes", style_attr_name => "style_2");
+		$style_2->set($route_color_style_2)    if $route_color_style_2;
+		$style_2->set($route_override_style_2) if $route_override_style_2;
+		$style_2->default("stroke", $google_route_color // "#000000") if !$style_2->is_empty();
+		my $style_2_string = $style_2->as_string();
+
+		# warn($style->as_string_full());
+		# warn($style_2->as_string_full());
+
+		print STDERR ("  Consolidating chunks ... ");
+		my @chunks = find_chunks(@paths);
+		print STDERR ("done.\n");
+		foreach my $path (@chunks) {
+			my $path_obj = My::MapMaker::Path->new({ points => [ map { $node{$_} } @$path ],
+								 closed => 0 });
+			my $path_string = $path_obj->as_string();
+
+			my $path_node = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
+			$path_node->setAttribute("d", $path_string);
+			$path_node->setAttribute("style", $style_string);
+			$path_node->setAttribute("title", $route_title);
+			$path_node->setAttributeNS($NS{"mapmaker"}, "mapmaker:group", "1");
+			$group->appendChild($path_node);
+
+			if (!$style_2->is_empty()) {
+				my $path_node_2 = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
+				$path_node_2->setAttribute("d", $path_string);
+				$path_node_2->setAttribute("style", $style_2_string);
+				$path_node_2->setAttribute("title", $route_title);
+				$path_node_2->setAttributeNS($NS{"mapmaker"}, "mapmaker:group", "2");
+				if ($style_2->{group}) {
+					$group_2->appendChild($path_node_2);
+				}
+				else {
+					$group->appendChild($path_node_2);
+				}
+			}
 		}
 	}
 	$routes_sth->finish();
 }
 
-sub update_grid {
-	my ($self) = @_;
-	$self->update_scale();
-	$self->update_clip_path_node();
+sub find_chunks {
+	my @paths = @_;
 
-	my $grid = $self->{grid};
-	return unless $grid;
+	my @chunks = ();
+	my $chunk_id_counter = -1;
 
-	my $sprintf = $self->{grid_sprintf} // "%.4f";
-	my $doc = $self->{_svg_doc};
+	my %which_chunk_id = ();
+	# {A, B} => [id, 1]
+	# {B, A} => [id, -1]
 
-	my ($grid_layer, $grid_layer_group) = $self->svg_layer_node("generated:grid", { clear => 1 });
-	my $south = $self->{south}; my $ys = $self->lat2y($south);
-	my $north = $self->{north}; my $yn = $self->lat2y($north);
-	my $east = $self->{east};   my $xe = $self->lon2x($east);
-	my $west = $self->{west};   my $xw = $self->lon2x($west);
-	for (my $lat = int($south / $grid) * $grid; $lat <= $north; $lat += $grid) {
+	my $working_chunk_id;
+	my $working_chunk;
 
-		next if abs($lat - $south) < 0.000001;
-		next if abs($lat - $north) < 0.000001;
+	local $" = ", ";
 
-		my $y = $self->lat2y($lat);
+	my $work_on_new_chunk = sub {
+		my @points = @_;
+		$chunk_id_counter += 1;
+		$working_chunk_id = $chunk_id_counter;
+		$working_chunk = $chunks[$working_chunk_id] = [@points];
+		for (my $i = 0; $i < scalar(@points) - 1; $i += 1) {
+			my $A = $points[$i];
+			my $B = $points[$i + 1];
+			$which_chunk_id{$A, $B} = [$working_chunk_id, 1];
+			$which_chunk_id{$B, $A} = [$working_chunk_id, -1];
+		}
+	};
+	my $work_on_existing_chunk = sub {
+		my ($chunk_id, $direction) = @_;
+		$direction //= 1;
+		if ($direction == 1) {
+			$working_chunk_id = $chunk_id;
+			$working_chunk = $chunks[$chunk_id];
+		}
+		elsif ($direction == -1) {
+			$working_chunk_id = $chunk_id;
+			$working_chunk = $chunks[$chunk_id];
+			@{$chunks[$chunk_id]} = reverse @{$chunks[$chunk_id]};
+			my @k = keys(%which_chunk_id);
+			foreach my $k (@k) {
+				if ($which_chunk_id{$k}[0] == $chunk_id) {
+					$which_chunk_id{$k}[1] *= -1;
+				}
+			}
+		}
+	};
+	my $append_to_working_chunk = sub {
+		my @points = @_;
+		my $A;
+		foreach my $B (@points) {
+			$A //= $working_chunk->[-1];
+			push(@{$working_chunk}, $B);
+			$which_chunk_id{$A, $B} = [$working_chunk_id, 1];
+			$which_chunk_id{$B, $A} = [$working_chunk_id, -1];
+			$A = $B;
+		}
+	};
 
-		my $path = $doc->createElement("path");
-		$path->setAttribute("d", "M $xw,$y $xe,$y");
-		$path->setAttribute("style", $LAYER_INFO->{"generated:grid"}->{style});
-		$grid_layer_group->appendText("    ");
-		$grid_layer_group->appendChild($path);
-		$grid_layer_group->appendText("\n");
-
-		my $text = $doc->createElement("text");
-		$text->setAttribute("x", $xw);
-		$text->setAttribute("y", $y);
-		$text->setAttribute("style", $LAYER_INFO->{"generated:grid"}->{text_style});
-		$text->setAttribute("xml:space", "preserve");
-		my $tspan = $doc->createElement("tspan");
-		$tspan->setAttribute("x", $xw);
-		$tspan->setAttribute("y", $y);
-		$tspan->appendText(sprintf($sprintf, $lat));
-		$text->appendChild($tspan);
-		$grid_layer_group->appendText("    ");
-		$grid_layer_group->appendChild($text);
-		$grid_layer_group->appendText("\n");
+	for (my $i = 0; $i < scalar(@paths); $i += 1) {
+		my $path = $paths[$i];
+		$working_chunk_id = undef;
+		$working_chunk = undef;
+		for (my $j = 0; $j < scalar(@$path) - 1; $j += 1) {
+			my $A = $path->[$j];
+			my $B = $path->[$j + 1];
+			if (!defined $working_chunk_id) {
+				# start of path is segment A-B
+				my ($chunk_id, $direction) = eval { @{$which_chunk_id{$A, $B}} };
+				my $chunk = defined($chunk_id) ? $chunks[$chunk_id] : undef;
+				if (!defined $chunk_id) {
+					$work_on_new_chunk->($A, $B);
+				} elsif ($direction == 1) {
+					# existing chunk contains A-B segment
+					my $A_idx = firstidx { $_ == $A } @$chunk;
+					if ($A_idx == 0) {
+						# existing chunk starts with A-B
+						$work_on_existing_chunk->($chunk_id);
+					} else {
+						# existing chunk has segments before A-B
+						# split it into      ...-A and A-B-...
+						#               (existing)     (new chunk)
+						my @new_chunk = ($A, splice(@{$chunks[$chunk_id]}, $A_idx + 1));
+						$work_on_new_chunk->(@new_chunk);
+						# working chunk is now A-B-...
+					}
+				} elsif ($direction == -1) {
+					# existing chunk contains B-A segment
+					my $B_idx = firstidx { $_ == $B } @$chunk;
+					if ($B_idx == scalar(@{$chunks[$chunk_id]}) - 2) {
+						# existing chunk ends at B-A
+						$work_on_existing_chunk->($chunk_id, -1);
+						# working chunk is now A-B-...
+					}
+					else {
+						# existing chunk has segments after B-A
+						# split it into ...-B-A and A-...
+						#                 (new)     (existing)
+						my @new_chunk = (splice(@{$chunks[$chunk_id]}, 0, $B_idx + 1), $A);
+						$work_on_new_chunk->(reverse @new_chunk);
+						# working chunk is now A-B-...
+					}
+				}
+			} else {
+				# path: ...-Z-A-B-...
+				# working chunk has ...-Z-A-...
+				my ($chunk_id, $direction) = eval { @{$which_chunk_id{$A, $B}} };
+				if (!defined $chunk_id) {
+					# no existing chunk has A-B (or B-A) segment
+					if ($working_chunk->[-1] == $A) {
+						# working chunk ends with A
+						$append_to_working_chunk->($B);
+					} else {
+						my $A_idx = firstidx { $_ == $A } @$working_chunk;
+						# working chunk has stuff after A.
+						# split it into      ...-A and A-...
+						#               (existing)     (new)
+						my @new_chunk = ($A, splice(@$working_chunk, $A_idx + 1));
+						$work_on_new_chunk->(@new_chunk);
+						$work_on_new_chunk->($A, $B);
+					}
+				} elsif ($direction == 1) {
+					# an existing chunk has A-B segment
+					if ($working_chunk_id == $chunk_id) {
+						# current working chunk is existing chunk so it has ...-Z-A-B-...
+						$work_on_existing_chunk->($chunk_id);
+					} else {
+						# working chunk has ...-Z-A-...
+						# existing chunk has ...-A-B-...
+						$work_on_existing_chunk->($chunk_id);
+					}
+				} else {
+					# an existing chunk has B-A segment
+					if ($working_chunk_id == $chunk_id) {
+						# current working chunk with ...-Z-A-...
+						# is same as existing chunk with ...-B-A-Z-...
+						$work_on_existing_chunk->($chunk_id, -1);
+					} else {
+						# working chunk has ...-Z-A-...
+						# existing chunk has ...-B-A-...
+						$work_on_existing_chunk->($chunk_id, -1);
+					}
+				}
+			}
+		}
 	}
-	for (my $lon = int($west / $grid) * $grid;
-	     $lon <= $east;
-	     $lon += $grid) {
-
-		next if abs($lon - $east) < 0.000001;
-		next if abs($lon - $west) < 0.000001;
-
-		my $x = $self->lon2x($lon);
-
-		my $path = $doc->createElement("path");
-		$path->setAttribute("d", "M $x,$ys $x,$yn");
-		$path->setAttribute("style", $LAYER_INFO->{"generated:grid"}->{style});
-		$grid_layer_group->appendText("    ");
-		$grid_layer_group->appendChild($path);
-		$grid_layer_group->appendText("\n");
-
-		my $text = $doc->createElement("text");
-		$text->setAttribute("x", $x);
-		$text->setAttribute("y", $ys);
-		$text->setAttribute("style", $LAYER_INFO->{"generated:grid"}->{text_style});
-		$text->setAttribute("xml:space", "preserve");
-		my $tspan = $doc->createElement("tspan");
-		$tspan->setAttribute("x", $x);
-		$tspan->setAttribute("y", $ys);
-		$tspan->appendText(sprintf($sprintf, $lon));
-		$text->appendChild($tspan);
-		$grid_layer_group->appendText("    ");
-		$grid_layer_group->appendChild($text);
-		$grid_layer_group->appendText("\n");
-	}
-}
-
-sub create_all_layers {
-	my ($self) = @_;
-	warn("Making sure all layers are created...\n");
-	foreach my $layer_name (keys %{$LAYER_INFO}) {
-		warn("  $layer_name...\n");
-		$self->svg_layer_node($layer_name);
-	}
+	return @chunks;
 }
 
 sub finish_xml {
 	my ($self) = @_;
-	open(my $fh, ">", $self->{filename}) or
-		die("cannot write $self->{filename}: $!\n");
-	warn("Writing $self->{filename} ...\n");
-	$self->{_svg_doc}->toFH($fh, 1);
-	warn("Done.\n");
+
+	open(my $fh, ">", $self->{filename}) or die("cannot write $self->{filename}: $!\n");
+	print STDERR ("Writing $self->{filename} ... ");
+	my $string = $self->{_svg_doc}->toString(1);
+
+	# we're fine with indentation everywhere else, but inserting
+	# whitespace within a <text> node, before and after <tspan>
+	# nodes, screws things up.  and yes this is quick-and-dirty,
+	# :dealwithit:
+	$string =~ s{[\s\r\n]*(?=<tspan)}{}gs;
+	$string =~ s{(<tspan[^>]*>.*?</tspan>)[\s\r\n]*}{$1}gs;
+
+	# minimize diffs with netscape-output XML
+	$string =~ s{\s*/>}{ />}gs;
+
+	print $fh $string;
+	close($fh);
+	print STDERR ("done.\n");
 }
 
 1;
