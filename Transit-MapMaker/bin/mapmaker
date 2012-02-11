@@ -1,100 +1,252 @@
 #!/usr/bin/perl
 use warnings;
 use strict;
+
+BEGIN {
+	if ($ENV{DEBUG_LIBS}) {
+		unshift(@INC, "$ENV{HOME}/git/perl-transit-gtfs/Transit-MapMaker/lib");
+		unshift(@INC, "$ENV{HOME}/git/perl-transit-gtfs/Transit-GTFS/lib");
+	}
+}
+
+use Carp qw(verbose);
+
 use Transit::GTFS;
 use Transit::MapMaker;
 use Getopt::Long;
 use YAML;
 
-our $verbose = 0;
+my $shell = My::Shell->new();
+Getopt::Long::Configure("bundling", "gnu_compat");
+Getopt::Long::GetOptions("h|help" => sub { $shell->cmd__help(); exit(0); });
+$shell->run(@ARGV);
 
-sub usage {
+package My::Shell;
+use List::MoreUtils qw(firstidx);
+sub new {
+	my $class = shift();
+	my $self = bless({}, $class);
+	return $self;
+}
+sub cmd__help {
+	my ($self) = @_;
 	print(<<"END");
-usage: $0 MAPNAME update
-       $0 MAPNAME force-update
-       $0 MAPNAME repopulate
-       $0 MAPNAME force-repopulate
-       $0 MAPNAME download-map-data
-       $0 MAPNAME refresh-osm-styles
-       $0 MAPNAME update-transit-stops
-       $0 MAPNAME update-transit-routes
-  -h, --help
-  -v, --version
+usage:
+	$0 list-maps
+	$0 FILENAME COMMAND [ \; COMMAND ... ]
+where COMMAND is one of:
+	update
+	gtfs-update
+	force-gtfs-update
+	gtfs-repopulate
+	force-gtfs-repopulate
+	update-map-layers
+	refresh-styles
+	refresh-transit-stop-styles
+	refresh-transit-route-styles
+	update-transit-stops
+	update-transit-routes
 END
 }
+sub run {
+	my ($self, @args) = @_;
+	my @next;
+	my $semicolon = firstidx { $_ eq ";" } @args;
+	if ($semicolon != -1) {
+		splice(@args, $semicolon, 1);
+		@next = splice(@args, $semicolon);
+	}
+	my $command = shift(@args);
+	if ($command =~ /\./) {	# is a filename
+		unshift(@args, $command);
+		$command = "map";
+	}
+	die("no command specified; type '$0 help' for help.\n") unless defined $command;
+	my $method = $self->find_method($command);
+	die("no such command: '$command'; type '$0 help' for help.\n") unless $method;
+	$self->$method(@args);
 
-Getopt::Long::Configure("bundling", "gnu_compat");
-Getopt::Long::GetOptions("v|verbose"        => sub { $verbose += 1; },
-			 "h|help"           => sub { usage(); exit(0); });
-
-my $maps = YAML::LoadFile("maps.yaml");
-if (!$maps) {
-	die("No maps.yaml data.\n");
+	if (@next) {
+		$self->run(@next);
+	}
 }
-
-my ($mapname, $command, @args) = @ARGV;
-my $mapinfo = $maps->{$mapname};
-if (!$mapinfo) {
-	die("No mapinfo for map '$mapname'\n");
+sub find_method {
+	my ($self, $command, $prefix) = @_;
+	$command =~ s{-}{_}g;
+	my $method_name = "cmd__" . $command;
+	if (defined $prefix) {
+		$method_name = "cmd_" . $prefix . "__" . $command;
+	}
+	return $self->can($method_name);
 }
-my $mm = Transit::MapMaker->new(%$mapinfo);
-
-if (!defined $command) {
-	die("Not gonna do anything.\n");
+sub load_map_info {
+	my ($self) = @_;
+	return if $self->{maps};
+	my $maps = YAML::LoadFile("maps.yaml");
+	if (!$maps) {
+		die("No maps.yaml data.\n");
+	}
+	$self->{maps} = $maps;
 }
-elsif ($command eq "update") {
-	$mm->gtfs()->update();
-	$mm->gtfs()->repopulate();
-	$mm->create_all_layers();
+sub cmd__list_maps {
+	my ($self) = @_;
+	$self->load_map_info();
+	foreach (sort { $a cmp $b } keys(%{$self->{maps}})) {
+		print("$_\n");
+	}
+}
+sub cmd__map {
+	my ($self, $mapname, $subcommand, @args) = @_;
+	die("no map name specified\n") unless defined $mapname;
+	die("no subcommand specified\n") unless defined $subcommand;
+	my $method = $self->find_method($subcommand);
+	die("no such command: '$subcommand'\n") unless $method;
+
+	$self->load_map_info();
+	my $mapinfo = $self->{maps}->{$mapname};
+	if (!$mapinfo) {
+		die("no such map: '$mapname'\n");
+	}
+	my $mapmaker = Transit::MapMaker->new(filename => $mapname, %$mapinfo);
+	$self->{mapmaker} = $mapmaker;
+
+	$self->$method(@args);
+}
+sub cmd__update {
+	my ($self) = @_;
+	my $mm = $self->{mapmaker};
+	die("map MAPNAME must be specified.\n") unless $mm;
+	my $gtfs = $mm->gtfs();
+	if (!$mm->gtfs()) {
+		warn("map contains no transit data.\n");
+	}
+	if ($mm->gtfs()) {
+		$mm->gtfs()->update();
+		$mm->gtfs()->repopulate();
+	}
 	$mm->download_map_data();
 	$mm->plot_osm_layers();
-	$mm->update_transit_stops();
-	$mm->update_transit_routes();
+	if ($mm->gtfs()) {
+		$mm->update_transit_stops();
+		$mm->update_transit_routes();
+	}
 	$mm->update_grid();
 }
-elsif ($command eq "gtfs-update") {
-	$mm->gtfs()->update();
+sub cmd__gtfs_update {
+	my ($self) = @_;
+	my $mm = $self->{mapmaker};
+	die("map MAPNAME must be specified.\n") unless $mm;
+	my $gtfs = $mm->gtfs();
+	if (!$mm->gtfs()) {
+		die("map contains no transit data.\n");
+	}
+	$gtfs->update();
 }
-elsif ($command eq "force-gtfs-update") {
-	$mm->gtfs()->force_update();
+sub cmd__force_gtfs_update {
+	my ($self) = @_;
+	my $mm = $self->{mapmaker};
+	die("map MAPNAME must be specified.\n") unless $mm;
+	my $gtfs = $mm->gtfs();
+	if (!$mm->gtfs()) {
+		die("map contains no transit data.\n");
+	}
+	$gtfs->force_update();
 }
-elsif ($command eq "gtfs-repopulate") {
-	$mm->gtfs()->repopulate();
+sub cmd__gtfs_repopulate {
+	my ($self) = @_;
+	my $mm = $self->{mapmaker};
+	die("map MAPNAME must be specified.\n") unless $mm;
+	my $gtfs = $mm->gtfs();
+	if (!$mm->gtfs()) {
+		die("map contains no transit data.\n");
+	}
+	$gtfs->repopulate();
 }
-elsif ($command eq "force-gtfs-repopulate") {
-	$mm->gtfs()->force_repopulate();
+sub cmd__force_gtfs_repopulate {
+	my ($self) = @_;
+	my $mm = $self->{mapmaker};
+	die("map MAPNAME must be specified.\n") unless $mm;
+	my $gtfs = $mm->gtfs();
+	if (!$mm->gtfs()) {
+		die("map contains no transit data.\n");
+	}
+	$gtfs->force_repopulate();
 }
-elsif ($command eq "update-osm-map") {
-	$mm->create_all_layers();
+sub cmd__update_map_layers {
+	my ($self) = @_;
+	my $mm = $self->{mapmaker};
+	die("map MAPNAME must be specified.\n") unless $mm;
 	$mm->download_map_data();
 	$mm->plot_osm_layers();
 }
-elsif ($command eq "update-osm-map-styles") {
-	$mm->create_all_layers();
-	$mm->refresh_osm_styles();
+sub cmd__update_openstreetmap_layers {
+	my ($self) = @_;
+	my $mm = $self->{mapmaker};
+	die("map MAPNAME must be specified.\n") unless $mm;
+	$mm->download_map_data();
+	$mm->plot_osm_maps();
 }
-elsif ($command eq "update-transit-stops") {
-	$mm->create_all_layers();
-	$mm->update_transit_stops();
-}
-elsif ($command eq "update-transit-routes") {
-	$mm->create_all_layers();
-	$mm->update_transit_routes();
-}
-elsif ($command eq "update-transit") {
-	$mm->create_all_layers();
-	$mm->update_transit_stops();
-	$mm->update_transit_routes();
-}
-elsif ($command eq "update-grid") {
-	$mm->create_all_layers();
-	$mm->update_grid();
-}
-elsif ($command eq "update-map-border") {
-	$mm->create_all_layers();
+sub cmd__refresh_styles {
+	my ($self) = @_;
+	my $mm = $self->{mapmaker};
+	die("map MAPNAME must be specified.\n") unless $mm;
+	$mm->refresh_styles();
 	$mm->update_map_border();
+	$mm->update_map_background();
 }
-else {
-	die("No such command: '$command'\n");
+sub cmd__refresh_transit_stop_styles {
+	my ($self) = @_;
+	my $mm = $self->{mapmaker};
+	die("map MAPNAME must be specified.\n") unless $mm;
+	$mm->refresh_transit_stop_styles();
+}
+sub cmd__refresh_transit_route_styles {
+	my ($self) = @_;
+	my $mm = $self->{mapmaker};
+	die("map MAPNAME must be specified.\n") unless $mm;
+	$mm->refresh_transit_route_styles();
+}
+sub cmd__update_transit_stops {
+	my ($self) = @_;
+	my $mm = $self->{mapmaker};
+	die("map MAPNAME must be specified.\n") unless $mm;
+	my $gtfs = $mm->gtfs();
+	if (!$mm->gtfs()) {
+		die("map contains no transit data.\n");
+	}
+	$mm->update_transit_stops();
+}
+sub cmd__update_transit_routes {
+	my ($self, @routes) = @_;
+	my $mm = $self->{mapmaker};
+	die("map MAPNAME must be specified.\n") unless $mm;
+	my $gtfs = $mm->gtfs();
+	if (!$mm->gtfs()) {
+		die("map contains no transit data.\n");
+	}
+	$mm->update_transit_routes(@routes);
+}
+sub cmd__update_transit {
+	my ($self) = @_;
+	my $mm = $self->{mapmaker};
+	die("map MAPNAME must be specified.\n") unless $mm;
+	my $gtfs = $mm->gtfs();
+	if (!$mm->gtfs()) {
+		die("map contains no transit data.\n");
+	}
+	$mm->update_transit_stops();
+	$mm->update_transit_routes();
+}
+sub cmd__update_grid {
+	my ($self) = @_;
+	my $mm = $self->{mapmaker};
+	die("map MAPNAME must be specified.\n") unless $mm;
+	$mm->update_grid();
+}
+sub cmd__update_map_border {
+	my ($self) = @_;
+	my $mm = $self->{mapmaker};
+	die("map MAPNAME must be specified.\n") unless $mm;
+	$mm->update_map_border();
 }
 
