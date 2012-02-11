@@ -262,9 +262,9 @@ sub update_map_data {
 
 our %NS;
 BEGIN {
-	$NS{"svg"}              = "http://www.w3.org/2000/svg";
-	$NS{"inkscape"}         = "http://www.inkscape.org/namespaces/inkscape";
-	$NS{"sodipodi"}         = "http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd";
+	$NS{"svg"}      = "http://www.w3.org/2000/svg";
+	$NS{"inkscape"} = "http://www.inkscape.org/namespaces/inkscape";
+	$NS{"sodipodi"} = "http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd";
 	$NS{"mapmaker"} = "http://webonastick.com/namespaces/transit-mapmaker";
 }
 
