@@ -68,11 +68,13 @@ anonymous hash:
 
 =cut
 
+our $verbose = 0;
+
 sub new {
 	my ($class, $url, $options) = @_;
 	my $self = fields::new($class);
 	$self->{url} = $url;
-	$self->{verbose} = 0;
+	$self->{verbose} = $verbose;
 	if ($options) {
 		while (my ($k, $v) = each(%$options)) {
 			$self->{$k} = $v;
@@ -100,7 +102,9 @@ sub update {
 	my $zip_filename = $self->get_zip_filename();
 
 	mkpath(dirname($zip_filename));
+	print STDERR ("GET $url ... ") if $self->{verbose};
 	my $rc = mirror($url, $zip_filename);
+	print STDERR ("$rc\n") if $self->{verbose};
 
 	if ($rc == RC_NOT_MODIFIED) {
 		# nothing further needs to be done, i guess.
@@ -144,9 +148,9 @@ sub repopulate {
 	$self->_repopulate_tables();
 	$self->_update_populated_mtime();
 
-	warn("Committing...\n") if $self->{verbose};
+	print STDERR ("Committing database transaction ... ") if $self->{verbose};
 	$self->commit();
-	warn("Done.\n") if $self->{verbose};
+	print STDERR ("done.\n") if $self->{verbose};
 }
 
 sub force_repopulate {
@@ -168,7 +172,7 @@ sub get_populated_mtime {
 sub drop_tables {
 	my ($self) = @_;
 	my $dbh = $self->dbh();
-	warn("Deleting tables...\n") if $self->{verbose};
+	print STDERR ("Dropping database tables ... ") if $self->{verbose};
 	$dbh->do("drop table if exists agency;");
 	$dbh->do("drop table if exists stops;");
 	$dbh->do("drop table if exists routes;");
@@ -183,13 +187,13 @@ sub drop_tables {
 	$dbh->do("drop table if exists transfers;");
 	$dbh->do("drop table if exists feed_info;");
 	$dbh->do("drop table if exists mtime;");
-	warn("  Done deleting tables.\n") if $self->{verbose};
+	print STDERR ("done.\n") if $self->{verbose};
 }
 
 sub _create_tables {
 	my ($self) = @_;
 	my $dbh = $self->dbh();
-	warn("Creating tables...\n") if $self->{verbose};
+	print STDERR ("Creating database tables ...") if $self->{verbose};
 	$dbh->do(<<"END");
 create table if not exists mtime (
 	mtime             integer
@@ -389,11 +393,47 @@ create table if not exists feed_info (
 	feed_version		varchar(64)
 );
 END
-	warn("Done creating tables.\n") if $self->{verbose};
 
-	warn("Creating indexes...\n");
-	$dbh->do("create index if not exists idx_shapes_id on shapes(shape_id);");
-	warn("Done creating indexes.\n");
+	print STDERR ("Creating indexes ... ") if $self->{verbose};
+	$dbh->do(<<"END");
+create index if not exists idx_shapes_id on shapes(shape_id);
+END
+	$dbh->do(<<"END");
+create index if not exists idx_shapes_pt_sequence on shapes(shape_pt_sequence);
+END
+	$dbh->do(<<"END");
+create index if not exists idx_trips_route_id on trips(route_id);
+END
+	$dbh->do(<<"END");
+create index if not exists idx_trips_shape_id on trips(shape_id);
+END
+	$dbh->do(<<"END");
+create index if not exists idx_stop_times_trip_id on stop_times(trip_id);
+END
+
+	$dbh->do(<<"END");
+create index if not exists idx_trip_id on trips(trip_id);
+END
+	$dbh->do(<<"END");
+create index if not exists idx_stop_times_stop_id on stop_times(stop_id);
+END
+	$dbh->do(<<"END");
+create index if not exists idx_stop_id on stops(stop_id);
+END
+	$dbh->do(<<"END");
+create index if not exists idx_stop_name on stops(stop_name);
+END
+	$dbh->do(<<"END");
+create index if not exists idx_stop_code on stops(stop_code);
+END
+	$dbh->do(<<"END");
+create index if not exists idx_route_id on routes(route_id);
+END
+	$dbh->do(<<"END");
+create index if not exists idx_route_short_name on routes(route_short_name);
+END
+
+	print STDERR ("done.\n") if $self->{verbose};
 }
 
 sub _repopulate_tables {
@@ -426,18 +466,19 @@ use Text::CSV;
 sub _repopulate_data {
 	my ($self, $zip, $table, $required) = @_;
 
-	my $member = "$table.txt";
-	my $fullpath = $self->get_dir() . "/" . $member;
-	if (!$zip->memberNamed($member)) {
+	my $file_name = "$table.txt";
+	my $fullpath = $self->get_dir() . "/" . $file_name;
+	my $member = $zip->memberNamed($file_name) // $zip->memberNamed("google_transit/$file_name");
+	if (!$member) {
 		if ($required) {
-			die("$member not found");
+			die("member '$member' not found");
 		}
 		else {
 			return;
 		}
 	}
-	if ($zip->extractMember($member, $fullpath) != AZ_OK) {
-		die("could not extract $member");
+	if ($member->extractToFileNamed($fullpath) != AZ_OK) {
+		die("could not extract member $file_name to $fullpath");
 	}
 	open(my $fh, "<", $fullpath) or die("cannot read $fullpath: $!\n");
 	my $csv = Text::CSV->new ({ binary => 1 });
@@ -446,11 +487,11 @@ sub _repopulate_data {
 
 	my $dbh = $self->dbh();
 
-	warn("Deleting rows from $table...\n") if $self->{verbose};
+	print STDERR ("deleting rows from $table ...") if $self->{verbose};
 	$dbh->do("delete from $table;");
-	warn("Done.\n") if $self->{verbose};
+	print STDERR ("done.\n") if $self->{verbose};
 
-	warn("Repopulating into $table...\n") if $self->{verbose};
+	print STDERR ("(re)populating into $table ...\n") if $self->{verbose};
 	my $sql = sprintf("insert into $table(%s) values(%s);",
 			  join(", ", @$fields),
 			  join(", ", ('?') x scalar(@$fields)));
@@ -462,7 +503,7 @@ sub _repopulate_data {
 		print STDERR ("  $rows rows\r") if
 			$self->{verbose} && $rows % 100 == 0;
 	}
-	print STDERR ("Done.  $rows rows.\n") if $self->{verbose};
+	print STDERR ("  done; inserted $rows rows.\n") if $self->{verbose};
 	return;
 }
 

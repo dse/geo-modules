@@ -1,8 +1,9 @@
+bin/mapmaker
 Changes
-MANIFEST
-Makefile.PL
-README
 lib/Transit/MapMaker.pm
+Makefile.PL
+MANIFEST
+README
 t/00-load.t
 t/pod-coverage.t
 t/pod.t

@@ -211,13 +211,13 @@ sub file_put_contents {		# php-like lol
 	print $fh $contents;
 }
 
-sub download_map_data {
+sub update_openstreetmap {
 	my ($self, $force) = @_;
 	$self->{_map_xml_filenames} = [];
-	$self->_download_map_data($force);
+	$self->_update_openstreetmap($force);
 }
 
-sub _download_map_data {
+sub _update_openstreetmap {
 	my ($self, $force, $west, $south, $east, $north) = @_;
 
 	$west  //= ($self->{map_data_west}  // $self->{west});
@@ -239,10 +239,10 @@ sub _download_map_data {
 	my $status = eval { file_get_contents($txt_filename); };
 
 	if ($status && $status eq "split-up") {
-		$self->_download_map_data($force, $west,       $south,      $center_lon, $center_lat);
-		$self->_download_map_data($force, $center_lon, $south,      $east,       $center_lat);
-		$self->_download_map_data($force, $west,       $center_lat, $center_lon, $north);
-		$self->_download_map_data($force, $center_lon, $center_lat, $east,       $north);
+		$self->_update_openstreetmap($force, $west,       $south,      $center_lon, $center_lat);
+		$self->_update_openstreetmap($force, $center_lon, $south,      $east,       $center_lat);
+		$self->_update_openstreetmap($force, $west,       $center_lat, $center_lon, $north);
+		$self->_update_openstreetmap($force, $center_lon, $center_lat, $east,       $north);
 	}
 	elsif (-e $xml_filename && !$force) {
 		warn("Not updating $xml_filename\n");
@@ -250,9 +250,9 @@ sub _download_map_data {
 	}
 	else {
 		my $ua = LWP::UserAgent->new();
-		warn("Downloading $url ...\n");
+		print STDERR ("Downloading $url ... ");
 		my $response = $ua->mirror($url, $xml_filename);
-		warn(sprintf("  => %s\n", $response->status_line()));
+		printf STDERR ("%s\n", $response->status_line());
 		my $rc = $response->code();
 		if ($rc == RC_NOT_MODIFIED) {
 			push(@{$self->{_map_xml_filenames}}, $xml_filename);
@@ -262,10 +262,10 @@ sub _download_map_data {
 			file_put_contents($txt_filename, "split-up");
 			my $center_lat = ($north + $south) / 2;
 			my $center_lon = ($west + $east) / 2;
-			$self->_download_map_data($force, $west,       $south,      $center_lon, $center_lat);
-			$self->_download_map_data($force, $center_lon, $south,      $east,       $center_lat);
-			$self->_download_map_data($force, $west,       $center_lat, $center_lon, $north);
-			$self->_download_map_data($force, $center_lon, $center_lat, $east,       $north);
+			$self->_update_openstreetmap($force, $west,       $south,      $center_lon, $center_lat);
+			$self->_update_openstreetmap($force, $center_lon, $south,      $east,       $center_lat);
+			$self->_update_openstreetmap($force, $west,       $center_lat, $center_lon, $north);
+			$self->_update_openstreetmap($force, $center_lon, $center_lat, $east,       $north);
 		}
 		elsif (is_success($rc)) {
 			push(@{$self->{_map_xml_filenames}}, $xml_filename);
@@ -279,9 +279,9 @@ sub _download_map_data {
 	}
 }
 
-sub update_map_data {
+sub force_update_openstreetmap {
 	my ($self) = @_;
-	$self->download_map_data(1);
+	$self->update_openstreetmap(1);
 }
 
 our %NS;
@@ -560,10 +560,10 @@ sub style_node {
 
 	my $contents = "\n";
 	foreach my $class (sort keys %{$self->{classes}}) {
-		my $style   = $self->compose_style_string(class => $class);
-		my $style_2 = $self->compose_style_string(class => $class, style_attr_name => "style_2");
-		$contents .= "        .${class}   { $style }\n";
-		$contents .= "        .${class}_2 { $style_2 }\n" if $style_2;
+		my $css   = $self->compose_style_string(class => $class);
+		my $css_2 = $self->compose_style_string(class => $class, style_attr_name => "style_2");
+		$contents .= "        .${class}   { $css }\n";
+		$contents .= "        .${class}_2 { $css_2 }\n" if $self->has_style_2(class => $class);
 	}
 	
 	$contents .= <<'END';
@@ -689,8 +689,7 @@ sub background_layer {
 				    y      => $self->{_svg_north},
 				    width  => $self->{_svg_east} - $self->{_svg_west},
 				    height => $self->{_svg_south} - $self->{_svg_north},
-				    class  => "map-background",
-				    style  => $self->compose_style_string(class => "map-background"));
+				    class  => "map-background");
 	$background->appendChild($rect);
 	return $background;
 }
@@ -707,8 +706,7 @@ sub white_layer {
 				    y      => $self->{_svg_north},
 				    width  => $self->{_svg_east} - $self->{_svg_west},
 				    height => $self->{_svg_south} - $self->{_svg_north},
-				    class  => "WHITE",
-				    style  => $self->compose_style_string(style => { fill => "#fff" }));
+				    class  => "WHITE");
 	$background->appendChild($rect);
 	return $background;
 }
@@ -725,35 +723,33 @@ sub border_layer {
 				    y      => $self->{_svg_north},
 				    width  => $self->{_svg_east} - $self->{_svg_west},
 				    height => $self->{_svg_south} - $self->{_svg_north},
-				    class  => "map-border MAP_BORDER",
-				    style  => $self->compose_style_string(class => "map-border",
-									  style => { "fill" => "none", "stroke-linejoin" => "square" }));
+				    class  => "map-border MAP_BORDER");
 	$border->appendChild($rect);
 	return $border;
 }
 
 sub openstreetmap_layer {
 	my ($self, $map_area_layer) = @_;
-	my $osm_layer = $self->layer(name => "OpenStreetMap",
-				     z_index => 100,
-				     parent => $map_area_layer);
-	return $osm_layer;
+	my $layer = $self->layer(name => "OpenStreetMap",
+				 z_index => 100,
+				 parent => $map_area_layer);
+	return $layer;
 }
 
 sub transit_map_layer {
 	my ($self, $map_area_layer) = @_;
-	my $osm_layer = $self->layer(name => "Transit",
-				     z_index => 200,
-				     parent => $map_area_layer);
-	return $osm_layer;
+	my $layer = $self->layer(name => "Transit",
+				 z_index => 200,
+				 parent => $map_area_layer);
+	return $layer;
 }
 
 sub transit_stops_layer {
 	my ($self, $map_area_layer) = @_;
-	my $osm_layer = $self->layer(name => "Transit Stops",
-				     z_index => 300,
-				     parent => $map_area_layer);
-	return $osm_layer;
+	my $layer = $self->layer(name => "Transit Stops",
+				 z_index => 300,
+				 parent => $map_area_layer);
+	return $layer;
 }
 
 sub get_transit_routes {
@@ -1088,23 +1084,29 @@ sub plot_transit_stops {
 
 	my @stops = $self->get_transit_stops();
 
-	my $class = "transit-stop";
-	my $style_hash = $self->compose_style(class => $class);
-	my $style = $self->compose_style_string(class => $class);
-
+	my $class        = "transit-stop";
+	my $class_2      = "transit-stop_2";
+	my $has_style_2  = $self->has_style_2(class => $class);
+	my $r   = $self->get_style_property(class => $class,
+					    property => "r") // 1.0;
+	my $r_2 = $self->get_style_property(class => $class,
+					    style_attr_name => "style_2",
+					    property => "r") // 0.5;
+	
 	foreach my $map_area (@{$self->{_map_areas}}) {
 		$self->update_scale($map_area);
 		my $svg_west  = $self->{_svg_west};
 		my $svg_east  = $self->{_svg_east};
 		my $svg_north = $self->{_svg_north};
 		my $svg_south = $self->{_svg_south};
-
+		
 		my $map_area_layer = $self->map_area_layer($map_area);
 		my $transit_stops_layer = $self->transit_stops_layer($map_area_layer);
 		my $clipped_group = $self->clipped_group(parent => $transit_stops_layer,
 							 clip_path_id => $map_area->{clip_path_id});
 
-		foreach my $stop ($self->get_transit_stops()) {
+		my $plot = sub {
+			my ($stop, $class, $r) = @_;
 			my $stop_id   = $stop->{stop_id};
 			my $stop_code = $stop->{stop_code};
 			my $stop_name = $stop->{stop_name};
@@ -1114,20 +1116,24 @@ sub plot_transit_stops {
 			my $title = join(" - ", grep { $_ } ($stop_code, $stop_name, $stop_desc));
 			my $x = $self->lon2x($lon);
 			my $y = $self->lat2y($lat);
-			next if $x < $svg_west  || $x > $svg_east;
-			next if $y < $svg_north || $y > $svg_south;
+			return if $x < $svg_west  || $x > $svg_east;
+			return if $y < $svg_north || $y > $svg_south;
 			my $circle = $self->{_svg_doc}->createElementNS($NS{"svg"}, "circle");
 			$circle->setAttribute("cx", $x);
 			$circle->setAttribute("cy", $y);
-			if ($self->{for_inkscape}) {
-				$circle->setAttribute("style", $style);
-			}
-			else {
-				$circle->setAttribute("class", $class);
-			}
-			$circle->setAttribute("r", $style_hash->{r} // 0.5);
+			$circle->setAttribute("class", $class);
+			$circle->setAttribute("r", $r);
 			$circle->setAttribute("title", $title) if $title;
 			$clipped_group->appendChild($circle);
+		};
+		
+		foreach my $stop ($self->get_transit_stops()) {
+			$plot->($stop, $class, $r);
+		}
+		if ($has_style_2) {
+			foreach my $stop ($self->get_transit_stops()) {
+				$plot->($stop, $class_2, $r_2);
+			}
 		}
 	}
 }
@@ -1156,16 +1162,12 @@ sub plot_transit_routes {
 	my $exceptions_group;
 	my $exceptions_class;  
 	my $exceptions_class_2;
-	my $exceptions_style;
-	my $exceptions_style_2;
 	if (defined $exceptions_group_name) {
 		$exceptions_group = $route_groups{$exceptions_group_name};
 	}
 	if (defined $exceptions_group) {
 		$exceptions_class   = $exceptions_group->{class};
 		$exceptions_class_2 = $exceptions_group->{class} . "_2";
-		$exceptions_style   = $self->compose_style_string(class => $exceptions_group->{class});
-		$exceptions_style_2 = $self->compose_style_string(class => $exceptions_group->{class}, style_attr_name => "style_2");
 	}
 
 	foreach my $route ($self->get_transit_routes()) {
@@ -1240,9 +1242,6 @@ sub plot_transit_routes {
 		my $class   = $route_group->{class};
 		my $class_2 = $route_group->{class} . "_2";
 
-		my $style   = $self->compose_style_string(class => $route_group->{class});
-		my $style_2 = $self->compose_style_string(class => $route_group->{class}, style_attr_name => "style_2");
-
 		foreach my $map_area (@{$self->{_map_areas}}) {
 			$self->update_scale($map_area);
 			my $map_area_layer = $self->map_area_layer($map_area);
@@ -1263,8 +1262,6 @@ sub plot_transit_routes {
 				my $route_group_name = $args{route_group_name};
 				my $class            = $args{class};
 				my $class_2          = $args{class_2};
-				my $style            = $args{style};
-				my $style_2          = $args{style_2};
 				my @coords = map {
 					my $svgx = $self->lon2x($coords{$_}->[0]);
 					my $svgy = $self->lat2y($coords{$_}->[1]);
@@ -1286,10 +1283,10 @@ sub plot_transit_routes {
 				my $clipped_group = $self->clipped_group(parent => $route_layer,
 									 clip_path_id => $map_area->{clip_path_id});
 				
-				my $polyline = $self->polyline(points => \@coords, style => $style, class => $class);
+				my $polyline = $self->polyline(points => \@coords, class => $class);
 				$clipped_group->appendChild($polyline);
-				if ($style_2 ne "") {
-					my $polyline_2 = $self->polyline(points => \@coords, style => $style_2, class => $class_2);
+				if ($self->has_style_2(class => $class)) {
+					my $polyline_2 = $self->polyline(points => \@coords, class => $class_2);
 					$clipped_group->appendChild($polyline_2);
 				}
 			};
@@ -1299,10 +1296,7 @@ sub plot_transit_routes {
 					route_group      => $route_group,
 					route_group_name => $route_group_name,
 					class            => $class,
-					class_2          => $class_2,
-					style            => $style,
-					style_2          => $style_2
-				       );
+					class_2          => $class_2);
 			}
 			if (defined $exceptions_group) {
 				foreach my $path (@excepted_chunks) {
@@ -1310,10 +1304,7 @@ sub plot_transit_routes {
 						route_group      => $exceptions_group,
 						route_group_name => $exceptions_group_name,
 						class            => $exceptions_class,
-						class_2          => $exceptions_class_2,
-						style            => $exceptions_style,
-						style_2          => $exceptions_style_2
-					       );
+						class_2          => $exceptions_class_2);
 				}
 			}
 
@@ -1333,12 +1324,7 @@ sub stuff_all_layers_need {
 		$self->clip_path($map_area);
 		$self->white_layer($map_area_layer);
 		$self->background_layer($map_area_layer);
-		if ($self->{for_inkscape}) {
-			$self->remove_style_node();
-		}
-		else {
-			$self->style_node();
-		}
+		$self->style_node();
 		$self->border_layer($map_area_layer);
 	}
 }
@@ -1353,9 +1339,6 @@ sub plot_openstreetmap_maps {
 			$index_tag{$tag->{k}} = 1;
 		}
 	}
-
-	# $self->erase_autogenerated_map_layers();
-	# $self->erase_autogenerated_clip_paths();
 
 	$self->stuff_all_layers_need();
 	
@@ -1500,22 +1483,6 @@ sub plot_openstreetmap_maps {
 				my $open_class_2   = "OPEN " . $info->{class} . "_2";
 				my $closed_class_2 =           $info->{class} . "_2";
 				
-				my $open_style   = $self->compose_style_string(%$options,
-									       open => 1, 
-									       class => $info->{class});
-				my $closed_style = $self->compose_style_string(%$options,
-									       open => 0,
-									       class => $info->{class});
-
-				my $open_style_2   = $self->compose_style_string(%$options,
-										 open => 1,
-										 style_attr_name => "style_2",
-										 class => $info->{class});
-				my $closed_style_2 = $self->compose_style_string(%$options,
-										 open => 0,
-										 style_attr_name => "style_2"
-										 class => $info->{class});
-
 				foreach my $way (@ways) {
 					$way->{used} = 1;
 					my $points = $way->{points}[$idx];
@@ -1527,23 +1494,19 @@ sub plot_openstreetmap_maps {
 
 					if ($way->{closed}) {
 						my $polygon = $self->polygon(points => $points,
-									     style => $closed_style,
 									     class => $closed_class);
 						$group->appendChild($polygon);
-						if ($closed_style_2 ne "") {
+						if ($self->has_style_2(class => $class)) {
 							my $polygon_2 = $self->polygon(points => $points,
-										       style => $closed_style_2,
 										       class => $closed_class_2);
 							$group->appendChild($polygon_2);
 						}
 					} else {
 						my $polyline = $self->polyline(points => $points,
-									       style => $open_style,
 									       class => $open_class);
 						$group->appendChild($polyline);
-						if ($open_style_2 ne "") {
+						if ($self->has_style_2(class => $class)) {
 							my $polyline_2 = $self->polyline(points => $points,
-											 style => $open_style_2,
 											 class => $open_class_2);
 							$group->appendChild($polyline_2);
 						}
@@ -1577,12 +1540,7 @@ sub polygon {
 	my ($self, %args) = @_;
 	my $path = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
 	$path->setAttribute("d", $self->points_to_path(1, @{$args{points}}));
-	if ($self->{for_inkscape}) {
-		$path->setAttribute("style", $args{style});
-	}
-	else {
-		$path->setAttribute("class", $args{class});
-	}
+	$path->setAttribute("class", $args{class});
 	return $path;
 }
 
@@ -1590,12 +1548,7 @@ sub polyline {
 	my ($self, %args) = @_;
 	my $path = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
 	$path->setAttribute("d", $self->points_to_path(0, @{$args{points}}));
-	if ($self->{for_inkscape}) {
-		$path->setAttribute("style", $args{style});
-	}
-	else {
-		$path->setAttribute("class", $args{class});
-	}
+	$path->setAttribute("class", $args{class});
 	return $path;
 }
 
@@ -1713,12 +1666,7 @@ sub rectangle {
 			$left, $top, $right, $bottom, $left);
 	my $path = $self->{_svg_doc}->createElementNS($NS{svg}, "path");
 	$path->setAttribute("d", $d);
-	if ($self->{for_inkscape}) {
-		$path->setAttribute("style",  $args{style});
-	}
-	else {
-		$path->setAttribute("class",  $args{class});
-	}
+	$path->setAttribute("class",  $args{class});
 	return $path;
 	
 	my $rect = $self->{_svg_doc}->createElementNS($NS{"svg"}, "rect");
@@ -1726,28 +1674,56 @@ sub rectangle {
 	$rect->setAttribute("y",      $args{y});
 	$rect->setAttribute("width",  $args{width});
 	$rect->setAttribute("height", $args{height});
-	if ($self->{for_inkscape}) {
-		$rect->setAttribute("style",  $args{style});
-	}
-	else {
-		$rect->setAttribute("class",  $args{class});
-	}
+	$rect->setAttribute("class",  $args{class});
 	return $rect;
 }
 
-sub compose_style {
+###############################################################################
+
+sub get_style_hashes {
+	my ($self, %args) = @_;
+	my $class           = $args{class};
+	my $style_attr_name = $args{style_attr_name} // "style";
+
+	my @class = (ref($class) eq "ARRAY") ? @$class : ($class);
+	@class = grep { /\S/ } map { split(/\s+/, $_) } @class;
+
+	my @style;
+	foreach my $class (@class) {
+		my $hash;
+		eval { $hash = $self->{classes}->{$class}->{$style_attr_name}; };
+		if ($hash) {
+			if (wantarray) {
+				push(@style, $hash);
+			}
+			else {
+				return $hash;
+			}
+		}
+	}
+	if (wantarray) {
+		return @style;
+	}
+	else {
+		return;
+	}
+}
+
+sub compose_style_hash {
 	my ($self, %args) = @_;
 	my $style_attr_name = $args{style_attr_name} // "style";
 	my $class           = $args{class};
-	my %style           = %{$args{style}};
+	my %style           = $args{style} ? %{$args{style}} : ();
 	
 	my @class = (ref($class) eq "ARRAY") ? @$class : ($class);
 	@class = grep { /\S/ } map { split(/\s+/, $_) } @class;
 
-	my @hash = $self->get_style(class => $class,
-				    style_attr_name => $style_attr_name);
+	my @hash = $self->get_style_hashes(class => $class,
+					   style_attr_name => $style_attr_name);
 	foreach my $hash (@hash) {
-		%style = (%style, %$hash);
+		if ($hash) {
+			%style = (%style, %$hash);
+		}
 	}
 
 	if (scalar(keys(%style))) {
@@ -1763,44 +1739,29 @@ sub compose_style {
 	return \%style;
 }
 
-sub get_style {
+sub get_style_property {
 	my ($self, %args) = @_;
-	my $class           = $args{class};
-	my $style_attr_name = $args{style_attr_name} // "style";
+	my $hash = $self->compose_style_hash(%args);
+	return $hash->{$args{property}};
+}
 
-	my @class = (ref($class) eq "ARRAY") ? @$class : ($class);
-	@class = grep { /\S/ } map { split(/\s+/, $_) } @class;
-
-	my @style;
-	foreach my $class (@class) {
-		my $hash;
-		eval { $hash = $self->{classes}->{$class}->{$style_attr_name}; };
-		if ($hash && exists($hash->{$style_attr_name})) {
-			if (wantarray) {
-				push(@style, $hash->{$style_attr_name});
-			}
-			else {
-				return $hash->{$style_attr_name};
-			}
-		}
-	}
-	if (wantarray) {
-		return @style;
-	}
-	else {
-		return;
-	}
+sub has_style_2 {
+	my ($self, %args) = @_;
+	my $class = $args{class};
+	return scalar($self->get_style_hashes(class => $class, style_attr_name => "style_2")) ? 1 : 0;
 }
 
 sub compose_style_string {
 	my ($self, %args) = @_;
-	my $style = $self->compose_style(%args);
+	my $style = $self->compose_style_hash(%args);
 	return join(";",
 		    map { $_ . ":" . $style->{$_} }
 		    sort  
 		    grep { $_ ne "r" }
 		    keys %$style);
 }
+
+###############################################################################
 
 sub gtfs_url {
 	my $self = shift();
@@ -1821,6 +1782,8 @@ sub gtfs {
 	$self->{_gtfs_url} = $gtfs->{url};
 	return $self->{_gtfs};
 }
+
+###############################################################################
 
 sub remove_grid {
 	my ($self) = @_;
@@ -1852,22 +1815,6 @@ sub plot_grid {
 	my $class = $grid->{class};
 	my $text_class = $grid->{"text-class"} . " GRID_TEXT";
 
-	my $style = $self->compose_style_string(class => $grid->{class});
-	my $text_style = $self->compose_style_string(style => { "font-size" => "6px",
-								"font-style" => "normal",
-								"font-variant" => "normal",
-								"font-weight" => "normal",
-								"font-stretch" => "normal",
-								"text-align" => "center",
-								"line-height" => "100%",
-								"writing-mode" => "lr-tb",
-								"text-anchor" => "middle",
-								"fill" => "#000000",
-								"fill-opacity" => "1",
-								"stroke" => "none",
-								"font-family" => "Arial" },
-						     class => $grid->{"text-class"});
-
 	foreach my $map_area (@{$self->{_map_areas}}) {
 		$self->update_scale($map_area);
 		my $map_area_layer = $self->map_area_layer($map_area);
@@ -1892,24 +1839,14 @@ sub plot_grid {
 
 			my $path = $doc->createElementNS($NS{"svg"}, "path");
 			$path->setAttribute("d", "M $xw,$y $xe,$y");
-			if ($self->{for_inkscape}) {
-				$path->setAttribute("style", $style);
-			}
-			else {
-				$path->setAttribute("class", $class);
-			}
+			$path->setAttribute("class", $class);
 			$clipped_group->appendChild($path);
 
 			foreach my $xx ($xw + 18, $xe - 18) {
 				my $text = $doc->createElementNS($NS{"svg"}, "text");
 				$text->setAttribute("x", $xx);
 				$text->setAttribute("y", $y);
-				if ($self->{for_inkscape}) {
-					$text->setAttribute("style", $text_style);
-				}
-				else {
-					$text->setAttribute("class", $text_class);
-				}
+				$text->setAttribute("class", $text_class);
 				my $tspan = $doc->createElementNS($NS{"svg"}, "tspan");
 				$tspan->setAttribute("x", $xx);
 				$tspan->setAttribute("y", $y);
@@ -1925,24 +1862,14 @@ sub plot_grid {
 
 			my $path = $doc->createElementNS($NS{"svg"}, "path");
 			$path->setAttribute("d", "M $x,$ys $x,$yn");
-			if ($self->{for_inkscape}) {
-				$path->setAttribute("style", $style);
-			}
-			else {
-				$path->setAttribute("class", $class);
-			}
+			$path->setAttribute("class", $class);
 			$clipped_group->appendChild($path);
 
 			foreach my $yy ($ys - 2, $yn + 8) {
 				my $text = $doc->createElementNS($NS{"svg"}, "text");
 				$text->setAttribute("x", $x);
 				$text->setAttribute("y", $yy);
-				if ($self->{for_inkscape}) {
-					$text->setAttribute("style", $text_style);
-				}
-				else {
-					$text->setAttribute("class", $text_class);
-				}
+				$text->setAttribute("class", $text_class);
 				my $tspan = $doc->createElementNS($NS{"svg"}, "tspan");
 				$tspan->setAttribute("x", $x);
 				$tspan->setAttribute("y", $yy);
@@ -1953,6 +1880,8 @@ sub plot_grid {
 		}
 	}
 }
+
+###############################################################################
 
 sub find_chunks {
 	my @paths = @_;
