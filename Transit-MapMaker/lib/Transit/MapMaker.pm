@@ -22,20 +22,7 @@ our $VERSION = '0.01';
 
     use Transit::MapMaker;
 
-    my $mm = Transit::MapMaker->new(
-	filename => "map.svg"
-    );
-
-    $mm->north(38.24);		# degrees
-    $mm->south(38.21);
-    $mm->west(-85.78);
-    $mm->east(-85.74);
-    $mm->paper_width(1980);	# in units of 1/90 inch
-    $mm->paper_height(1530);	# in units of 1/90 inch
-    $mm->paper_margin(22.5);	# in units of 1/90 inch
-    $mm->plot_osm_layers();
-    $mm->gtfs("http://developer.trimet.org/schedule/gtfs.zip");
-    $mm->plot_transit_stops();
+    # TBD
 
 =head1 DESCRIPTION
 
@@ -68,6 +55,7 @@ affecting manually-edited layers.
 our @_FIELDS;
 BEGIN {
 	@_FIELDS = qw(filename
+		      _read_filename
 		      north south east west
 		      map_data_north map_data_south map_data_east map_data_west
 		      paper_width paper_height paper_margin
@@ -135,11 +123,8 @@ sub new {
 			}
 		}
 	}
-	$self->init_xml();
-	$self->debug__document_size();
 	return $self;
 }
-
 sub north {
 	my ($self, $lat) = @_;
 	$self->{north} = $lat;
@@ -294,6 +279,11 @@ BEGIN {
 
 sub init_xml {
 	my ($self) = @_;
+	if (defined($self->{_read_filename}) and
+	    defined($self->{filename}) and
+	    ($self->{_read_filename} eq $self->{filename})) {
+		return;
+	}
 	my $parser = XML::LibXML->new();
 	$parser->keep_blanks(0);
 	my $doc = eval {
@@ -393,6 +383,7 @@ END
 		$map_area->{idx} = $idx;
 		$idx += 1;
 	}
+	$self->{_read_filename} = $self->{filename};
 }
 
 sub findnodes {
@@ -1074,10 +1065,12 @@ sub clear_transit_stops_layers {
 	}
 }
 
-sub plot_transit_stops {
+sub draw_transit_stops {
 	my ($self) = @_;
 	my $gtfs = $self->{_gtfs};
 	if (!$gtfs) { return; }
+
+	$self->init_xml();
 
 	$self->clear_transit_stops_layers();
 	$self->stuff_all_layers_need();
@@ -1138,10 +1131,12 @@ sub plot_transit_stops {
 	}
 }
 
-sub plot_transit_routes {
+sub draw_transit_routes {
 	my ($self, @routes) = @_;
 	my $gtfs = $self->{_gtfs};
 	if (!$gtfs) { return; }
+
+	$self->init_xml();
 
 	$self->clear_transit_map_layers();
 
@@ -1329,8 +1324,10 @@ sub stuff_all_layers_need {
 	}
 }
 
-sub plot_openstreetmap_maps {
+sub draw_openstreetmap_maps {
 	my ($self) = @_;
+
+	$self->init_xml();
 
 	my %index_tag;
 	foreach my $info (@{$self->{osm_layers}}) {
@@ -1801,10 +1798,12 @@ sub remove_grid {
 	}
 }
 
-sub plot_grid {
+sub draw_grid {
 	my ($self) = @_;
 	my $grid = $self->{grid};
 	if (!$grid) { return; }
+
+	$self->init_xml();
 
 	my $increment = $grid->{increment} // 0.01;
 	my $format = $grid->{format};
@@ -2033,6 +2032,12 @@ sub find_chunks {
 
 sub finish_xml {
 	my ($self) = @_;
+
+	if (!(defined($self->{_read_filename}) and
+	      defined($self->{filename}) and
+	      ($self->{_read_filename} eq $self->{filename}))) {
+		return;
+	}
 
 	open(my $fh, ">", $self->{filename}) or die("cannot write $self->{filename}: $!\n");
 	print STDERR ("Writing $self->{filename} ... ") if $verbose;
