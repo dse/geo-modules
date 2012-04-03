@@ -39,6 +39,7 @@ data, and gives you a database handle.
 
 
 use fields qw(url
+	      data
 	      verbose
 	      _dbh
 	      _dir
@@ -75,6 +76,7 @@ sub new {
 	my $self = fields::new($class);
 	$self->{url} = $url;
 	$self->{verbose} = $verbose;
+	$self->{data} = {};
 	if ($options) {
 		while (my ($k, $v) = each(%$options)) {
 			$self->{$k} = $v;
@@ -138,9 +140,9 @@ sub repopulate {
 			die("could not get mtime of local copy of GTFS data " .
 			    "($zip_filename): $!");
 		}
-		my $get_populated_mtime = $self->get_populated_mtime();
-		if ($get_populated_mtime &&
-		    $file_mtime == $get_populated_mtime) {
+		my $populated_mtime = $self->get_populated_mtime();
+		if ($populated_mtime &&
+		    $file_mtime == $populated_mtime) {
 			return;
 		}
 	}
@@ -162,10 +164,10 @@ sub force_repopulate {
 sub get_populated_mtime {
 	my ($self) = @_;
 	my $dbh = $self->dbh();
-	my $sth = $dbh->table_info('%', '%', 'mtime');
-	$sth->execute();
-	return undef unless $sth->fetchrow_arrayref();
-	my ($mtime) = $dbh->selectrow_array("select mtime from mtime");
+	my $mtime;
+	eval {
+		($mtime) = $dbh->selectrow_array("select mtime from mtime");
+	};
 	return $mtime;
 }
 
@@ -511,7 +513,8 @@ sub _update_populated_mtime {
 	my ($self, $mtime) = @_;
 	if (!defined $mtime) {
 		my $zip_filename = $self->get_zip_filename();
-		my $mtime = (stat($zip_filename))[9];
+		my @stat = stat($zip_filename);
+		$mtime = (stat($zip_filename))[9];
 	}
 	my $dbh = $self->dbh();
 	$dbh->do("delete from mtime;");

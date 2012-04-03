@@ -45,6 +45,7 @@ where COMMAND is one of:
 	force-gtfs-repopulate-database
 	draw-openstreetmap-maps
 	draw-transit-routes
+	update-styles
 END
 }
 sub run {
@@ -113,23 +114,29 @@ sub cmd__gtfs_update {
 	my ($self) = @_;
 	my $mm = $self->{mapmaker};
 	die("map MAPNAME must be specified.\n") unless $mm;
-	my $gtfs = $mm->gtfs();
-	if (!$mm->gtfs()) {
-		die("map contains no transit data.\n");
+
+	my @gtfs = $mm->gtfs();
+	if (!scalar(@gtfs)) {
+		die("map refers to no transit data.\n");
 	}
-	$gtfs->update();
-	$gtfs->repopulate();
+	foreach my $gtfs (@gtfs) {
+		$gtfs->update();
+		$gtfs->repopulate();
+	}
 }
 sub cmd__force_gtfs_update {
 	my ($self) = @_;
 	my $mm = $self->{mapmaker};
 	die("map MAPNAME must be specified.\n") unless $mm;
-	my $gtfs = $mm->gtfs();
-	if (!$mm->gtfs()) {
-		die("map contains no transit data.\n");
+
+	my @gtfs = $mm->gtfs();
+	if (!scalar(@gtfs)) {
+		die("map refers to no transit data.\n");
 	}
-	$gtfs->force_update();
-	$gtfs->force_repopulate();
+	foreach my $gtfs (@gtfs) {
+		$gtfs->force_update();
+		$gtfs->force_repopulate();
+	}
 }
 
 sub cmd__osm_update {
@@ -155,21 +162,25 @@ sub cmd__gtfs_repopulate_database {
 	my ($self) = @_;
 	my $mm = $self->{mapmaker};
 	die("map MAPNAME must be specified.\n") unless $mm;
-	my $gtfs = $mm->gtfs();
-	if (!$mm->gtfs()) {
-		die("map contains no transit data.\n");
+	my @gtfs = $mm->gtfs();
+	if (!scalar(@gtfs)) {
+		die("map refers to no transit data.\n");
 	}
-	$gtfs->repopulate();
+	foreach my $gtfs (@gtfs) {
+		$gtfs->repopulate();
+	}
 }
 sub cmd__force_gtfs_repopulate_database {
 	my ($self) = @_;
 	my $mm = $self->{mapmaker};
 	die("map MAPNAME must be specified.\n") unless $mm;
-	my $gtfs = $mm->gtfs();
-	if (!$mm->gtfs()) {
-		die("map contains no transit data.\n");
+	my @gtfs = $mm->gtfs();
+	if (!scalar(@gtfs)) {
+		die("map refers to no transit data.\n");
 	}
-	$gtfs->force_repopulate();
+	foreach my $gtfs (@gtfs) {
+		$gtfs->force_repopulate();
+	}
 }
 
 sub cmd__draw_openstreetmap_maps {
@@ -177,28 +188,35 @@ sub cmd__draw_openstreetmap_maps {
 	my $mm = $self->{mapmaker};
 	die("map MAPNAME must be specified.\n") unless $mm;
 	$mm->update_openstreetmap();
-	$mm->plot_openstreetmap_maps();
+	$mm->draw_openstreetmap_maps();
 }
 
 sub cmd__draw_transit_routes {
 	my ($self, @routes) = @_;
 	my $mm = $self->{mapmaker};
 	die("map MAPNAME must be specified.\n") unless $mm;
-	my $gtfs = $mm->gtfs();
-	if (!$mm->gtfs()) {
-		die("map contains no transit data.\n");
+	my @gtfs = $mm->gtfs();
+	if (!scalar(@gtfs)) {
+		die("map refers to no transit data.\n");
 	}
-	$mm->plot_transit_routes(@routes);
+	$mm->draw_transit_routes(@routes);
 }
 
 sub cmd__draw_transit_stops {
 	my ($self) = @_;
 	my $mm = $self->{mapmaker};
 	die("map MAPNAME must be specified.\n") unless $mm;
-	my $gtfs = $mm->gtfs();
-	if (!$mm->gtfs()) {
-		die("map contains no transit data.\n");
+	my @gtfs = $mm->gtfs();
+	if (!scalar(@gtfs)) {
+		die("map refers to no transit data.\n");
 	}
-	$mm->plot_transit_stops();
+	$mm->draw_transit_stops();
+}
+
+sub cmd__update_styles {
+	my ($self) = @_;
+	my $mm = $self->{mapmaker};
+	die("map MAPNAME must be specified.\n") unless $mm;
+	$mm->update_styles();
 }
 
