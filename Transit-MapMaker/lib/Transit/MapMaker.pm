@@ -181,7 +181,6 @@ use Carp qw(croak);
 use File::Path qw(mkpath);
 use File::Basename;
 use List::MoreUtils qw(all firstidx uniq);
-use YAML;
 
 sub file_get_contents {		# php-like lol
 	my ($filename) = @_;
@@ -373,15 +372,15 @@ END
 
 	foreach my $map_area (@{$self->{_map_areas}}) {
 		my $id = $map_area->{id};
-		my $idx = $map_area->{idx};
-		if ($idx == 0) {
+		my $index = $map_area->{index};
+		if ($index == 0) {
 			$map_area->{clip_path_id} = "main_area_clip_path";
 		}
 		elsif (defined $id) {
 			$map_area->{clip_path_id} = "inset_${id}_clip_path";
 		}
 		else {
-			$map_area->{clip_path_id} = "inset__${idx}__clip_path";
+			$map_area->{clip_path_id} = "inset__${index}__clip_path";
 		}
 	}
 
@@ -395,10 +394,10 @@ sub findnodes {
 
 sub add_indexes_to_array {
 	my ($self, $array_ref) = @_;
-	my $idx = 0;
+	my $index = 0;
 	foreach my $o (@{$array_ref}) {
-		$o->{idx} = $idx;
-		$idx += 1;
+		$o->{index} = $index;
+		$index += 1;
 	}
 }
 
@@ -652,7 +651,7 @@ sub map_area_layer {
 	my $doc = $self->{_svg_doc};
 	my $doc_elt = $doc->documentElement();
 	my $insertion_point = $self->layer_insertion_point();
-	my $layer_name = $map_area->{name} // ("Inset " . $map_area->{idx});
+	my $layer_name = $map_area->{name} // ("Inset " . $map_area->{index});
 	my $map_area_layer = $self->layer(name            => $layer_name,
 					  writable        => 1,
 					  parent          => $doc_elt,
@@ -1170,6 +1169,7 @@ sub draw_transit_routes {
 	$self->stuff_all_layers_need();
 
 	foreach my $gtfs (@gtfs) {
+		my $gtfs_index = $gtfs->{index};
 	
 		printf STDERR ("Working on transit routes for gtfs %s ...\n", $gtfs->{data}->{name}) if $verbose;
 
@@ -1260,19 +1260,16 @@ sub draw_transit_routes {
 			}
 			print STDERR ("Done.\n") if $verbose;
 
-			printf STDERR ("    Consolidating %d + %d paths ... ",
-				       scalar(@paths),
-				       scalar(@chunks)) if $verbose;
-			
-			@paths          = find_chunks(@paths);
-			@excpeted_paths = find_chunks(@excepted_paths);
-
-			printf STDERR ("%d paths, %d chunks, %d excpeted paths, %d excepted chunks ... ",
-				       scalar(@paths),
-				       scalar(@chunks),
-				       scalar(@excepted_paths),
-				       scalar(@excepted_chunks)) if $verbose;
-			print STDERR ("Done.\n") if $verbose;
+			{
+				printf STDERR ("    Consolidating %d + %d paths ... ",
+					       scalar(@paths),
+					       scalar(@excepted_paths)) if $verbose;
+				@paths          = find_chunks(@paths);
+				@excpeted_paths = find_chunks(@excepted_paths);
+				print STDERR (" got %d + %d paths.\n",
+					      scalar(@paths),
+					      scalar(@excepted_paths)) if $verbose;
+			}
 
 			my $stuff = $self->{transit_route_overrides}->{$route_short_name} //
 				$self->{transit_route_colors}->{$route_color} //
@@ -1288,10 +1285,10 @@ sub draw_transit_routes {
 			$route_svg_excepted_paths{$route_short_name} = [];
 			
 			foreach my $map_area (@{$self->{_map_areas}}) {
-				my $idx = $map_area->{idx};
+				my $index = $map_area->{index};
 
-				$route_svg_paths{$route_short_name}[$idx] = [];
-				$route_svg_excepted_paths{$route_short_name}[$idx] = [];
+				$route_svg_paths{$route_short_name}[$index] = [];
+				$route_svg_excepted_paths{$route_short_name}[$index] = [];
 
 				$self->update_scale($map_area);
 				my $map_area_layer = $self->map_area_layer($map_area);
@@ -1439,7 +1436,7 @@ sub draw_openstreetmap_maps {
 		print STDERR (scalar(@nodes) . " elements found.\n") if $verbose;
 		foreach my $map_area (@{$self->{_map_areas}}) {
 			$self->update_scale($map_area);
-			my $idx = $map_area->{idx};
+			my $index = $map_area->{index};
 			my $area_name = $map_area->{name};
 			print STDERR ("    Indexing for map area $area_name ... ") if $verbose;
 			my $svg_west  = $self->{_svg_west};
@@ -1455,7 +1452,7 @@ sub draw_openstreetmap_maps {
 				my $xzone = ($svgx <= $svg_west)  ? -1 : ($svgx >= $svg_east)  ? 1 : 0;
 				my $yzone = ($svgy <= $svg_north) ? -1 : ($svgy >= $svg_south) ? 1 : 0;
 				my $result = [$svgx, $svgy, $xzone, $yzone];
-				$nodes{$id}[$idx] = $result;
+				$nodes{$id}[$index] = $result;
 			}
 			print STDERR ("done.\n") if $verbose;
 		}
@@ -1495,21 +1492,21 @@ sub draw_openstreetmap_maps {
 
 		foreach my $map_area (@{$self->{_map_areas}}) {
 			$self->update_scale($map_area);
-			my $idx = $map_area->{idx};
+			my $index = $map_area->{index};
 			my $area_name = $map_area->{name};
 			print STDERR ("    Indexing for map area $area_name ... ") if $verbose;
 			foreach my $way (@ways) {
 				my $id = $way->getAttribute("id");
 				my @nodeid = @{$ways{$id}{nodeid}};
-				my @points = map { $nodes{$_}[$idx] } @nodeid;
-				$ways{$id}{points}[$idx] = \@points;
+				my @points = map { $nodes{$_}[$index] } @nodeid;
+				$ways{$id}{points}[$index] = \@points;
 			}
 			print STDERR ("done.\n") if $verbose;
 		}
 		
 		foreach my $map_area (@{$self->{_map_areas}}) {
 			$self->update_scale($map_area);
-			my $idx = $map_area->{idx};
+			my $index = $map_area->{index};
 			my $area_name = $map_area->{name};
 			print STDERR ("Adding objects for map area $area_name ...\n") if $verbose;
 
@@ -1517,7 +1514,7 @@ sub draw_openstreetmap_maps {
 				my $name = $info->{name};
 				my $tags = $info->{tags};
 				my $class = $info->{class};
-				my $group = $info->{_map_area_group}[$idx];
+				my $group = $info->{_map_area_group}[$index];
 
 				my @ways;
 				foreach my $tag (@$tags) {
@@ -1546,7 +1543,7 @@ sub draw_openstreetmap_maps {
 				
 				foreach my $way (@ways) {
 					$way->{used} = 1;
-					my $points = $way->{points}[$idx];
+					my $points = $way->{points}[$index];
 
 					if (all { $_->[POINT_X_ZONE] == -1 } @$points) { next; }
 					if (all { $_->[POINT_X_ZONE] ==  1 } @$points) { next; }
@@ -2016,22 +2013,22 @@ sub find_chunks {
 					$work_on_new_chunk->($A, $B);
 				} elsif ($direction == 1) {
 					# existing chunk contains A-B segment
-					my $A_idx = firstidx { $_ == $A } @$chunk;
-					if ($A_idx == 0) {
+					my $A_index = firstidx { $_ == $A } @$chunk;
+					if ($A_index == 0) {
 						# existing chunk starts with A-B
 						$work_on_existing_chunk->($chunk_id);
 					} else {
 						# existing chunk has segments before A-B
 						# split it into      ...-A and A-B-...
 						#               (existing)     (new chunk)
-						my @new_chunk = ($A, splice(@{$chunks[$chunk_id]}, $A_idx + 1));
+						my @new_chunk = ($A, splice(@{$chunks[$chunk_id]}, $A_index + 1));
 						$work_on_new_chunk->(@new_chunk);
 						# working chunk is now A-B-...
 					}
 				} elsif ($direction == -1) {
 					# existing chunk contains B-A segment
-					my $B_idx = firstidx { $_ == $B } @$chunk;
-					if ($B_idx == scalar(@{$chunks[$chunk_id]}) - 2) {
+					my $B_index = firstidx { $_ == $B } @$chunk;
+					if ($B_index == scalar(@{$chunks[$chunk_id]}) - 2) {
 						# existing chunk ends at B-A
 						$work_on_existing_chunk->($chunk_id, -1);
 						# working chunk is now A-B-...
@@ -2040,7 +2037,7 @@ sub find_chunks {
 						# existing chunk has segments after B-A
 						# split it into ...-B-A and A-...
 						#                 (new)     (existing)
-						my @new_chunk = (splice(@{$chunks[$chunk_id]}, 0, $B_idx + 1), $A);
+						my @new_chunk = (splice(@{$chunks[$chunk_id]}, 0, $B_index + 1), $A);
 						$work_on_new_chunk->(reverse @new_chunk);
 						# working chunk is now A-B-...
 					}
@@ -2055,11 +2052,11 @@ sub find_chunks {
 						# working chunk ends with A
 						$append_to_working_chunk->($B);
 					} else {
-						my $A_idx = firstidx { $_ == $A } @$working_chunk;
+						my $A_index = firstidx { $_ == $A } @$working_chunk;
 						# working chunk has stuff after A.
 						# split it into      ...-A and A-...
 						#               (existing)     (new)
-						my @new_chunk = ($A, splice(@$working_chunk, $A_idx + 1));
+						my @new_chunk = ($A, splice(@$working_chunk, $A_index + 1));
 						$work_on_new_chunk->(@new_chunk);
 						$work_on_new_chunk->($A, $B);
 					}
