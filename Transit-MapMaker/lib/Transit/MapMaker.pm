@@ -88,7 +88,6 @@ BEGIN {
 		      transit_route_colors
 		      transit_trip_exceptions
 		      transit_route_fix_overlaps
-		      for_inkscape
 		    );
 }
 use fields @_FIELDS;
