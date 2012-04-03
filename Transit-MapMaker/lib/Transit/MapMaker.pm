@@ -367,9 +367,13 @@ END
 	}
 
 	$self->{_map_areas} = [ { is_main => 1, name => "Main Map" }, eval { @{$self->{inset_maps}} } ];
-	my $idx = 0;
+
+	$self->add_indexes_to_array($self->{gtfs});
+	$self->add_indexes_to_array($self->{_map_areas});
+
 	foreach my $map_area (@{$self->{_map_areas}}) {
 		my $id = $map_area->{id};
+		my $idx = $map_area->{idx};
 		if ($idx == 0) {
 			$map_area->{clip_path_id} = "main_area_clip_path";
 		}
@@ -379,15 +383,23 @@ END
 		else {
 			$map_area->{clip_path_id} = "inset__${idx}__clip_path";
 		}
-		$map_area->{idx} = $idx;
-		$idx += 1;
 	}
+
 	$self->{_read_filename} = $self->{filename};
 }
 
 sub findnodes {
 	my ($self, @args) = @_;
 	return $self->{_xpc}->findnodes(@args);
+}
+
+sub add_indexes_to_array {
+	my ($self, $array_ref) = @_;
+	my $idx = 0;
+	foreach my $o (@{$array_ref}) {
+		$o->{idx} = $idx;
+		$idx += 1;
+	}
 }
 
 BEGIN {
@@ -1182,8 +1194,8 @@ sub draw_transit_routes {
 			$exceptions_class_2 = $exceptions_group->{class} . "_2";
 		}
 
-		my $route_paths          = {};
-		my $route_excepted_paths = {};
+		my %route_svg_paths;
+		my %route_svg_excepted_paths;
 
 		foreach my $route ($self->get_transit_routes($gtfs)) {
 			my $route_id = $route->{route_id};
@@ -1248,9 +1260,13 @@ sub draw_transit_routes {
 			}
 			print STDERR ("Done.\n") if $verbose;
 
-			print STDERR ("    Consolidating paths ... ") if $verbose;
-			my @chunks          = find_chunks(@paths);
-			my @excepted_chunks = find_chunks(@excepted_paths);
+			printf STDERR ("    Consolidating %d + %d paths ... ",
+				       scalar(@paths),
+				       scalar(@chunks)) if $verbose;
+			
+			@paths          = find_chunks(@paths);
+			@excpeted_paths = find_chunks(@excepted_paths);
+
 			printf STDERR ("%d paths, %d chunks, %d excpeted paths, %d excepted chunks ... ",
 				       scalar(@paths),
 				       scalar(@chunks),
@@ -1268,7 +1284,15 @@ sub draw_transit_routes {
 			my $class   = $route_group->{class};
 			my $class_2 = $route_group->{class} . "_2";
 
+			$route_svg_paths{$route_short_name} = [];
+			$route_svg_excepted_paths{$route_short_name} = [];
+			
 			foreach my $map_area (@{$self->{_map_areas}}) {
+				my $idx = $map_area->{idx};
+
+				$route_svg_paths{$route_short_name}[$idx] = [];
+				$route_svg_excepted_paths{$route_short_name}[$idx] = [];
+
 				$self->update_scale($map_area);
 				my $map_area_layer = $self->map_area_layer($map_area);
 				my $transit_map_layer = $self->transit_map_layer($map_area_layer);
@@ -1300,7 +1324,7 @@ sub draw_transit_routes {
 					if (all { $_->[POINT_Y_ZONE] == -1 } @coords) { return; }
 					if (all { $_->[POINT_Y_ZONE] ==  1 } @coords) { return; }
 					print STDERR ("#") if $verbose;
-				
+
 					my $route_group_layer = $self->layer(name    => $route_group_name,
 									     z_index => $route_group->{index},
 									     parent  => $transit_map_layer);
@@ -1317,10 +1341,7 @@ sub draw_transit_routes {
 					}
 				};
 
-				$route_paths{$route_short_name}          = \@chunks;
-				$route_paths_excepted{$route_short_name} = \@excepted_chunks;
-
-				foreach my $path (@chunks) {
+				foreach my $path (@paths) {
 					$plot->(path             => $path,
 						route_group      => $route_group,
 						route_group_name => $route_group_name,
@@ -1328,7 +1349,7 @@ sub draw_transit_routes {
 						class_2          => $class_2);
 				}
 				if (defined $exceptions_group) {
-					foreach my $path (@excepted_chunks) {
+					foreach my $path (@excepted_paths) {
 						$plot->(path             => $path,
 							route_group      => $exceptions_group,
 							route_group_name => $exceptions_group_name,
