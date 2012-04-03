@@ -6,3 +6,6 @@ Makefile
 Makefile.old
 MYMETA.json
 MYMETA.yml
+*.bak
+unused.pm
+foo.pl
