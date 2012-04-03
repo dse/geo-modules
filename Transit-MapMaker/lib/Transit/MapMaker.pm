@@ -2100,7 +2100,8 @@ sub finish_xml {
 	print STDERR ("done.\n") if $verbose;
 }
 
-# used for creating a line segment alongside another line segment
+# used for taking a path that overlaps another path and moving the
+# offending points on that path slightly away from it
 sub move_point_away {
 	my $x = shift();
 	my $y = shift();
