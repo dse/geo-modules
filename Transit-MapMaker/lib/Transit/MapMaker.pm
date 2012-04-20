@@ -2288,7 +2288,7 @@ sub segment_distance {
 	my $px = $ax + $r * ($bx - $ax);
 	my $py = $ay + $r * ($by - $ay);
 
-	my $s = ($ay - $cy) * ($bx - $ax) - ($ax - $cx) * ($by - $ay) / $l2;
+	my $s = (($ay - $cy) * ($bx - $ax) - ($ax - $cx) * ($by - $ay)) / $l2;
 	# if $s < 0  then C is left of AB
 	# if $s > 0  then C is right of AB
 	# if $s == 0 then C is on AB
