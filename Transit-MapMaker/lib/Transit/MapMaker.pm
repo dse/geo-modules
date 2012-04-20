@@ -367,8 +367,8 @@ END
 
 	$self->{_map_areas} = [ { is_main => 1, name => "Main Map" }, eval { @{$self->{inset_maps}} } ];
 
-	$self->add_indexes_to_array($self->{gtfs});
 	$self->add_indexes_to_array($self->{_map_areas});
+	$self->add_indexes_to_array($self->{transit_route_groups});
 
 	foreach my $map_area (@{$self->{_map_areas}}) {
 		my $id = $map_area->{id};
@@ -991,6 +991,34 @@ END
 	return @all_trips;
 }
 
+sub get_shape_id_to_direction_id_map {
+	my ($self, %args) = @_;
+	my $gtfs  = $args{gtfs};
+	my $route_short_name = $args{route};
+	my $dbh = $gtfs->dbh();
+	my $sth = $dbh->prepare_cached(<<"END");
+		select	trips.shape_id,
+			trips.direction_id
+		from	routes
+			join trips on routes.route_id = trips.route_id
+		where	routes.route_short_name = ?
+END
+	$sth->execute($route_short_name);
+	my %result;
+	while (my ($shape_id, $direction_id) = $sth->fetchrow_array()) {
+		if (exists($result{$shape_id}) && $result{$shape_id} != $direction_id) {
+			warn("  shape id to direction id mapping not possible!\n");
+			$sth->finish();
+			return ();
+		}
+		else {
+			$result{$shape_id} = $direction_id;
+		}
+	}
+	$sth->finish();
+	return %result;
+}
+
 sub get_transit_shape_ids_from_trip_ids {
 	my ($self, %args) = @_;
 	my $gtfs  = $args{gtfs};
@@ -998,7 +1026,7 @@ sub get_transit_shape_ids_from_trip_ids {
 
 	my $dbh = $gtfs->dbh();
 
-	my @trip_ids = sort { $a <=> $b } uniq map { $_->{trip_id} } @trips;
+	my @trip_ids  = sort { $a <=> $b } uniq map { $_->{trip_id} } @trips;
 	my @shape_ids = sort { $a <=> $b } uniq map { $_->{shape_id} } @trips;
 	return () unless scalar(@trip_ids) and scalar(@shape_ids);
 
@@ -1033,13 +1061,15 @@ END
 }
 
 sub get_transit_route_shape_ids {
-	my ($self, $gtfs, $route_id) = @_;
+	my ($self, $gtfs, $route_short_name) = @_;
 	my $dbh = $gtfs->dbh();
 	my $sth = $dbh->prepare_cached(<<"END");
 		select distinct shape_id
-		from trips where route_id = ?
+		from trips
+		join routes on trips.route_id = routes.route_id
+		where route_short_name = ?
 END
-	$sth->execute($route_id);
+	$sth->execute($route_short_name);
 	my @result;
 	while (my ($shape_id) = $sth->fetchrow_array()) {
 		push(@result, $shape_id);
@@ -1168,42 +1198,41 @@ sub draw_transit_routes {
 	$self->clear_transit_map_layers();
 	$self->stuff_all_layers_need();
 
-	foreach my $gtfs (@gtfs) {
-		my $gtfs_index = $gtfs->{index};
+	my %route_group_by_name;
+	foreach my $group (@{$self->{transit_route_groups}}) {
+		$route_group_by_name{$group->{name}} = $group if defined $group->{name};
+		$route_group_by_name{$group->{id}}   = $group if defined $group->{id};
+	}
 	
-		printf STDERR ("Working on transit routes for gtfs %s ...\n", $gtfs->{data}->{name}) if $verbose;
+	my $exceptions_group_name = eval { $self->{transit_trip_exceptions}->{group} };
+	my $exceptions_group;
+	my $exceptions_class;  
+	my $exceptions_class_2;
+	if (defined $exceptions_group_name) {
+		$exceptions_group = $route_group_by_name{$exceptions_group_name};
+	}
+	if (defined $exceptions_group) {
+		$exceptions_class   = $exceptions_group->{class};
+		$exceptions_class_2 = $exceptions_group->{class} . "_2";
+	}
 
-		my %route_groups;
-		my $route_group_index = 0;
-		foreach my $group (@{$self->{transit_route_groups}}) {
-			$route_groups{$group->{name}} = $group if defined $group->{name};
-			$route_groups{$group->{id}}   = $group if defined $group->{id};
-			$group->{index} = $route_group_index;
-			$route_group_index += 1;
-		}
-		
-		my $exceptions_group_name = eval { $self->{transit_trip_exceptions}->{group} };
-		my $exceptions_group;
-		my $exceptions_class;  
-		my $exceptions_class_2;
-		if (defined $exceptions_group_name) {
-			$exceptions_group = $route_groups{$exceptions_group_name};
-		}
-		if (defined $exceptions_group) {
-			$exceptions_class   = $exceptions_group->{class};
-			$exceptions_class_2 = $exceptions_group->{class} . "_2";
-		}
-
-		my %route_svg_paths;
-		my %route_svg_excepted_paths;
-
+	my %shape_direction_id;	
+	my %shape_excepted;	
+	my %shape_excluded;	
+	my %route_shape_id;	
+	my %shape_coords;       
+	my %shape_svg_coords;   
+	my %route_group;        
+	
+	foreach my $gtfs (@gtfs) {
+		my $agency_id = $gtfs->{data}{agency_id};
 		foreach my $route ($self->get_transit_routes($gtfs)) {
-			my $route_id = $route->{route_id};
 			my $route_short_name = $route->{route_short_name};
+			my $agency_route = $agency_id . "/" . $route_short_name;
 			my $route_long_name = $route->{route_long_name};
 			my $route_desc = $route->{route_desc};
-			my $route_name = join(" - ", grep { $_ } ($route_short_name, $route_long_name));
-			my $route_title = join(" - ", grep { $_ } ($route_short_name, $route_long_name, $route_desc));
+			my $route_name = $route->{name} = join(" - ", grep { $_ } ($route_short_name, $route_long_name));
+			my $route_title = $route->{title} = join(" - ", grep { $_ } ($route_short_name, $route_long_name, $route_desc));
 			my $route_color = $route->{route_color};
 			if ($route_color) {
 				$route_color = "#" . lc($route_color);
@@ -1211,154 +1240,154 @@ sub draw_transit_routes {
 
 			next if scalar(@routes) && !grep { $_ eq $route_short_name } @routes;
 
-			print STDERR ("  $route_title ...\n") if $verbose;
+			print STDERR ("  Route $agency_id $route_short_name - $route_title ...\n") if $verbose;
+			
+			my %s2d = $self->get_shape_id_to_direction_id_map(gtfs => $gtfs, route => $route_short_name);
+			while (my ($shape_id, $direction_id) = each(%s2d)) {
+				$shape_direction_id{$agency_route}{$shape_id} = $direction_id;
+			}
+			
+			my @shape_id = $self->get_transit_route_shape_ids($gtfs, $route_short_name);
+			$route_shape_id{$agency_route} = [@shape_id];
 
-			my @excepted_trips = $self->get_excepted_transit_trips(gtfs => $gtfs, 
-									       route => $route_short_name);
-			my @excluded_trips = $self->get_excepted_transit_trips(gtfs => $gtfs, 
-									       route => $route_short_name,
-									       return_excluded_trips => 1);
+			my @excepted_trips = $self->get_excepted_transit_trips(gtfs => $gtfs, route => $route_short_name);
+			my @excluded_trips = $self->get_excepted_transit_trips(gtfs => $gtfs, route => $route_short_name, return_excluded_trips => 1);
 			my @excepted_shape_id = $self->get_transit_shape_ids_from_trip_ids(gtfs => $gtfs, trips => \@excepted_trips);
 			my @excluded_shape_id = $self->get_transit_shape_ids_from_trip_ids(gtfs => $gtfs, trips => \@excluded_trips);
-			my %excepted_shape_id = map { ($_, 1) } @excepted_shape_id;
-			my %excluded_shape_id = map { ($_, 1) } @excluded_shape_id;
-			my @shape_id = $self->get_transit_route_shape_ids($gtfs, $route_id);
-			printf STDERR ("route %s excepted %d excluded %d\n",
-				       $route_short_name,
-				       scalar(@excepted_shape_id),
-				       scalar(@excluded_shape_id)) if $verbose;
+			$shape_excepted{$agency_route}{$_} = 1 foreach @excepted_shape_id;
+			$shape_excluded{$agency_route}{$_} = 1 foreach @excluded_shape_id;
 
-			my $id_counter = 0;
-			my %coords_to_id = (); # map {x,y} to id
-			my %coords = ();       # map id to [x,y]
-
-			my @paths          = (); # each member an arrayref containing node_ids
-			my @excepted_paths = ();
-
-			print STDERR ("    Getting route shapes ... ") if $verbose;
-
-			foreach my $shape_id (@shape_id) {
-				if ($excluded_shape_id{$shape_id}) {
-					next;
-				}
-				my $path = [];
-				foreach my $coords ($self->get_transit_route_shape_points($gtfs, $shape_id)) {
-					my ($lon, $lat) = @$coords;
-					if (exists $coords_to_id{$lon, $lat}) {
-						push(@$path, $coords_to_id{$lon, $lat});
-					} else {
-						$coords_to_id{$lon, $lat} = ++$id_counter;
-						$coords{$id_counter} = [$lon, $lat];
-						push(@$path, $id_counter);
-					}
-				}
-				if ($excepted_shape_id{$shape_id}) {
-					push(@excepted_paths, $path);
-				} else {
-					push(@paths, $path);
-				}
-			}
-			print STDERR ("Done.\n") if $verbose;
-
-			{
-				printf STDERR ("    Consolidating %d + %d paths ... ",
-					       scalar(@paths),
-					       scalar(@excepted_paths)) if $verbose;
-				@paths          = find_chunks(@paths);
-				@excpeted_paths = find_chunks(@excepted_paths);
-				print STDERR (" got %d + %d paths.\n",
-					      scalar(@paths),
-					      scalar(@excepted_paths)) if $verbose;
-			}
-
-			my $stuff = $self->{transit_route_overrides}->{$route_short_name} //
-				$self->{transit_route_colors}->{$route_color} //
-					$self->{transit_route_defaults};
-			my $route_group_name = $stuff->{group};
-			my $route_group = $route_groups{$route_group_name};
+			my $route_group_name_source = ($self->{transit_route_overrides}->{$route_short_name} //
+						       $self->{transit_route_colors}->{$route_color} //
+						       $self->{transit_route_defaults});
+			my $route_group_name        = $route_group_name_source->{group};
+			my $route_group             = $route_group_by_name{$route_group_name};
 			next unless $route_group;
+			$route_group{$agency_route} = $route_group;
 
-			my $class   = $route_group->{class};
-			my $class_2 = $route_group->{class} . "_2";
-
-			$route_svg_paths{$route_short_name} = [];
-			$route_svg_excepted_paths{$route_short_name} = [];
-			
 			foreach my $map_area (@{$self->{_map_areas}}) {
-				my $index = $map_area->{index};
-
-				$route_svg_paths{$route_short_name}[$index] = [];
-				$route_svg_excepted_paths{$route_short_name}[$index] = [];
-
+				my $map_area_index = $map_area->{index};
 				$self->update_scale($map_area);
-				my $map_area_layer = $self->map_area_layer($map_area);
-				my $transit_map_layer = $self->transit_map_layer($map_area_layer);
-
 				my $svg_west  = $self->{_svg_west};
 				my $svg_east  = $self->{_svg_east};
 				my $svg_north = $self->{_svg_north};
 				my $svg_south = $self->{_svg_south};
-				my $name = $map_area->{name};
-
-				print STDERR ("      Area $name ... ") if $verbose;
-
-				my $plot = sub {
-					my %args = @_;
-					my $path             = $args{path};
-					my $route_group      = $args{route_group};
-					my $route_group_name = $args{route_group_name};
-					my $class            = $args{class};
-					my $class_2          = $args{class_2};
-					my @coords = map {
-						my $svgx = $self->lon2x($coords{$_}->[0]);
-						my $svgy = $self->lat2y($coords{$_}->[1]);
+				foreach my $shape_id (@shape_id) {
+					my @coords = $self->get_transit_route_shape_points($gtfs, $shape_id);
+					$shape_coords{$agency_route}{$shape_id} = [@coords];
+					my @svg_coords = map {
+						my $svgx = $self->lon2x($_->[0]);
+						my $svgy = $self->lat2y($_->[1]);
 						my $xzone = ($svgx <= $svg_west)  ? -1 : ($svgx >= $svg_east)  ? 1 : 0;
 						my $yzone = ($svgy <= $svg_north) ? -1 : ($svgy >= $svg_south) ? 1 : 0;
 						[ $svgx, $svgy, $xzone, $yzone ];
-					} @$path;
-					if (all { $_->[POINT_X_ZONE] == -1 } @coords) { return; }
-					if (all { $_->[POINT_X_ZONE] ==  1 } @coords) { return; }
-					if (all { $_->[POINT_Y_ZONE] == -1 } @coords) { return; }
-					if (all { $_->[POINT_Y_ZONE] ==  1 } @coords) { return; }
-					print STDERR ("#") if $verbose;
+					} @coords;
+					if (all { $_->[POINT_X_ZONE] == -1 } @svg_coords) { next; }
+					if (all { $_->[POINT_X_ZONE] ==  1 } @svg_coords) { next; }
+					if (all { $_->[POINT_Y_ZONE] == -1 } @svg_coords) { next; }
+					if (all { $_->[POINT_Y_ZONE] ==  1 } @svg_coords) { next; }
+					foreach (@svg_coords) { splice(@$_, 2); }
+					$shape_svg_coords{$map_area_index}{$agency_route}{$shape_id} = \@svg_coords;
+				}
+			}
+		}
+	}
 
-					my $route_group_layer = $self->layer(name    => $route_group_name,
+	foreach my $overlap (@{$self->{transit_route_fix_overlaps}}) {
+		my $separation = $overlap->{separation} // 1.0;
+		my $direction = $overlap->{direction} // 1.0;
+		my $agency_route_A = $overlap->{route_A}; # this route stays
+		my $agency_route_B = $overlap->{route_B}; # this route gets moved over
+		next unless defined $agency_route_A;
+		next unless defined $agency_route_B;
+		my $north = $overlap->{north};
+		my $south = $overlap->{south};
+		my $east  = $overlap->{east};
+		my $west  = $overlap->{west};
+		foreach my $map_area (@{$self->{_map_areas}}) {
+			my $map_area_index = $map_area->{index};
+			$self->update_scale($map_area);
+			my $svg_north = defined $north ? $self->lat2y($north) : undef;
+			my $svg_south = defined $south ? $self->lat2y($south) : undef;
+			my $svg_east  = defined $east  ? $self->lon2x($east)  : undef;
+			my $svg_west  = defined $west  ? $self->lon2x($west)  : undef;
+			foreach my $shape_id (keys(%{$shape_svg_coords{$map_area_index}{$agency_route_B}})) {
+				print STDERR ("{");
+				my $svg_coords = $shape_svg_coords{$map_area_index}{$agency_route_B}{$shape_id};
+				foreach my $point (@$svg_coords) {
+					my ($x, $y) = @$point;
+					next if defined $svg_north && $y < $svg_north;
+					next if defined $svg_south && $y > $svg_south;
+					next if defined $svg_east  && $x > $svg_east;
+					next if defined $svg_west  && $x < $svg_west;
+					printf STDERR ("(.");
+					foreach my $shape_id_A (keys(%{$shape_svg_coords{$map_area_index}{$agency_route_A}})) {
+						my $direction_id = $shape_direction_id{$agency_route_A}{$shape_id_A};
+						my ($xx, $yy) = move_point_away($x, $y, $separation,
+										$direction_id ? $direction : -$direction,
+										@{$shape_svg_coords{$map_area_index}{$agency_route_A}{$shape_id_A}});
+						if (!($xx == $x && $yy == $y)) {
+							$x = $xx;
+							$y = $yy;
+							printf STDERR ("%s.", $direction_id);
+						}
+					}
+					$point->[0] = $x;
+					$point->[1] = $y;
+					print STDERR (")");
+				}
+				print STDERR ("}\n");
+			}
+		}
+	}
+
+	foreach my $gtfs (@gtfs) {
+		my $agency_id = $gtfs->{data}{agency_id};
+		foreach my $route ($self->get_transit_routes($gtfs)) {
+			my $route_short_name = $route->{route_short_name};
+			my $agency_route = $agency_id . "/" . $route_short_name;
+			my $route_name = $route->{route_name};
+			my @shape_id = @{$route_shape_id{$agency_route}};
+			foreach my $map_area (@{$self->{_map_areas}}) {
+				my $map_area_index = $map_area->{index};
+				$self->update_scale($map_area);
+
+				my $map_area_layer = $self->map_area_layer($map_area);
+				my $transit_map_layer = $self->transit_map_layer($map_area_layer);
+
+				foreach my $shape_id (@shape_id) {
+
+					my @svg_coords = @{$shape_svg_coords{$map_area_index}{$agency_route}{$shape_id}};
+					my $route_group;
+					if ($shape_excluded{$agency_route}{$shape_id}) {
+						next;
+					}
+					elsif ($shape_excepted{$agency_route}{$shape_id}) {
+						$route_group = $exceptions_group;
+					}
+					else {
+						$route_group = $route_group{$agency_route};
+					}
+					next unless $route_group;
+					my $class = $route_group->{class};
+					my $class_2 = $class . "_2";
+					
+					my $route_group_layer = $self->layer(name    => $route_group->{name},
 									     z_index => $route_group->{index},
 									     parent  => $transit_map_layer);
 					my $route_layer = $self->layer(name => $route_name,
 								       parent => $route_group_layer);
 					my $clipped_group = $self->clipped_group(parent => $route_layer,
 										 clip_path_id => $map_area->{clip_path_id});
-				
-					my $polyline = $self->polyline(points => \@coords, class => $class);
+					my $polyline = $self->polyline(points => \@svg_coords, class => $class);
 					$clipped_group->appendChild($polyline);
 					if ($self->has_style_2(class => $class)) {
-						my $polyline_2 = $self->polyline(points => \@coords, class => $class_2);
+						my $polyline_2 = $self->polyline(points => \@svg_coords, class => $class_2);
 						$clipped_group->appendChild($polyline_2);
 					}
-				};
-
-				foreach my $path (@paths) {
-					$plot->(path             => $path,
-						route_group      => $route_group,
-						route_group_name => $route_group_name,
-						class            => $class,
-						class_2          => $class_2);
 				}
-				if (defined $exceptions_group) {
-					foreach my $path (@excepted_paths) {
-						$plot->(path             => $path,
-							route_group      => $exceptions_group,
-							route_group_name => $exceptions_group_name,
-							class            => $exceptions_class,
-							class_2          => $exceptions_class_2);
-					}
-				}
-
-				print STDERR (" done.\n") if $verbose;
 			}
 		}
-		
 	}
 
 	print STDERR ("Done.\n") if $verbose;
@@ -2117,6 +2146,19 @@ sub finish_xml {
 	print STDERR ("done.\n") if $verbose;
 }
 
+sub uniq_coord_pairs {
+	my @result = ();
+	my $px;
+	my $py;
+	foreach my $pair (@_) {
+		next if (defined $px && $pair->[0] == $px && defined $py && $pair->[1] == $py);
+		push(@result, $pair);
+		$px = $pair->[0];
+		$py = $pair->[1];
+	}
+	return @result;
+}
+
 # used for taking a path that overlaps another path and moving the
 # offending points on that path slightly away from it
 sub move_point_away {
@@ -2124,10 +2166,8 @@ sub move_point_away {
 	my $y = shift();
 	my $md = shift();	# minimum distance to move away
 	my $lr = shift();	# < 0 means move off to the left, > 0 means move off to the right.
-	if ((scalar(@_) % 2) != 0) {
-		die("odd number of coordinates passed to move_point_away");
-	}
-	
+	# rest of args are [x,y],[x,y],...
+
 	my $i;
 	my @x;  my @y;
 	my @dp;			# distance of (x, y) from each point (x[i], y[i])
@@ -2140,10 +2180,12 @@ sub move_point_away {
 	my @dy;
 	my @theta;
 
-	while (scalar(@_) > 0) {
-		push(@x, shift());
-		push(@y, shift());
+	my @pairs = uniq_coord_pairs(@_);
+	foreach my $pair (@pairs) {
+		push(@x, $pair->[0]);
+		push(@y, $pair->[1]);
 	}
+
 	my $n = scalar(@x);
 	if ($n < 1) {
 		return ($x, $y);
@@ -2156,24 +2198,25 @@ sub move_point_away {
 		}
 		return ($x, $y);
 	}
+
 	for ($i = 0; $i < $n; $i += 1) {
 		$dp[$i] = point_distance($x, $y, $x[$i], $y[$i]);
 	}
 	for ($i = 0; $i < ($n - 1); $i += 1) {
-		($rl[$i], $px[$i], $py[$i], $sl[$i], $dl[$i]) =
-			segment_distance($x, $y, $x[$i], $y[$i], $x[$i + 1], $y[$i + 1]);
+		($rl[$i], $px[$i], $py[$i], $sl[$i], $dl[$i]) = segment_distance($x, $y, $x[$i], $y[$i], $x[$i + 1], $y[$i + 1]);
 		$l[$i] = point_distance($x[$i], $y[$i], $x[$i + 1], $y[$i + 1]);
 		$dx[$i] = $x[$i + 1] - $x[$i];
 		$dy[$i] = $y[$i + 1] - $y[$i];
-		$theta[$i] = atan2($dy[$i] / $dx[$i]);
+		$theta[$i] = atan2($dy[$i], $dx[$i]);
 	}
 	for ($i = 0; $i < ($n - 2); $i += 1) {
-		if (($rl[$i] >= 0 && $rl[$i] <= 1 &&
-		     $rl[$i + 1] >= 0 && $rl[$i + 1] <= 1 &&
-		     $dl[$i] <= $md && $dl[$i + 1] <= $md) ||
-		    ($dp[$i + 1] <= $md)) {
-			my $dx = ($x[$i + 1] - $x[$i]) / $l[$i] + ($x[$i + 2] - $x[$i + 1]) / $l[$i + 1];
-			my $dy = ($y[$i + 1] - $y[$i]) / $l[$i] + ($y[$i + 2] - $y[$i + 1]) / $l[$i + 1];
+		if (($dl[$i]     < $md &&
+		     $dl[$i + 1] < $md &&
+		     $rl[$i]     >= 0 && $rl[$i]     <= 1 &&
+		     $rl[$i + 1] >= 0 && $rl[$i + 1] <= 1) ||
+		    ($dp[$i + 1] < $md)) {
+			my $dx = $dx[$i] / $l[$i] + $dx[$i + 1] / $l[$i + 1];
+			my $dy = $dy[$i] / $l[$i] + $dy[$i + 1] / $l[$i + 1];
 			my $theta = atan2($dy, $dx);
 			if ($lr < 0) {
 				$x = $x[$i + 1] - $md * sin($theta);
@@ -2186,7 +2229,7 @@ sub move_point_away {
 		}
 	}
 	for ($i = 0; $i < ($n - 1); $i += 1) {
-		if ($rl[$i] >= 0 && $rl[$i] <= 1 && $dl[$i] <= $md) {
+		if ($dl[$i] < $md && $rl[$i] >= 0 && $rl[$i] <= 1) {
 			my $dx = $x[$i + 1] - $x[$i];
 			my $dy = $y[$i + 1] - $y[$i];
 			my $theta = atan2($dy, $dx);
@@ -2200,7 +2243,7 @@ sub move_point_away {
 			}
 		}
 	}
-	if ($dp[0] <= $md) {
+	if ($dp[0] < $md) {
 		if ($lr < 0) {
 			$x = $px[0] - $md * sin($theta[0]);
 			$y = $py[0] + $md * cos($theta[0]);
@@ -2210,7 +2253,7 @@ sub move_point_away {
 			$y = $py[0] - $md * cos($theta[0]);
 		}
 	}
-	elsif ($dp[$n - 1] <= $md) {
+	elsif ($dp[$n - 1] < $md) {
 		if ($lr < 0) {
 			$x = $px[$n - 1] - $md * sin($theta[$n - 1]);
 			$y = $py[$n - 1] + $md * cos($theta[$n - 1]);
