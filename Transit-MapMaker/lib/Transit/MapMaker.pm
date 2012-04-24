@@ -85,7 +85,7 @@ BEGIN {
 		      transit_route_overrides
 		      transit_route_defaults
 		      transit_route_groups
-		      transit_route_colors
+		      orig_transit_route_color_mapping
 		      transit_trip_exceptions
 		      transit_route_fix_overlaps
 		    );
@@ -285,9 +285,9 @@ sub init_xml {
 	my $parser = XML::LibXML->new();
 	$parser->keep_blanks(0);
 	my $doc = eval {
-		print STDERR ("Parsing $self->{filename} ... ") if $verbose;
+		$self->diag("Parsing $self->{filename} ... ");
 		my $d = $parser->parse_file($self->{filename});
-		print STDERR ("Done.\n") if $verbose;
+		$self->diag("Done.\n");
 		return $d;
 	};
 	my $doc_is_new = 0;
@@ -900,7 +900,6 @@ END
                          and stop_times.stop_id = ?
 END
 	
-	print STDERR ("        Trip exceptions...\n") if $verbose;
 	foreach my $exception (@exceptions) {
 		if ($return_excluded_trips) {
 			next unless $exception->{exclude};
@@ -917,15 +916,10 @@ END
 		my $stop_id          = $exception->{stop_id};
 
 		if ($route_short_name && $trip_headsign) {
-			printf STDERR ("          Route %s '%s' %s\n",
-				       $route_short_name,
-				       $trip_headsign,
-				       ($return_trip ? " + return trip" : " (not including return trip)"));
 			$sth->execute($route_short_name, $trip_headsign);
 			while (my $hash = $sth->fetchrow_hashref()) {
 				my $trip_id = $hash->{trip_id};
 				my @hash = %$hash;
-				printf STDERR ("            @hash\n");
 				push(@trips, { %$hash });
 				if ($return_trip) {
 					$sth2->execute($trip_id);
@@ -933,7 +927,6 @@ END
 					$sth2->finish();
 					if ($hash2) {
 						my @hash2 = %$hash2;
-						printf STDERR ("              last stop on this trip: @hash2\n");
 						$sth3->execute($hash->{block_id},
 							       $hash->{direction_id},
 							       $hash->{trip_id},
@@ -942,7 +935,6 @@ END
 						my $hash3 = $sth3->fetchrow_hashref();
 						if ($hash3) {
 							my @hash3 = %$hash3;
-							printf STDERR ("              return trip: @hash3\n");
 							push(@trips, { %$hash3 });
 						}
 						$sth3->finish();
@@ -952,35 +944,23 @@ END
 			$sth->finish();
 		}
 		elsif ($stop_name) {
-			printf STDERR ("          Route %s stop name '%s'\n",
-				       $route_short_name,
-				       $stop_name);
 			$sth4->execute($route_short_name, $stop_name);
 			while (my $hash = $sth4->fetchrow_hashref()) {
 				my @hash = %$hash;
-				printf STDERR ("            @hash\n");
 				push(@trips, { %$hash });
 			}
 		}
 		elsif ($stop_code) {
-			printf STDERR ("          Route %s stop code %s\n",
-				       $route_short_name,
-				       $stop_code);
 			$sth5->execute($route_short_name, $stop_code);
 			while (my $hash = $sth5->fetchrow_hashref()) {
 				my @hash = %$hash;
-				printf STDERR ("            @hash\n");
 				push(@trips, { %$hash });
 			}
 		}
 		elsif ($stop_id) {
-			printf STDERR ("          Route %s stop id %s\n",
-				       $route_short_name,
-				       $stop_id);
 			$sth6->execute($route_short_name, $stop_id);
 			while (my $hash = $sth6->fetchrow_hashref()) {
 				my @hash = %$hash;
-				printf STDERR ("            @hash\n");
 				push(@trips, { %$hash });
 			}
 			$sth6->finish();
@@ -1030,9 +1010,6 @@ sub get_transit_shape_ids_from_trip_ids {
 	my @shape_ids = sort { $a <=> $b } uniq map { $_->{shape_id} } @trips;
 	return () unless scalar(@trip_ids) and scalar(@shape_ids);
 
-	warn("\@trip_ids: @trip_ids\n");
-	warn("\@shape_ids: @shape_ids\n");
-
 	my $sql = <<"END";
 		select	count(*)
 		from	trips
@@ -1049,7 +1026,7 @@ END
 		$sth->execute($shape_id, @trip_ids);
 		my ($count) = $sth->fetchrow_array();
 		if ($count) {
-			warn("  ** $shape_id [$count]\n");
+			# do nothing
 		}
 		else {
 			push(@result, $shape_id);
@@ -1128,7 +1105,7 @@ sub draw_transit_stops {
 	$self->stuff_all_layers_need();
 
        	foreach my $gtfs (@gtfs) {
-		printf STDERR ("Drawing transit stops for %s ... ", $gtfs->{data}->{name}) if $verbose;
+		$self->diagf("Drawing transit stops for %s ... ", $gtfs->{data}->{name});
 
 		my @stops = $self->get_transit_stops($gtfs);
 		
@@ -1184,7 +1161,7 @@ sub draw_transit_stops {
 				}
 			}
 		}
-		print STDERR ("done.\n") if $verbose;
+		$self->diag("done.\n");
 	}
 }
 
@@ -1223,7 +1200,8 @@ sub draw_transit_routes {
 	my %shape_coords;       
 	my %shape_svg_coords;   
 	my %route_group;        
-	
+
+	$self->diag("Gathering and converting route coordinates...\n");
 	foreach my $gtfs (@gtfs) {
 		my $agency_id = $gtfs->{data}{agency_id};
 		foreach my $route ($self->get_transit_routes($gtfs)) {
@@ -1240,7 +1218,7 @@ sub draw_transit_routes {
 
 			next if scalar(@routes) && !grep { $_ eq $route_short_name } @routes;
 
-			print STDERR ("  Route $agency_id $route_short_name - $route_title ...\n") if $verbose;
+			$self->diagf("  Route $agency_id $route_short_name - $route_title ...\n");
 			
 			my %s2d = $self->get_shape_id_to_direction_id_map(gtfs => $gtfs, route => $route_short_name);
 			while (my ($shape_id, $direction_id) = each(%s2d)) {
@@ -1258,7 +1236,7 @@ sub draw_transit_routes {
 			$shape_excluded{$agency_route}{$_} = 1 foreach @excluded_shape_id;
 
 			my $route_group_name_source = ($self->{transit_route_overrides}->{$route_short_name} //
-						       $self->{transit_route_colors}->{$route_color} //
+						       $self->{orig_transit_route_color_mapping}->{$route_color} //
 						       $self->{transit_route_defaults});
 			my $route_group_name        = $route_group_name_source->{group};
 			my $route_group             = $route_group_by_name{$route_group_name};
@@ -1293,13 +1271,23 @@ sub draw_transit_routes {
 		}
 	}
 
+	$self->diag("Handling user-defined overlaps...\n");
 	foreach my $overlap (@{$self->{transit_route_fix_overlaps}}) {
 		my $separation = $overlap->{separation} // 1.0;
-		my $direction = $overlap->{direction} // 1.0;
+		my $direction   = $overlap->{direction}   // 0;
+		my $direction_2 = $direction;
+		if ($direction eq "left") {
+			$direction_2 = "right";
+		}
+		elsif ($direction eq "right") {
+			$direction_2 = "left";
+		}
 		my $agency_route_A = $overlap->{route_A}; # this route stays
 		my $agency_route_B = $overlap->{route_B}; # this route gets moved over
 		next unless defined $agency_route_A;
 		next unless defined $agency_route_B;
+		$self->diag("  overlap $agency_route_A $agency_route_B...");
+		my $twirly = My::Twirly->new();
 		my $north = $overlap->{north};
 		my $south = $overlap->{south};
 		my $east  = $overlap->{east};
@@ -1312,7 +1300,7 @@ sub draw_transit_routes {
 			my $svg_east  = defined $east  ? $self->lon2x($east)  : undef;
 			my $svg_west  = defined $west  ? $self->lon2x($west)  : undef;
 			foreach my $shape_id (keys(%{$shape_svg_coords{$map_area_index}{$agency_route_B}})) {
-				print STDERR ("{");
+				$twirly->next();
 				my $svg_coords = $shape_svg_coords{$map_area_index}{$agency_route_B}{$shape_id};
 				foreach my $point (@$svg_coords) {
 					my ($x, $y) = @$point;
@@ -1320,27 +1308,27 @@ sub draw_transit_routes {
 					next if defined $svg_south && $y > $svg_south;
 					next if defined $svg_east  && $x > $svg_east;
 					next if defined $svg_west  && $x < $svg_west;
-					printf STDERR ("(.");
+					$twirly->next();
 					foreach my $shape_id_A (keys(%{$shape_svg_coords{$map_area_index}{$agency_route_A}})) {
 						my $direction_id = $shape_direction_id{$agency_route_A}{$shape_id_A};
 						my ($xx, $yy) = move_point_away($x, $y, $separation,
-										$direction_id ? $direction : -$direction,
+										$direction_id ? $direction : $direction_2,
 										@{$shape_svg_coords{$map_area_index}{$agency_route_A}{$shape_id_A}});
 						if (!($xx == $x && $yy == $y)) {
 							$x = $xx;
 							$y = $yy;
-							printf STDERR ("%s.", $direction_id);
+							$twirly->next();
 						}
 					}
 					$point->[0] = $x;
 					$point->[1] = $y;
-					print STDERR (")");
 				}
-				print STDERR ("}\n");
 			}
 		}
 	}
+	$self->diag("Done with overlaps.\n");
 
+	$self->diag("Drawing routes...\n");
 	foreach my $gtfs (@gtfs) {
 		my $agency_id = $gtfs->{data}{agency_id};
 		foreach my $route ($self->get_transit_routes($gtfs)) {
@@ -1369,8 +1357,10 @@ sub draw_transit_routes {
 						$route_group = $route_group{$agency_route};
 					}
 					next unless $route_group;
-					my $class = $route_group->{class};
-					my $class_2 = $class . "_2";
+					my $route_group_class = $route_group->{class};
+
+					my $class   = "${route_group_class} route_${agency_id} route_${route_short_name}";
+					my $class_2 = "${route_group_class}_2 route_${agency_id}_2 route_${route_short_name}_2";
 					
 					my $route_group_layer = $self->layer(name    => $route_group->{name},
 									     z_index => $route_group->{index},
@@ -1389,8 +1379,7 @@ sub draw_transit_routes {
 			}
 		}
 	}
-
-	print STDERR ("Done.\n") if $verbose;
+	$self->diag("Done.\n");
 }
 
 sub update_styles {
@@ -1455,19 +1444,19 @@ sub draw_openstreetmap_maps {
 	foreach my $filename (@{$self->{_map_xml_filenames}}) {
 		$map_number += 1;
 
-		print STDERR ("($map_number/$num_maps) Parsing $filename ... ") if $verbose;
+		$self->diag("($map_number/$num_maps) Parsing $filename ... ");
 		my $doc = $self->{_parser}->parse_file($filename);
-		print STDERR ("done.\n") if $verbose;
+		$self->diag("done.\n");
 
-		print STDERR ("  Finding <node> elements ... ") if $verbose;
+		$self->diag("  Finding <node> elements ... ");
 		my @nodes = $doc->findnodes("/osm/node");
 		my %nodes;
-		print STDERR (scalar(@nodes) . " elements found.\n") if $verbose;
+		$self->diag(scalar(@nodes) . " elements found.\n");
 		foreach my $map_area (@{$self->{_map_areas}}) {
 			$self->update_scale($map_area);
 			my $index = $map_area->{index};
 			my $area_name = $map_area->{name};
-			print STDERR ("    Indexing for map area $area_name ... ") if $verbose;
+			$self->diag("    Indexing for map area $area_name ... ");
 			my $svg_west  = $self->{_svg_west};
 			my $svg_east  = $self->{_svg_east};
 			my $svg_north = $self->{_svg_north};
@@ -1483,16 +1472,16 @@ sub draw_openstreetmap_maps {
 				my $result = [$svgx, $svgy, $xzone, $yzone];
 				$nodes{$id}[$index] = $result;
 			}
-			print STDERR ("done.\n") if $verbose;
+			$self->diag("done.\n");
 		}
-		print STDERR ("done.\n") if $verbose;
+		$self->diag("done.\n");
 
-		print STDERR ("  Finding <way> elements ... ") if $verbose;
+		$self->diag("  Finding <way> elements ... ");
 		my @ways = $doc->findnodes("/osm/way");
 		my %ways;
 		my %ways_index_k;
 		my %ways_index_kv;
-		print STDERR (scalar(@ways) . " elements found; indexing ... ") if $verbose;
+		$self->diag(scalar(@ways) . " elements found; indexing ... ");
 		foreach my $way (@ways) {
 			my $id = $way->getAttribute("id");
 			my @nodeid = map { $_->getAttribute("ref"); } $way->findnodes("nd");
@@ -1517,27 +1506,27 @@ sub draw_openstreetmap_maps {
 				$result->{tags}->{$k} = $v;
 			}
 		}
-		print STDERR ("done.\n") if $verbose;
+		$self->diag("done.\n");
 
 		foreach my $map_area (@{$self->{_map_areas}}) {
 			$self->update_scale($map_area);
 			my $index = $map_area->{index};
 			my $area_name = $map_area->{name};
-			print STDERR ("    Indexing for map area $area_name ... ") if $verbose;
+			$self->diag("    Indexing for map area $area_name ... ");
 			foreach my $way (@ways) {
 				my $id = $way->getAttribute("id");
 				my @nodeid = @{$ways{$id}{nodeid}};
 				my @points = map { $nodes{$_}[$index] } @nodeid;
 				$ways{$id}{points}[$index] = \@points;
 			}
-			print STDERR ("done.\n") if $verbose;
+			$self->diag("done.\n");
 		}
 		
 		foreach my $map_area (@{$self->{_map_areas}}) {
 			$self->update_scale($map_area);
 			my $index = $map_area->{index};
 			my $area_name = $map_area->{name};
-			print STDERR ("Adding objects for map area $area_name ...\n") if $verbose;
+			$self->diag("Adding objects for map area $area_name ...\n");
 
 			foreach my $info (@{$self->{osm_layers}}) {
 				my $name = $info->{name};
@@ -1556,9 +1545,9 @@ sub draw_openstreetmap_maps {
 					}
 				}
 				@ways = uniq @ways;
-				printf STDERR ("\r  %-77.77s", 
-					       sprintf("%s (%s objects) ...",
-						       $name, scalar(@ways)));
+				$self->diagf("\r  %-77.77s", 
+					     sprintf("%s (%s objects) ...",
+						     $name, scalar(@ways)));
 
 				my $options = {};
 				if ($map_area->{scale_stroke_width} && exists $map_area->{zoom}) {
@@ -1601,7 +1590,7 @@ sub draw_openstreetmap_maps {
 				}
 			}
 
-			print STDERR ("\ndone.\n") if $verbose;
+			$self->diag("\ndone.\n");
 		}
 
 		foreach my $k (keys(%ways_index_k)) {
@@ -2127,7 +2116,7 @@ sub finish_xml {
 	}
 
 	open(my $fh, ">", $self->{filename}) or die("cannot write $self->{filename}: $!\n");
-	print STDERR ("Writing $self->{filename} ... ") if $verbose;
+	$self->diag("Writing $self->{filename} ... ");
 	my $string = $self->{_svg_doc}->toString(1);
 
 	# we're fine with indentation everywhere else, but inserting
@@ -2143,7 +2132,7 @@ sub finish_xml {
 
 	print $fh $string;
 	close($fh);
-	print STDERR ("done.\n") if $verbose;
+	$self->diag("done.\n");
 }
 
 sub uniq_coord_pairs {
@@ -2159,14 +2148,97 @@ sub uniq_coord_pairs {
 	return @result;
 }
 
+use constant PI => 4 * atan2(1, 1);
+
+use Inline C => <<"END_C";
+
+#include <math.h>
+
+void move_point_away_2 (double x, double y, double md, double gd, SV* xy, ...) {
+	Inline_Stack_Vars;
+
+	int i, j, num_items;
+	double* xx, yy, dp, dl, rl, px, py, sl, l, dx, dy, th;
+	double theta, lastx, thisx, lasty, thisy;
+
+	for (i = 0, j = 0; i <= (Inline_Stack_Items - 2); i += 2) {
+		thisx = SvNV(xy[i * 2]);
+		thisy = SvNV(xy[i * 2 + 1]);
+		if (!(i && lastx == thisx && lasty == thisy)) {
+			xx[j] = thisx;
+			yy[j] = thisy;
+			j += 1;
+		}
+	}
+	num_items = j;
+
+	if (num_items < 1) {
+		Inline_Stack_Reset;
+		Inline_Stack_Push(sv_2mortal(newSVnv(x)));
+		Inline_Stack_Push(sv_2mortal(newSVnv(y)));
+		Inline_Stack_Done;
+		return;
+	}
+	if (num_items == 1) {
+		theta = atan2(yy[0] - y, xx[0] - x);
+		if (point_distance_2(x, y, xx[0], yy[0]) < md) {
+			x = xx[0] + md * cos(theta);
+			y = yy[0] + md * sin(theta);
+		}
+		Inline_Stack_Reset;
+		Inline_Stack_Push(sv_2mortal(newSVnv(x)));
+		Inline_Stack_Push(sv_2mortal(newSVnv(y)));
+		Inline_Stack_Done;
+		return;
+	}
+
+	xx    = (double *)malloc(sizeof(double) * Inline_Stack_Items);
+	yy    = (double *)malloc(sizeof(double) * Inline_Stack_Items);
+	dp    = (double *)malloc(sizeof(double) * Inline_Stack_Items);
+	dl    = (double *)malloc(sizeof(double) * Inline_Stack_Items);
+	rl    = (double *)malloc(sizeof(double) * Inline_Stack_Items);
+	px    = (double *)malloc(sizeof(double) * Inline_Stack_Items);
+	py    = (double *)malloc(sizeof(double) * Inline_Stack_Items);
+	sl    = (double *)malloc(sizeof(double) * Inline_Stack_Items);
+	l     = (double *)malloc(sizeof(double) * Inline_Stack_Items);
+	dx    = (double *)malloc(sizeof(double) * Inline_Stack_Items);
+	dy    = (double *)malloc(sizeof(double) * Inline_Stack_Items);
+	th    = (double *)malloc(sizeof(double) * Inline_Stack_Items);
+
+	free(xx);
+	free(yy);
+	free(dp);
+	free(dl);
+	free(rl);
+	free(px);
+	free(py);
+	free(sl);
+	free(l);
+	free(dx);
+	free(dy);
+	free(th);
+
+	Inline_Stack_Void;
+}
+END_C
+
 # used for taking a path that overlaps another path and moving the
 # offending points on that path slightly away from it
 sub move_point_away {
 	my $x = shift();
 	my $y = shift();
 	my $md = shift();	# minimum distance to move away
-	my $lr = shift();	# < 0 means move off to the left, > 0 means move off to the right.
+	my $gd = shift();	# left,right,north,south,east,west,<radians>
 	# rest of args are [x,y],[x,y],...
+
+	if    ($gd eq "south"     || $gd eq "s" ) { $gd = atan2( 1,  0); }
+	elsif ($gd eq "north"     || $gd eq "n" ) { $gd = atan2(-1,  0); }
+	elsif ($gd eq "east"      || $gd eq "e" ) { $gd = atan2( 0,  1); }
+	elsif ($gd eq "west"      || $gd eq "w" ) { $gd = atan2( 0, -1); }
+	elsif ($gd eq "southwest" || $gd eq "sw") { $gd = atan2( 1, -1); }
+	elsif ($gd eq "northwest" || $gd eq "nw") { $gd = atan2(-1, -1); }
+	elsif ($gd eq "southeast" || $gd eq "se") { $gd = atan2( 1,  1); }
+	elsif ($gd eq "northeast" || $gd eq "ne") { $gd = atan2(-1,  1); }
 
 	my $i;
 	my @x;  my @y;
@@ -2217,11 +2289,20 @@ sub move_point_away {
 		    ($dp[$i + 1] < $md)) {
 			my $dx = $dx[$i] / $l[$i] + $dx[$i + 1] / $l[$i + 1];
 			my $dy = $dy[$i] / $l[$i] + $dy[$i + 1] / $l[$i + 1];
+
 			my $theta = atan2($dy, $dx);
-			if ($lr < 0) {
+			if ($gd eq "left") {
 				$x = $x[$i + 1] - $md * sin($theta);
 				$y = $y[$i + 1] + $md * cos($theta);
 			} 
+			elsif ($gd eq "right") {
+				$x = $x[$i + 1] + $md * sin($theta);
+				$y = $y[$i + 1] - $md * cos($theta);
+			}
+			elsif (sin($theta - $gd) < 0) {
+				$x = $x[$i + 1] - $md * sin($theta);
+				$y = $y[$i + 1] + $md * cos($theta);
+			}
 			else {
 				$x = $x[$i + 1] + $md * sin($theta);
 				$y = $y[$i + 1] - $md * cos($theta);
@@ -2232,8 +2313,17 @@ sub move_point_away {
 		if ($dl[$i] < $md && $rl[$i] >= 0 && $rl[$i] <= 1) {
 			my $dx = $x[$i + 1] - $x[$i];
 			my $dy = $y[$i + 1] - $y[$i];
+
 			my $theta = atan2($dy, $dx);
-			if ($lr < 0) {
+			if ($gd eq "left") {
+				$x = $px[$i] - $md * sin($theta);
+				$y = $py[$i] + $md * cos($theta);
+			}
+			elsif ($gd eq "right") {
+				$x = $px[$i] + $md * sin($theta);
+				$y = $py[$i] - $md * cos($theta);
+			}
+			elsif (sin($theta - $gd) < 0) {
 				$x = $px[$i] - $md * sin($theta);
 				$y = $py[$i] + $md * cos($theta);
 			}
@@ -2244,23 +2334,41 @@ sub move_point_away {
 		}
 	}
 	if ($dp[0] < $md) {
-		if ($lr < 0) {
-			$x = $px[0] - $md * sin($theta[0]);
-			$y = $py[0] + $md * cos($theta[0]);
+		my $theta = $theta[0];
+		if ($gd eq "left") {
+			$x = $px[0] - $md * sin($theta);
+			$y = $py[0] + $md * cos($theta);
+		}
+		elsif ($gd eq "right") {
+			$x = $px[0] + $md * sin($theta);
+			$y = $py[0] - $md * cos($theta);
+		}
+		elsif (sin($theta - $gd) < 0) {
+			$x = $px[0] - $md * sin($theta);
+			$y = $py[0] + $md * cos($theta);
 		}
 		else {
-			$x = $px[0] + $md * sin($theta[0]);
-			$y = $py[0] - $md * cos($theta[0]);
+			$x = $px[0] + $md * sin($theta);
+			$y = $py[0] - $md * cos($theta);
 		}
 	}
 	elsif ($dp[$n - 1] < $md) {
-		if ($lr < 0) {
-			$x = $px[$n - 1] - $md * sin($theta[$n - 1]);
-			$y = $py[$n - 1] + $md * cos($theta[$n - 1]);
+		my $theta = $theta[$n - 1];
+		if ($gd eq "left") {
+			$x = $px[$n - 1] - $md * sin($theta);
+			$y = $py[$n - 1] + $md * cos($theta);
+		}
+		elsif ($gd eq "right") {
+			$x = $px[$n - 1] + $md * sin($theta);
+			$y = $py[$n - 1] - $md * cos($theta);
+		}
+		elsif (sin($theta - $gd) < 0) {
+			$x = $px[$n - 1] - $md * sin($theta);
+			$y = $py[$n - 1] + $md * cos($theta);
 		}
 		else {
-			$x = $px[$n - 1] + $md * sin($theta[$n - 1]);
-			$y = $py[$n - 1] - $md * cos($theta[$n - 1]);
+			$x = $px[$n - 1] + $md * sin($theta);
+			$y = $py[$n - 1] - $md * cos($theta);
 		}
 	}
 	return ($x, $y);
@@ -2299,5 +2407,55 @@ sub segment_distance {
 	return ($r, $px, $py, $s, $d);
 }
 
+sub diag {
+	my ($self, @args) = @_;
+	return unless $verbose;
+	print STDERR (@args);
+}
+sub diagf {
+	my ($self, $format, @args) = @_;
+	return unless $verbose;
+	printf STDERR ($format, @args);
+}
+
+package My::Twirly;
+sub new {
+	my ($class) = @_;
+	my $self = bless({}, $class);
+	$self->show();
+	return $self;
+}
+sub show {
+	my ($self) = @_;
+	my $state = $self->{state};
+	if (!defined $state) {
+		$self->{state} = 0;
+		print STDERR (" " x 16);
+		return;
+	}
+	if ($state < 0) {
+		print STDERR (("\b" x 16) . ("#" x 16) . "\n");
+		return;
+	}
+	$state %= 32;
+	if ($state <= 16) {
+		print STDERR (("\b" x 16) . ("#" x $state) . (" " x (16 - $state)));
+	}
+	else {
+		print STDERR (("\b" x 16) . (" " x ($state - 16)) . ("#" x (32 - $state)));
+	}
+}
+sub next {
+	my ($self) = @_;
+	$self->{state} += 1;
+	$self->show();
+}
+sub DESTROY {
+	my ($self) = @_;
+	$self->{state} = -1;
+	$self->show();
+}
+
 1;
+
 
