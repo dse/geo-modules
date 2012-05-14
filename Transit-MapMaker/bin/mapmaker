@@ -184,11 +184,11 @@ sub cmd__force_gtfs_repopulate_database {
 }
 
 sub cmd__draw_openstreetmap_maps {
-	my ($self) = @_;
+	my ($self, @args) = @_;
 	my $mm = $self->{mapmaker};
 	die("map MAPNAME must be specified.\n") unless $mm;
 	$mm->update_openstreetmap();
-	$mm->draw_openstreetmap_maps();
+	$mm->draw_openstreetmap_maps(@args);
 }
 
 sub cmd__draw_transit_routes {
@@ -218,5 +218,19 @@ sub cmd__update_styles {
 	my $mm = $self->{mapmaker};
 	die("map MAPNAME must be specified.\n") unless $mm;
 	$mm->update_styles();
+}
+
+sub cmd__draw_grid {
+	my ($self) = @_;
+	my $mm = $self->{mapmaker};
+	die("map MAPNAME must be specified.\n") unless $mm;
+	$mm->draw_grid();
+}
+
+sub cmd__remove_grid {
+	my ($self) = @_;
+	my $mm = $self->{mapmaker};
+	die("map MAPNAME must be specified.\n") unless $mm;
+	$mm->remove_grid();
 }
 

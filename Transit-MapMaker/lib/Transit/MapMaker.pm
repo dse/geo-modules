@@ -57,7 +57,10 @@ BEGIN {
 	@_FIELDS = qw(filename
 		      _read_filename
 		      north south east west
-		      map_data_north map_data_south map_data_east map_data_west
+		      map_data_north
+		      map_data_south
+		      map_data_east
+		      map_data_west
 		      paper_width paper_height paper_margin
 		      vertical_align
 		      horizontal_align
@@ -181,18 +184,7 @@ use Carp qw(croak);
 use File::Path qw(mkpath);
 use File::Basename;
 use List::MoreUtils qw(all firstidx uniq);
-
-sub file_get_contents {		# php-like lol
-	my ($filename) = @_;
-	open(my $fh, "<", $filename) or die("Cannot read $filename: $!\n");
-	return join("", <$fh>);
-}
-
-sub file_put_contents {		# php-like lol
-	my ($filename, $contents) = @_;
-	open(my $fh, ">", $filename) or die("Cannot write $filename: $!\n");
-	print $fh $contents;
-}
+use Transit::MapMaker::Util;
 
 sub update_openstreetmap {
 	my ($self, $force) = @_;
@@ -265,14 +257,6 @@ sub _update_openstreetmap {
 sub force_update_openstreetmap {
 	my ($self) = @_;
 	$self->update_openstreetmap(1);
-}
-
-our %NS;
-BEGIN {
-	$NS{"svg"}      = "http://www.w3.org/2000/svg";
-	$NS{"inkscape"} = "http://www.inkscape.org/namespaces/inkscape";
-	$NS{"sodipodi"} = "http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd";
-	$NS{"mapmaker"} = "http://webonastick.com/namespaces/transit-mapmaker";
 }
 
 sub init_xml {
@@ -360,12 +344,15 @@ END
 	if ($doc_is_new) {
 		my ($view) = $doc->findnodes("//sodipodi:namedview[\@id='base']");
 		if ($view) {
-			$view->setAttributeNS($NS{"inkscape"}, "inkscape:cx", $self->{paper_width} / 2);
-			$view->setAttributeNS($NS{"inkscape"}, "inkscape:cy", $self->{paper_height} / 2);
+			$view->setAttributeNS($NS{"inkscape"}, "inkscape:cx",
+					      $self->{paper_width} / 2);
+			$view->setAttributeNS($NS{"inkscape"}, "inkscape:cy",
+					      $self->{paper_height} / 2);
 		}
 	}
 
-	$self->{_map_areas} = [ { is_main => 1, name => "Main Map" }, eval { @{$self->{inset_maps}} } ];
+	$self->{_map_areas} = [ { is_main => 1, name => "Main Map" }, 
+				eval { @{$self->{inset_maps}} } ];
 
 	$self->add_indexes_to_array($self->{_map_areas});
 	$self->add_indexes_to_array($self->{transit_route_groups});
@@ -556,12 +543,6 @@ sub style_node {
 	}
 
 	my $contents = "\n";
-	foreach my $class (sort keys %{$self->{classes}}) {
-		my $css   = $self->compose_style_string(class => $class);
-		my $css_2 = $self->compose_style_string(class => $class, style_attr_name => "style_2");
-		$contents .= "        .${class}   { $css }\n";
-		$contents .= "        .${class}_2 { $css_2 }\n" if $self->has_style_2(class => $class);
-	}
 	
 	$contents .= <<'END';
         .WHITE      { fill: #fff; }
@@ -583,6 +564,14 @@ sub style_node {
 		font-family: Arial;
         }
 END
+
+	foreach my $class (sort keys %{$self->{classes}}) {
+		my $css   = $self->compose_style_string(class => $class);
+		my $css_2 = $self->compose_style_string(class => $class, style_attr_name => "style_2");
+		$contents .= "        .${class}   { $css }\n";
+		$contents .= "        .${class}_2 { $css_2 }\n" if $self->has_style_2(class => $class);
+	}
+
 	$style->removeChildNodes();
 	my $cdata = $doc->createCDATASection($contents);
 	$style->appendChild($cdata);
@@ -1287,7 +1276,6 @@ sub draw_transit_routes {
 		next unless defined $agency_route_A;
 		next unless defined $agency_route_B;
 		$self->diag("  overlap $agency_route_A $agency_route_B...");
-		my $twirly = My::Twirly->new();
 		my $north = $overlap->{north};
 		my $south = $overlap->{south};
 		my $east  = $overlap->{east};
@@ -1299,32 +1287,17 @@ sub draw_transit_routes {
 			my $svg_south = defined $south ? $self->lat2y($south) : undef;
 			my $svg_east  = defined $east  ? $self->lon2x($east)  : undef;
 			my $svg_west  = defined $west  ? $self->lon2x($west)  : undef;
-			foreach my $shape_id (keys(%{$shape_svg_coords{$map_area_index}{$agency_route_B}})) {
-				$twirly->next();
-				my $svg_coords = $shape_svg_coords{$map_area_index}{$agency_route_B}{$shape_id};
-				foreach my $point (@$svg_coords) {
-					my ($x, $y) = @$point;
-					next if defined $svg_north && $y < $svg_north;
-					next if defined $svg_south && $y > $svg_south;
-					next if defined $svg_east  && $x > $svg_east;
-					next if defined $svg_west  && $x < $svg_west;
-					$twirly->next();
-					foreach my $shape_id_A (keys(%{$shape_svg_coords{$map_area_index}{$agency_route_A}})) {
-						my $direction_id = $shape_direction_id{$agency_route_A}{$shape_id_A};
-						my ($xx, $yy) = move_point_away($x, $y, $separation,
-										$direction_id ? $direction : $direction_2,
-										@{$shape_svg_coords{$map_area_index}{$agency_route_A}{$shape_id_A}});
-						if (!($xx == $x && $yy == $y)) {
-							$x = $xx;
-							$y = $yy;
-							$twirly->next();
-						}
-					}
-					$point->[0] = $x;
-					$point->[1] = $y;
+			foreach my $shape_id_B (keys(%{$shape_svg_coords{$map_area_index}{$agency_route_B}})) {
+				foreach my $shape_id_A (keys(%{$shape_svg_coords{$map_area_index}{$agency_route_A}})) {
+					move_line_away($svg_north, $svg_south, $svg_east, $svg_west,
+						       $separation,
+						       $direction,
+						       $shape_svg_coords{$map_area_index}{$agency_route_B}{$shape_id_B},
+						       $shape_svg_coords{$map_area_index}{$agency_route_A}{$shape_id_A});
 				}
 			}
 		}
+		$self->diag("done.\n");
 	}
 	$self->diag("Done with overlaps.\n");
 
@@ -1406,7 +1379,7 @@ sub stuff_all_layers_need {
 }
 
 sub draw_openstreetmap_maps {
-	my ($self) = @_;
+	my ($self, $some) = @_;
 
 	$self->init_xml();
 
@@ -1477,7 +1450,30 @@ sub draw_openstreetmap_maps {
 		$self->diag("done.\n");
 
 		$self->diag("  Finding <way> elements ... ");
-		my @ways = $doc->findnodes("/osm/way");
+		my @ways;
+
+
+		if ($some) {
+			my %exclude = (railway => 1,
+				       highway => [qw(residential living_street path)]);
+			my @exclude;
+			while (my ($k, $v) = each(%exclude)) {
+				if ($v && !ref($v)) {
+					push(@exclude, "\@k='$k'");
+				}
+				elsif (ref($v) eq "ARRAY") {
+					my $or = join(" or ", map { "\@v='$_'" } @$v);
+					push(@exclude, "\@k='$k' and ($or)");
+				}
+			}
+			my $not = join(" and ", map { "not(tag[$_])" } @exclude);
+			my $xpath = "/osm/way[$not]";
+			print STDERR "$xpath\n";
+			@ways = $doc->findnodes($xpath);
+		}
+		else {
+			@ways = $doc->findnodes("/osm/way");
+		}
 		my %ways;
 		my %ways_index_k;
 		my %ways_index_kv;
@@ -1890,7 +1886,8 @@ sub draw_grid {
 	$self->stuff_all_layers_need();
 
 	my $class = $grid->{class};
-	my $text_class = $grid->{"text-class"} . " GRID_TEXT";
+	my $text_class   = "GRID_TEXT " . $grid->{"text-class"};
+	my $text_2_class = "GRID_TEXT " . $grid->{"text-2-class"};
 
 	foreach my $map_area (@{$self->{_map_areas}}) {
 		$self->update_scale($map_area);
@@ -1907,9 +1904,8 @@ sub draw_grid {
 		my $east = $self->{east};   my $xe = $self->lon2x($east);
 		my $west = $self->{west};   my $xw = $self->lon2x($west);
 
-		for (my $lat = int($south / $increment) * $increment;
-		     $lat <= $north;
-		     $lat += $increment) {
+		for (my $lat = int($south / $increment) * $increment; $lat <= $north; $lat += $increment) {
+			my $lat_text = sprintf($format, $lat);
 			my $y = $self->lat2y($lat);
 
 			my $path = $doc->createElementNS($NS{"svg"}, "path");
@@ -1917,22 +1913,19 @@ sub draw_grid {
 			$path->setAttribute("class", $class);
 			$clipped_group->appendChild($path);
 
-			foreach my $xx ($xw + 18, $xe - 18) {
-				my $text = $doc->createElementNS($NS{"svg"}, "text");
-				$text->setAttribute("x", $xx);
-				$text->setAttribute("y", $y);
-				$text->setAttribute("class", $text_class);
-				my $tspan = $doc->createElementNS($NS{"svg"}, "tspan");
-				$tspan->setAttribute("x", $xx);
-				$tspan->setAttribute("y", $y);
-				$tspan->appendText(sprintf($format, $lat));
-				$text->appendChild($tspan);
-				$clipped_group->appendChild($text);
+			for (my $lon = (int($west / $increment) + 0.5) * $increment; $lon <= $east; $lon += $increment) {
+				my $x = $self->lon2x($lon);
+				my $text_node = $self->text_node(x => $x, y => $y, class => $text_2_class, text => $lat_text);
+				$clipped_group->appendChild($text_node);
 			}
+			# foreach my $x ($xw + 18, $xe - 18) {
+			# 	my $text_node = $self->text_node(x => $x, y => $y, class => $text_class, text => $lat_text);
+			# 	$clipped_group->appendChild($text_node);
+			# }
 		}
-		for (my $lon = int($west / $increment) * $increment;
-		     $lon <= $east;
-		     $lon += $increment) {
+
+		for (my $lon = int($west / $increment) * $increment; $lon <= $east; $lon += $increment) {
+			my $lon_text = sprintf($format, $lon);
 			my $x = $self->lon2x($lon);
 
 			my $path = $doc->createElementNS($NS{"svg"}, "path");
@@ -1940,20 +1933,37 @@ sub draw_grid {
 			$path->setAttribute("class", $class);
 			$clipped_group->appendChild($path);
 
-			foreach my $yy ($ys - 2, $yn + 8) {
-				my $text = $doc->createElementNS($NS{"svg"}, "text");
-				$text->setAttribute("x", $x);
-				$text->setAttribute("y", $yy);
-				$text->setAttribute("class", $text_class);
-				my $tspan = $doc->createElementNS($NS{"svg"}, "tspan");
-				$tspan->setAttribute("x", $x);
-				$tspan->setAttribute("y", $yy);
-				$tspan->appendText(sprintf($format, $lon));
-				$text->appendChild($tspan);
-				$clipped_group->appendChild($text);
+			for (my $lat = (int($south / $increment) + 0.5) * $increment; $lat <= $north; $lat += $increment) {
+				my $y = $self->lat2y($lat);
+				my $text_node = $self->text_node(x => $x, y => $y, class => $text_2_class, text => $lon_text);
+				$clipped_group->appendChild($text_node);
 			}
+			# foreach my $y ($ys - 2, $yn + 8) {
+			# 	my $text_node = $self->text_node(x => $x, y => $y, class => $text_class, text => $lon_text);
+			# 	$clipped_group->appendChild($text_node);
+			# }
 		}
 	}
+}
+
+sub text_node {
+	print STDERR (".");
+	my ($self, %args) = @_;
+	my $x = $args{x};
+	my $y = $args{y};
+	my $text = $args{text};
+	my $class = $args{class};
+	my $doc = $self->{_svg_doc};
+	my $text_node = $doc->createElementNS($NS{"svg"}, "text");
+	$text_node->setAttribute("x", $x);
+	$text_node->setAttribute("y", $y);
+	$text_node->setAttribute("class", $class);
+	my $tspan_node = $doc->createElementNS($NS{"svg"}, "tspan");
+	$tspan_node->setAttribute("x", $x);
+	$tspan_node->setAttribute("y", $y);
+	$tspan_node->appendText($text);
+	$text_node->appendChild($tspan_node);
+	return $text_node;
 }
 
 ###############################################################################
@@ -2135,92 +2145,7 @@ sub finish_xml {
 	$self->diag("done.\n");
 }
 
-sub uniq_coord_pairs {
-	my @result = ();
-	my $px;
-	my $py;
-	foreach my $pair (@_) {
-		next if (defined $px && $pair->[0] == $px && defined $py && $pair->[1] == $py);
-		push(@result, $pair);
-		$px = $pair->[0];
-		$py = $pair->[1];
-	}
-	return @result;
-}
-
 use constant PI => 4 * atan2(1, 1);
-
-use Inline C => <<"END_C";
-
-#include <math.h>
-
-void move_point_away_2 (double x, double y, double md, double gd, SV* xy, ...) {
-	Inline_Stack_Vars;
-
-	int i, j, num_items;
-	double* xx, yy, dp, dl, rl, px, py, sl, l, dx, dy, th;
-	double theta, lastx, thisx, lasty, thisy;
-
-	for (i = 0, j = 0; i <= (Inline_Stack_Items - 2); i += 2) {
-		thisx = SvNV(xy[i * 2]);
-		thisy = SvNV(xy[i * 2 + 1]);
-		if (!(i && lastx == thisx && lasty == thisy)) {
-			xx[j] = thisx;
-			yy[j] = thisy;
-			j += 1;
-		}
-	}
-	num_items = j;
-
-	if (num_items < 1) {
-		Inline_Stack_Reset;
-		Inline_Stack_Push(sv_2mortal(newSVnv(x)));
-		Inline_Stack_Push(sv_2mortal(newSVnv(y)));
-		Inline_Stack_Done;
-		return;
-	}
-	if (num_items == 1) {
-		theta = atan2(yy[0] - y, xx[0] - x);
-		if (point_distance_2(x, y, xx[0], yy[0]) < md) {
-			x = xx[0] + md * cos(theta);
-			y = yy[0] + md * sin(theta);
-		}
-		Inline_Stack_Reset;
-		Inline_Stack_Push(sv_2mortal(newSVnv(x)));
-		Inline_Stack_Push(sv_2mortal(newSVnv(y)));
-		Inline_Stack_Done;
-		return;
-	}
-
-	xx    = (double *)malloc(sizeof(double) * Inline_Stack_Items);
-	yy    = (double *)malloc(sizeof(double) * Inline_Stack_Items);
-	dp    = (double *)malloc(sizeof(double) * Inline_Stack_Items);
-	dl    = (double *)malloc(sizeof(double) * Inline_Stack_Items);
-	rl    = (double *)malloc(sizeof(double) * Inline_Stack_Items);
-	px    = (double *)malloc(sizeof(double) * Inline_Stack_Items);
-	py    = (double *)malloc(sizeof(double) * Inline_Stack_Items);
-	sl    = (double *)malloc(sizeof(double) * Inline_Stack_Items);
-	l     = (double *)malloc(sizeof(double) * Inline_Stack_Items);
-	dx    = (double *)malloc(sizeof(double) * Inline_Stack_Items);
-	dy    = (double *)malloc(sizeof(double) * Inline_Stack_Items);
-	th    = (double *)malloc(sizeof(double) * Inline_Stack_Items);
-
-	free(xx);
-	free(yy);
-	free(dp);
-	free(dl);
-	free(rl);
-	free(px);
-	free(py);
-	free(sl);
-	free(l);
-	free(dx);
-	free(dy);
-	free(th);
-
-	Inline_Stack_Void;
-}
-END_C
 
 # used for taking a path that overlaps another path and moving the
 # offending points on that path slightly away from it
@@ -2242,15 +2167,23 @@ sub move_point_away {
 
 	my $i;
 	my @x;  my @y;
-	my @dp;			# distance of (x, y) from each point (x[i], y[i])
-	my @dl;			# distance of (x, y) from each line segment from (x[i], y[i]) to (x[i+1], y[i+1])
+	my @dp;			# distance of (x, y) from each point
+	                        # (x[i], y[i])	       
+	my @dl;			# distance of (x, y) from each line segment
+	                        # from (x[i], y[i]) to (x[i+1], y[i+1])
 	my @rl;			# position r of (x, y) along each line segment
-	my @px;	my @py;		# P, the perpendicular projection of (x, y) on each line segment
-	my @sl;			# is (x, y) to the right (> 0) or left (< 0) of each line segment?
+	my @px;	my @py;		# P, the perpendicular projection of (x, y)
+	                        # on each line segment
+	my @sl;			# is (x, y) to the right (> 0) or left (< 0)
+	                        # of each line segment?
 	my @l;                  # length of each line segment
 	my @dx;
 	my @dy;
 	my @theta;
+
+	my $dx;
+	my $dy;
+	my $theta;
 
 	my @pairs = uniq_coord_pairs(@_);
 	foreach my $pair (@pairs) {
@@ -2275,8 +2208,12 @@ sub move_point_away {
 		$dp[$i] = point_distance($x, $y, $x[$i], $y[$i]);
 	}
 	for ($i = 0; $i < ($n - 1); $i += 1) {
-		($rl[$i], $px[$i], $py[$i], $sl[$i], $dl[$i]) = segment_distance($x, $y, $x[$i], $y[$i], $x[$i + 1], $y[$i + 1]);
-		$l[$i] = point_distance($x[$i], $y[$i], $x[$i + 1], $y[$i + 1]);
+		($rl[$i], $px[$i], $py[$i], $sl[$i], $dl[$i]) =
+			segment_distance($x, $y,
+					 $x[$i], $y[$i],
+					 $x[$i + 1], $y[$i + 1]);
+		$l[$i] = point_distance($x[$i], $y[$i],
+					$x[$i + 1], $y[$i + 1]);
 		$dx[$i] = $x[$i + 1] - $x[$i];
 		$dy[$i] = $y[$i + 1] - $y[$i];
 		$theta[$i] = atan2($dy[$i], $dx[$i]);
@@ -2287,19 +2224,10 @@ sub move_point_away {
 		     $rl[$i]     >= 0 && $rl[$i]     <= 1 &&
 		     $rl[$i + 1] >= 0 && $rl[$i + 1] <= 1) ||
 		    ($dp[$i + 1] < $md)) {
-			my $dx = $dx[$i] / $l[$i] + $dx[$i + 1] / $l[$i + 1];
-			my $dy = $dy[$i] / $l[$i] + $dy[$i + 1] / $l[$i + 1];
-
-			my $theta = atan2($dy, $dx);
-			if ($gd eq "left") {
-				$x = $x[$i + 1] - $md * sin($theta);
-				$y = $y[$i + 1] + $md * cos($theta);
-			} 
-			elsif ($gd eq "right") {
-				$x = $x[$i + 1] + $md * sin($theta);
-				$y = $y[$i + 1] - $md * cos($theta);
-			}
-			elsif (sin($theta - $gd) < 0) {
+			$dx = $dx[$i] / $l[$i] + $dx[$i + 1] / $l[$i + 1];
+			$dy = $dy[$i] / $l[$i] + $dy[$i + 1] / $l[$i + 1];
+			$theta = atan2($dy, $dx);
+			if (sin($theta - $gd) < 0) {
 				$x = $x[$i + 1] - $md * sin($theta);
 				$y = $y[$i + 1] + $md * cos($theta);
 			}
@@ -2311,19 +2239,10 @@ sub move_point_away {
 	}
 	for ($i = 0; $i < ($n - 1); $i += 1) {
 		if ($dl[$i] < $md && $rl[$i] >= 0 && $rl[$i] <= 1) {
-			my $dx = $x[$i + 1] - $x[$i];
-			my $dy = $y[$i + 1] - $y[$i];
-
-			my $theta = atan2($dy, $dx);
-			if ($gd eq "left") {
-				$x = $px[$i] - $md * sin($theta);
-				$y = $py[$i] + $md * cos($theta);
-			}
-			elsif ($gd eq "right") {
-				$x = $px[$i] + $md * sin($theta);
-				$y = $py[$i] - $md * cos($theta);
-			}
-			elsif (sin($theta - $gd) < 0) {
+			$dx = $x[$i + 1] - $x[$i];
+			$dy = $y[$i + 1] - $y[$i];
+			$theta = atan2($dy, $dx);
+			if (sin($theta - $gd) < 0) {
 				$x = $px[$i] - $md * sin($theta);
 				$y = $py[$i] + $md * cos($theta);
 			}
@@ -2334,44 +2253,41 @@ sub move_point_away {
 		}
 	}
 	if ($dp[0] < $md) {
-		my $theta = $theta[0];
-		if ($gd eq "left") {
-			$x = $px[0] - $md * sin($theta);
-			$y = $py[0] + $md * cos($theta);
-		}
-		elsif ($gd eq "right") {
-			$x = $px[0] + $md * sin($theta);
-			$y = $py[0] - $md * cos($theta);
-		}
-		elsif (sin($theta - $gd) < 0) {
-			$x = $px[0] - $md * sin($theta);
-			$y = $py[0] + $md * cos($theta);
+		$theta = $theta[0];
+		if (sin($theta - $gd) < 0) {
+			$x = $x[0] - $md * sin($theta);
+			$y = $y[0] + $md * cos($theta);
 		}
 		else {
-			$x = $px[0] + $md * sin($theta);
-			$y = $py[0] - $md * cos($theta);
+			$x = $x[0] + $md * sin($theta);
+			$y = $y[0] - $md * cos($theta);
 		}
 	}
 	elsif ($dp[$n - 1] < $md) {
-		my $theta = $theta[$n - 1];
-		if ($gd eq "left") {
-			$x = $px[$n - 1] - $md * sin($theta);
-			$y = $py[$n - 1] + $md * cos($theta);
-		}
-		elsif ($gd eq "right") {
-			$x = $px[$n - 1] + $md * sin($theta);
-			$y = $py[$n - 1] - $md * cos($theta);
-		}
-		elsif (sin($theta - $gd) < 0) {
-			$x = $px[$n - 1] - $md * sin($theta);
-			$y = $py[$n - 1] + $md * cos($theta);
+		$theta = $theta[$n - 2];
+		if (sin($theta - $gd) < 0) {
+			$x = $x[$n - 1] - $md * sin($theta);
+			$y = $y[$n - 1] + $md * cos($theta);
 		}
 		else {
-			$x = $px[$n - 1] + $md * sin($theta);
-			$y = $py[$n - 1] - $md * cos($theta);
+			$x = $x[$n - 1] + $md * sin($theta);
+			$y = $y[$n - 1] - $md * cos($theta);
 		}
 	}
 	return ($x, $y);
+}
+
+sub uniq_coord_pairs {
+	my @result = ();
+	my $px;
+	my $py;
+	foreach my $pair (@_) {
+		next if (defined $px && $pair->[0] == $px && defined $py && $pair->[1] == $py);
+		push(@result, $pair);
+		$px = $pair->[0];
+		$py = $pair->[1];
+	}
+	return @result;
 }
 
 sub point_distance {
@@ -2416,44 +2332,6 @@ sub diagf {
 	my ($self, $format, @args) = @_;
 	return unless $verbose;
 	printf STDERR ($format, @args);
-}
-
-package My::Twirly;
-sub new {
-	my ($class) = @_;
-	my $self = bless({}, $class);
-	$self->show();
-	return $self;
-}
-sub show {
-	my ($self) = @_;
-	my $state = $self->{state};
-	if (!defined $state) {
-		$self->{state} = 0;
-		print STDERR (" " x 16);
-		return;
-	}
-	if ($state < 0) {
-		print STDERR (("\b" x 16) . ("#" x 16) . "\n");
-		return;
-	}
-	$state %= 32;
-	if ($state <= 16) {
-		print STDERR (("\b" x 16) . ("#" x $state) . (" " x (16 - $state)));
-	}
-	else {
-		print STDERR (("\b" x 16) . (" " x ($state - 16)) . ("#" x (32 - $state)));
-	}
-}
-sub next {
-	my ($self) = @_;
-	$self->{state} += 1;
-	$self->show();
-}
-sub DESTROY {
-	my ($self) = @_;
-	$self->{state} = -1;
-	$self->show();
 }
 
 1;
