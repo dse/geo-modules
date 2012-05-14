@@ -523,6 +523,7 @@ sub _update_populated_mtime {
 
 sub _flag_as_dirty {
 	my ($self) = @_;
+	$self->_create_tables();
 	$self->_update_populated_mtime(-1);
 }
 
