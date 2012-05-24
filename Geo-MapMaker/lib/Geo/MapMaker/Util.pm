@@ -3,21 +3,15 @@ use warnings;
 use strict;
 use Carp qw(croak);
 
-our @EXPORT = qw(file_get_contents
-		 file_put_contents
-		 move_line_away
-		 %NS);
+our $VERSION;
+BEGIN {
+	$VERSION = '0.01';
+}
 
+our @EXPORT = qw();
 our @EXPORT_OK = qw(file_get_contents
 		    file_put_contents
-		    move_line_away
-		    %NS);
-
-our %NS;
-$NS{"svg"}      = "http://www.w3.org/2000/svg";
-$NS{"inkscape"} = "http://www.inkscape.org/namespaces/inkscape";
-$NS{"sodipodi"} = "http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd";
-$NS{"mapmaker"} = "http://webonastick.com/namespaces/transit-mapmaker";
+		    move_line_away);
 
 sub file_get_contents {		# php-like lol
 	my ($filename) = @_;
@@ -32,7 +26,9 @@ sub file_put_contents {		# php-like lol
 }
 
 use File::Basename qw(dirname);
-use Inline C => file_get_contents(dirname(__FILE__) . "/util.c");
+use Inline (C       => file_get_contents(dirname(__FILE__) . "/util.c"),
+	    VERSION => $Geo::MapMaker::VERSION,
+	    NAME    => "Geo::MapMaker::Util");
 
 1;
 

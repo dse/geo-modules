@@ -184,7 +184,15 @@ use Carp qw(croak);
 use File::Path qw(mkpath);
 use File::Basename;
 use List::MoreUtils qw(all firstidx uniq);
-use Geo::MapMaker::Util;
+use Geo::MapMaker::Util qw(file_get_contents move_line_away);
+
+our %NS;
+BEGIN {
+	$NS{"svg"}      = "http://www.w3.org/2000/svg";
+	$NS{"inkscape"} = "http://www.inkscape.org/namespaces/inkscape";
+	$NS{"sodipodi"} = "http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd";
+	$NS{"mapmaker"} = "http://webonastick.com/namespaces/transit-mapmaker";
+}
 
 sub update_openstreetmap {
 	my ($self, $force) = @_;
