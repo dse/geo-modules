@@ -2,13 +2,6 @@
 use warnings;
 use strict;
 
-BEGIN {
-	if ($ENV{DEBUG_LIBS}) {
-		unshift(@INC, "$ENV{HOME}/git/perl-transit-gtfs/Geo-MapMaker/lib");
-		unshift(@INC, "$ENV{HOME}/git/perl-transit-gtfs/Geo-GTFS/lib");
-	}
-}
-
 use Carp qw(verbose);
 
 use Geo::GTFS;
