@@ -1,6 +1,6 @@
 bin/mapmaker
 Changes
-lib/Transit/MapMaker.pm
+lib/Geo/MapMaker.pm
 Makefile.PL
 MANIFEST
 README

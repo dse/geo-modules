@@ -3,15 +3,15 @@ use warnings;
 use ExtUtils::MakeMaker;
 
 WriteMakefile(
-    NAME                => 'Transit::MapMaker',
+    NAME                => 'Geo::MapMaker',
     AUTHOR              => 'Darren Embry <dse@webonastick.com>',
-    VERSION_FROM        => 'lib/Transit/MapMaker.pm',
-#    ABSTRACT_FROM       => 'lib/Transit/MapMaker.pm',
+    VERSION_FROM        => 'lib/Geo/MapMaker.pm',
+#    ABSTRACT_FROM       => 'lib/Geo/MapMaker.pm',
 #    PL_FILES            => {},
     EXE_FILES           => [ "bin/mapmaker" ],
 #    PREREQ_PM => {
 #        'Test::More' => 0,
 #    },
 #    dist                => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },
-#    clean               => { FILES => 'Transit-MapMaker-*' },
+#    clean               => { FILES => 'Geo-MapMaker-*' },
 );

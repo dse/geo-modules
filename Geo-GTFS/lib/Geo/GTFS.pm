@@ -1,11 +1,11 @@
-package Transit::GTFS;
+package Geo::GTFS;
 
 use warnings;
 use strict;
 	
 =head1 NAME
 	
-Transit::GTFS - Maintain a SQLite database of GTFS data
+Geo::GTFS - Maintain a SQLite database of GTFS data
 	
 =head1 VERSION
 	
@@ -19,9 +19,9 @@ our $VERSION = '0.02';
 	
 =head1 SYNOPSIS
 	
-    use Transit::GTFS;
+    use Geo::GTFS;
 
-    my $gtfs = Transit::GTFS->new("http://developer.trimet.org/schedule/gtfs.zip");
+    my $gtfs = Geo::GTFS->new("http://developer.trimet.org/schedule/gtfs.zip");
 
     $gtfs->update();		# update mirror if needed
     $gtfs->repopulate();	# repopulate data if needed
@@ -30,7 +30,7 @@ our $VERSION = '0.02';
 	
 =head1 DESCRIPTION
 
-Transit::GTFS creates and maintains a SQLite database of GTFS data.
+Geo::GTFS creates and maintains a SQLite database of GTFS data.
 You supply a GTFS feed URL, and this module downloads it, extracts all
 the data from it, creates a SQLite database, populates it with that
 data, and gives you a database handle.
@@ -52,7 +52,7 @@ The following is the usual scenario for creating an object of this
 class:
 
     my $feed_url = "http://developer.trimet.org/schedule/gtfs.zip";
-    my $gtfs = Transit::GTFS->new($feed_url);
+    my $gtfs = Geo::GTFS->new($feed_url);
 
 You usually just pass one argument to the constructor: a URL pointing
 directly to the transit feed's ZIP file.  That argument is required.
@@ -65,7 +65,7 @@ anonymous hash:
     my $options = {
         verbose => 1
     };
-    my $gtfs = Transit::GTFS->new($feed_url, $options);
+    my $gtfs = Geo::GTFS->new($feed_url, $options);
 
 =cut
 
@@ -627,7 +627,7 @@ Darren Embry, C<< <dse at webonastick.com> >>
 =head1 BUGS
 
 Please report any bugs or feature requests to C<bug-transit-gtfs at rt.cpan.org>, or through
-the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Transit-GTFS>.  I will be notified, and then you'll
+the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Geo-GTFS>.  I will be notified, and then you'll
 automatically be notified of progress on your bug as I make changes.
 
 
@@ -637,7 +637,7 @@ automatically be notified of progress on your bug as I make changes.
 
 You can find documentation for this module with the perldoc command.
 
-    perldoc Transit::GTFS
+    perldoc Geo::GTFS
 
 
 You can also look for information at:
@@ -646,19 +646,19 @@ You can also look for information at:
 
 =item * RT: CPAN's request tracker
 
-L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=Transit-GTFS>
+L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=Geo-GTFS>
 
 =item * AnnoCPAN: Annotated CPAN documentation
 
-L<http://annocpan.org/dist/Transit-GTFS>
+L<http://annocpan.org/dist/Geo-GTFS>
 
 =item * CPAN Ratings
 
-L<http://cpanratings.perl.org/d/Transit-GTFS>
+L<http://cpanratings.perl.org/d/Geo-GTFS>
 
 =item * Search CPAN
 
-L<http://search.cpan.org/dist/Transit-GTFS>
+L<http://search.cpan.org/dist/Geo-GTFS>
 
 =back
 
@@ -676,4 +676,4 @@ under the same terms as Perl itself.
 
 =cut
 
-1; # End of Transit::GTFS
+1; # End of Geo::GTFS

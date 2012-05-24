@@ -1,4 +1,4 @@
-package Transit::MapMaker::Util;
+package Geo::MapMaker::Util;
 use warnings;
 use strict;
 use Carp qw(croak);

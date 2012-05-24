@@ -1,4 +1,4 @@
-Transit-MapMaker
+Geo-MapMaker
 
 The README is used to introduce the module and provide instructions on
 how to install the module, any machine dependencies it may have (for
@@ -26,21 +26,21 @@ SUPPORT AND DOCUMENTATION
 After installing, you can find documentation for this module with the
 perldoc command.
 
-    perldoc Transit::MapMaker
+    perldoc Geo::MapMaker
 
 You can also look for information at:
 
     RT, CPAN's request tracker
-        http://rt.cpan.org/NoAuth/Bugs.html?Dist=Transit-MapMaker
+        http://rt.cpan.org/NoAuth/Bugs.html?Dist=Geo-MapMaker
 
     AnnoCPAN, Annotated CPAN documentation
-        http://annocpan.org/dist/Transit-MapMaker
+        http://annocpan.org/dist/Geo-MapMaker
 
     CPAN Ratings
-        http://cpanratings.perl.org/d/Transit-MapMaker
+        http://cpanratings.perl.org/d/Geo-MapMaker
 
     Search CPAN
-        http://search.cpan.org/dist/Transit-MapMaker
+        http://search.cpan.org/dist/Geo-MapMaker
 
 
 COPYRIGHT AND LICENCE

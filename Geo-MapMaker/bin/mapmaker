@@ -4,17 +4,17 @@ use strict;
 
 BEGIN {
 	if ($ENV{DEBUG_LIBS}) {
-		unshift(@INC, "$ENV{HOME}/git/perl-transit-gtfs/Transit-MapMaker/lib");
-		unshift(@INC, "$ENV{HOME}/git/perl-transit-gtfs/Transit-GTFS/lib");
+		unshift(@INC, "$ENV{HOME}/git/perl-transit-gtfs/Geo-MapMaker/lib");
+		unshift(@INC, "$ENV{HOME}/git/perl-transit-gtfs/Geo-GTFS/lib");
 	}
 }
 
 use Carp qw(verbose);
 
-use Transit::GTFS;
-use Transit::MapMaker;
-BEGIN { $Transit::GTFS::verbose = 1; }
-BEGIN { $Transit::MapMaker::verbose = 1; }
+use Geo::GTFS;
+use Geo::MapMaker;
+BEGIN { $Geo::GTFS::verbose = 1; }
+BEGIN { $Geo::MapMaker::verbose = 1; }
 use Getopt::Long;
 use YAML;
 
@@ -106,7 +106,7 @@ sub cmd__map {
 	if (!$mapinfo) {
 		die("no such map: '$mapname'\n");
 	}
-	my $mapmaker = Transit::MapMaker->new(filename => $mapname, %$mapinfo);
+	my $mapmaker = Geo::MapMaker->new(filename => $mapname, %$mapinfo);
 	$self->{mapmaker} = $mapmaker;
 	$self->$method(@args);
 }

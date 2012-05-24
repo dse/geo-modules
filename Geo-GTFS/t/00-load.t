@@ -3,7 +3,7 @@
 use Test::More tests => 1;
 
 BEGIN {
-	use_ok( 'Transit::GTFS' );
+	use_ok( 'Geo::GTFS' );
 }
 
-diag( "Testing Transit::GTFS $Transit::GTFS::VERSION, Perl $], $^X" );
+diag( "Testing Geo::GTFS $Geo::GTFS::VERSION, Perl $], $^X" );

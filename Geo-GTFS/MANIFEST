@@ -2,7 +2,7 @@ Changes
 MANIFEST
 Makefile.PL
 README
-lib/Transit/GTFS.pm
+lib/Geo/GTFS.pm
 t/00-load.t
 t/pod-coverage.t
 t/pod.t

@@ -1,4 +1,4 @@
-package Transit::MapMaker;
+package Geo::MapMaker;
 use warnings;
 use strict;
 use Carp qw(croak);
@@ -8,7 +8,7 @@ use Carp qw(croak);
 
 =head1 NAME
 	
-Transit::MapMaker - Create semi-usable transit maps from GTFS and OSM data.
+Geo::MapMaker - Create semi-usable transit maps from GTFS and OSM data.
 
 =head1 VERSION
 
@@ -20,7 +20,7 @@ our $VERSION = '0.01';
 	
 =head1 SYNOPSIS
 
-    use Transit::MapMaker;
+    use Geo::MapMaker;
 
     # TBD
 
@@ -184,7 +184,7 @@ use Carp qw(croak);
 use File::Path qw(mkpath);
 use File::Basename;
 use List::MoreUtils qw(all firstidx uniq);
-use Transit::MapMaker::Util;
+use Geo::MapMaker::Util;
 
 sub update_openstreetmap {
 	my ($self, $force) = @_;
@@ -1842,7 +1842,7 @@ sub gtfs {
 		my $index = 0;
 		foreach my $hash (@$hash_list) {
 			my $url = $hash->{url};
-			my $gtfs = Transit::GTFS->new($url);
+			my $gtfs = Geo::GTFS->new($url);
 			$hash->{index} = $index;
 			$hash->{name} //= $hash->{index};
 			$gtfs->{data} = $hash;

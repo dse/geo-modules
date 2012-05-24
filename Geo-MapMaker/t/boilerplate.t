@@ -48,7 +48,7 @@ TODO: {
     "placeholder date/time"       => qr(Date/time)
   );
 
-  module_boilerplate_ok('lib/Transit/MapMaker.pm');
+  module_boilerplate_ok('lib/Geo/MapMaker.pm');
 
 
 }
