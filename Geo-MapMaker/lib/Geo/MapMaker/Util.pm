@@ -27,7 +27,7 @@ sub file_put_contents {		# php-like lol
 
 use File::Basename qw(dirname);
 use Inline (C       => file_get_contents(dirname(__FILE__) . "/util.c"),
-	    VERSION => $Geo::MapMaker::VERSION,
+	    VERSION => $VERSION,
 	    NAME    => "Geo::MapMaker::Util");
 
 1;
