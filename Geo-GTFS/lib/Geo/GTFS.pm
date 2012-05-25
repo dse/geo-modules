@@ -30,10 +30,15 @@ our $VERSION = '0.02';
 	
 =head1 DESCRIPTION
 
-Geo::GTFS creates and maintains a SQLite database of GTFS data.
-You supply a GTFS feed URL, and this module downloads it, extracts all
-the data from it, creates a SQLite database, populates it with that
-data, and gives you a database handle.
+Geo::GTFS creates and maintains a SQLite database of GTFS data.  You
+supply a GTFS feed URL, and this module downloads it, extracts all the
+data from it, creates a SQLite database, populates it with that data,
+and gives you a database handle.
+
+The downloading of data only happens once unless the update (or
+force_update) method is called.  The creation of a SQLite database and
+the extraction/population of that data into it only happen once unless
+the repopulate (or force_repopulate) method is called.
 
 =cut
 
@@ -552,6 +557,13 @@ sub do {
 	my ($self, $statement, $attr, @bind_values) = @_;
 	my $dbh = $self->dbh();
 	return $dbh->do($statement, $attr, @bind_values);
+}
+
+sub selectall {
+	my ($self, $statement, $attr, @bind_values) = @_;
+	$attr //= {};
+	$attr->{Slice} = {};
+	return @{ $self->dbh()->selectall_arrayref($statement, $attr, @bind_values) };
 }
 
 sub _DESTROY_DBH {
