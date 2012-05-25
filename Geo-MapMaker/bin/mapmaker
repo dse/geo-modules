@@ -9,7 +9,6 @@ use Geo::MapMaker;
 BEGIN { $Geo::GTFS::verbose = 1; }
 BEGIN { $Geo::MapMaker::verbose = 1; }
 use Getopt::Long;
-use YAML;
 
 my $shell = My::Shell->new();
 Getopt::Long::Configure("bundling", "gnu_compat");
@@ -18,6 +17,8 @@ $shell->run(@ARGV);
 
 package My::Shell;
 use List::MoreUtils qw(firstidx);
+use YAML::Syck qw(LoadFile);
+
 sub new {
 	my $class = shift();
 	my $self = bless({}, $class);
@@ -72,10 +73,11 @@ sub find_method {
 	}
 	return $self->can($method_name);
 }
+
 sub load_map_info {
 	my ($self) = @_;
 	return if $self->{maps};
-	my $maps = YAML::LoadFile("maps.yaml");
+	my $maps = LoadFile("maps.yaml");
 	if (!$maps) {
 		die("No maps.yaml data.\n");
 	}
