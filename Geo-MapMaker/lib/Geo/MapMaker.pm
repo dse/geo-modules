@@ -735,68 +735,47 @@ sub transit_stops_layer {
 # FIXME: use new gtfs structure
 sub get_transit_routes {
 	my ($self, $gtfs) = @_;
-	my @result;
-	my $dbh = $gtfs->dbh();
-	my $sth;
 	my $data = $gtfs->{data};
 	if ($data->{routes}) {
-		my $q = join(", ", map { "?" } @{$data->{routes}});
-		$sth = $dbh->prepare_cached("select * from routes where route_short_name in ($q)");
-		$sth->execute(@{$data->{routes}});
+		return $gtfs->selectall("select * from routes where route_short_name in (??)",
+					{}, @{$data->{routes}});
 	} elsif ($data->{routes_except}) {
-		my $q = join(", ", map { "?" } @{$data->{routes_except}});
-		$sth = $dbh->prepare_cached("select * from routes where route_short_name not in ($q)");
-		$sth->execute(@{$data->{routes_except}});
+		return $gtfs->selectall("select * from routes where route_short_name not in (??)",
+					{}, @{$data->{routes_except}});
 	} else {
-		$sth = $dbh->prepare_cached("select * from routes");
-		$sth->execute();
+		return $gtfs->selectall("select * from routes");
 	}
-	while (my $row = $sth->fetchrow_hashref()) {
-		push(@result, { %$row });
-	}
-	$sth->finish();
-	return @result;
 }
 
 sub get_transit_stops {
 	my ($self, $gtfs) = @_;
-	my @result;
-	my $dbh = $gtfs->dbh();
-	my $sth;
 	my $data = $gtfs->{data};
 	if ($data->{routes}) {
-		my $q = join(", ", map { "?" } @{$data->{routes}});
-		$sth = $dbh->prepare_cached(<<"END");
-				select	distinct stops.*
-				from	stops
-				join	stop_times on stops.stop_id = stop_times.stop_id
-				join	trips on stop_times.trip_id = trips.trip_id
-				join	routes on trips.route_id = routes.route_id
-				where	routes.route_short_name in ($q);
+		my $sql = <<"END";
+			select	distinct stops.*
+			from	stops
+			join	stop_times on stops.stop_id = stop_times.stop_id
+			join	trips on stop_times.trip_id = trips.trip_id
+			join	routes on trips.route_id = routes.route_id
+       			where	routes.route_short_name in (??);
 END
-		$sth->execute(@{$data->{routes}});
+		return $gtfs->selectall($sql, {}, @{$data->{routes}});
 	} elsif ($data->{routes_except}) {
-		my $q = join(", ", map { "?" } @{$data->{routes_except}});
-		$sth = $dbh->prepare_cached(<<"END");
-				select	distinct stops.*
-				from	stops
-				join	stop_times on stops.stop_id = stop_times.stop_id
-				join	trips on stop_times.trip_id = trips.trip_id
-				join	routes on trips.route_id = routes.route_id
-				where	routes.route_short_name not in ($q);
+		my $sql = <<"END";
+			select	distinct stops.*
+			from	stops
+			join	stop_times on stops.stop_id = stop_times.stop_id
+			join	trips on stop_times.trip_id = trips.trip_id
+			join	routes on trips.route_id = routes.route_id
+			where	routes.route_short_name not in (??);
 END
-		$sth->execute(@{$data->{routes_except}});
+		return $gtfs->selectall($sql, {}, @{$data->{routes_except}});
 	} else {
-		$sth = $dbh->prepare_cached(<<"END");
-				select * from stops;
+		my $sql = <<"END";
+			select * from stops;
 END
-		$sth->execute();
+		return $gtfs->selectall($sql, {});
 	}
-	while (my $row = $sth->fetchrow_hashref()) {
-		push(@result, { %$row });
-	}
-	$sth->finish();
-	return @result;
 }
 
 sub get_excepted_transit_trips {
