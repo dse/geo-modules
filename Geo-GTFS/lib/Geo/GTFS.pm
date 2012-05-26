@@ -563,6 +563,7 @@ sub selectall {
 	my ($self, $statement, $attr, @bind_values) = @_;
 	$attr //= {};
 	$attr->{Slice} = {};
+	$statement =~ s{\?\?}{join(", ", map { "?" } @bind_values)}e;
 	return @{ $self->dbh()->selectall_arrayref($statement, $attr, @bind_values) };
 }
 
