@@ -10,3 +10,4 @@ MYMETA.yml
 unused.pm
 foo.pl
 _Inline
+*.inl
