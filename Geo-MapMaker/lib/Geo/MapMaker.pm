@@ -213,9 +213,9 @@ sub _update_openstreetmap {
 
 	my $url = sprintf("http://api.openstreetmap.org/api/0.6/map?bbox=%.8f,%.8f,%.8f,%.8f",
 			  $west, $south, $east, $north);
-	my $txt_filename = sprintf("%s/.geo-mapmaker/map_%.8f_%.8f_%.8f_%.8f_bbox.txt",
+	my $txt_filename = sprintf("%s/.geo-mapmaker-osm/map_%.8f_%.8f_%.8f_%.8f_bbox.txt",
 				   $ENV{HOME}, $west, $south, $east, $north);
-	my $xml_filename = sprintf("%s/.geo-mapmaker/map_%.8f_%.8f_%.8f_%.8f_bbox.xml",
+	my $xml_filename = sprintf("%s/.geo-mapmaker-osm/map_%.8f_%.8f_%.8f_%.8f_bbox.xml",
 				   $ENV{HOME}, $west, $south, $east, $north);
 
 	mkpath(dirname($xml_filename));
