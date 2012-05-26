@@ -8,7 +8,7 @@ use Carp qw(croak);
 
 =head1 NAME
 	
-Geo::MapMaker - Create semi-usable transit maps from GTFS and OSM data.
+Geo::MapMaker - Create semi-usable maps from GTFS and OSM data.
 
 =head1 VERSION
 
@@ -184,14 +184,14 @@ use Carp qw(croak);
 use File::Path qw(mkpath);
 use File::Basename;
 use List::MoreUtils qw(all firstidx uniq);
-use Geo::MapMaker::Util qw(file_get_contents move_line_away);
+use Geo::MapMaker::Util qw(file_get_contents file_put_contents move_line_away);
 
 our %NS;
 BEGIN {
 	$NS{"svg"}      = "http://www.w3.org/2000/svg";
 	$NS{"inkscape"} = "http://www.inkscape.org/namespaces/inkscape";
 	$NS{"sodipodi"} = "http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd";
-	$NS{"mapmaker"} = "http://webonastick.com/namespaces/transit-mapmaker";
+	$NS{"mapmaker"} = "http://webonastick.com/namespaces/geo-mapmaker";
 }
 
 sub update_openstreetmap {
@@ -213,9 +213,9 @@ sub _update_openstreetmap {
 
 	my $url = sprintf("http://api.openstreetmap.org/api/0.6/map?bbox=%.8f,%.8f,%.8f,%.8f",
 			  $west, $south, $east, $north);
-	my $txt_filename = sprintf("%s/.transit-mapmaker/map_%.8f_%.8f_%.8f_%.8f_bbox.txt",
+	my $txt_filename = sprintf("%s/.geo-mapmaker/map_%.8f_%.8f_%.8f_%.8f_bbox.txt",
 				   $ENV{HOME}, $west, $south, $east, $north);
-	my $xml_filename = sprintf("%s/.transit-mapmaker/map_%.8f_%.8f_%.8f_%.8f_bbox.xml",
+	my $xml_filename = sprintf("%s/.geo-mapmaker/map_%.8f_%.8f_%.8f_%.8f_bbox.xml",
 				   $ENV{HOME}, $west, $south, $east, $north);
 
 	mkpath(dirname($xml_filename));
@@ -297,7 +297,7 @@ sub init_xml {
    xmlns="http://www.w3.org/2000/svg"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
-   xmlns:mapmaker="http://webonastick.com/namespaces/transit-mapmaker"
+   xmlns:mapmaker="http://webonastick.com/namespaces/geo-mapmaker"
    width="765"
    height="990"
    id="svg2"

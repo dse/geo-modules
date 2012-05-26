@@ -583,7 +583,7 @@ sub get_dir {
 		$path =~ s{^/|/$}{}g;
 		$path =~ s{/}{__}g;
 		$path =~ s{\.zip$}{}i;
-		sprintf("%s/.transit-gtfs/%s/%s", $ENV{HOME}, $host, $path);
+		sprintf("%s/.geo-gtfs/%s/%s", $ENV{HOME}, $host, $path);
 	};
 }
 
@@ -639,7 +639,7 @@ Darren Embry, C<< <dse at webonastick.com> >>
 
 =head1 BUGS
 
-Please report any bugs or feature requests to C<bug-transit-gtfs at rt.cpan.org>, or through
+Please report any bugs or feature requests to C<bug-geo-gtfs at rt.cpan.org>, or through
 the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Geo-GTFS>.  I will be notified, and then you'll
 automatically be notified of progress on your bug as I make changes.
 
