@@ -1321,7 +1321,7 @@ sub stuff_all_layers_need {
 }
 
 sub draw_openstreetmap_maps {
-	my ($self, $some) = @_;
+	my ($self) = @_;
 
 	$self->init_xml();
 
@@ -1394,29 +1394,7 @@ sub draw_openstreetmap_maps {
 		$self->diag("done.\n");
 
 		$self->diag("  Finding <way> elements ... ");
-		my @ways;
-
-		if ($some) {
-			my %exclude = (railway => 1,
-				       highway => [qw(residential living_street path)]);
-			my @exclude;
-			while (my ($k, $v) = each(%exclude)) {
-				if ($v && !ref($v)) {
-					push(@exclude, "\@k='$k'");
-				}
-				elsif (ref($v) eq "ARRAY") {
-					my $or = join(" or ", map { "\@v='$_'" } @$v);
-					push(@exclude, "\@k='$k' and ($or)");
-				}
-			}
-			my $not = join(" and ", map { "not(tag[$_])" } @exclude);
-			my $xpath = "/osm/way[$not]";
-			print STDERR "$xpath\n";
-			@ways = $doc->findnodes($xpath);
-		}
-		else {
-			@ways = $doc->findnodes("/osm/way");
-		}
+		my @ways = $doc->findnodes("/osm/way");
 
 		my %ways;
 		my %ways_index_k;
