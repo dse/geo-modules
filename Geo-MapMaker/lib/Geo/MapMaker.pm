@@ -127,50 +127,6 @@ sub new {
 	}
 	return $self;
 }
-sub north {
-	my ($self, $lat) = @_;
-	$self->{north} = $lat;
-}
-sub south {
-	my ($self, $lat) = @_;
-	$self->{south} = $lat;
-}
-sub east {
-	my ($self, $lon) = @_;
-	$self->{east} = $lon;
-}
-sub west {
-	my ($self, $lon) = @_;
-	$self->{west} = $lon;
-}
-sub map_data_north {
-	my ($self, $lat) = @_;
-	$self->{map_data_north} = $lat;
-}
-sub map_data_south {
-	my ($self, $lat) = @_;
-	$self->{map_data_south} = $lat;
-}
-sub map_data_east {
-	my ($self, $lon) = @_;
-	$self->{map_data_east} = $lon;
-}
-sub map_data_west {
-	my ($self, $lon) = @_;
-	$self->{map_data_west} = $lon;
-}
-sub paper_margin {
-	my ($self, $margin) = @_;
-	$self->{paper_margin} = $margin;
-}
-sub paper_width {
-	my ($self, $width) = @_;
-	$self->{paper_width} = $width;
-}
-sub paper_height {
-	my ($self, $height) = @_;
-	$self->{paper_height} = $height;
-}
 
 sub DESTROY {
 	my ($self) = @_;
@@ -2146,6 +2102,7 @@ sub diag {
 	return unless $verbose;
 	print STDERR (@args);
 }
+
 sub diagf {
 	my ($self, $format, @args) = @_;
 	return unless $verbose;
