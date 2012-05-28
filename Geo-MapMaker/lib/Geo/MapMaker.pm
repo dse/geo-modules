@@ -88,7 +88,7 @@ BEGIN {
 		      transit_route_overrides
 		      transit_route_defaults
 		      transit_route_groups
-		      orig_transit_route_color_mapping
+		      transit_orig_route_color_mapping
 		      transit_trip_exceptions
 		      transit_route_fix_overlaps
 		    );
@@ -1212,7 +1212,7 @@ sub draw_transit_routes {
 			$shape_excluded{$agency_route}{$_} = 1 foreach @excluded_shape_id;
 
 			my $route_group_name_source = ($self->{transit_route_overrides}->{$route_short_name} //
-						       $self->{orig_transit_route_color_mapping}->{$route_color} //
+						       $self->{transit_orig_route_color_mapping}->{$route_color} //
 						       $self->{transit_route_defaults});
 			my $route_group_name        = $route_group_name_source->{group};
 			my $route_group             = $route_group_by_name{$route_group_name};
@@ -1438,7 +1438,6 @@ sub draw_openstreetmap_maps {
 
 		$self->diag("  Finding <way> elements ... ");
 		my @ways;
-
 
 		if ($some) {
 			my %exclude = (railway => 1,
