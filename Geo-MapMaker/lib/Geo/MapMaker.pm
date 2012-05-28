@@ -352,9 +352,8 @@ sub add_indexes_to_array {
 	}
 }
 
+use constant D2R => atan2(1, 1) / 45;
 BEGIN {
-	my $d2r = atan2(1, 1) / 45;
-	my $r2d = 45 / atan2(1, 1);
 	sub update_scale {
 		my ($self, $map_area) = @_;
 		my $w = $self->{west};			 # in degrees
@@ -434,11 +433,11 @@ BEGIN {
 	}
 	sub _lon2x {
 		my ($lon) = @_;
-		return $lon * $d2r;
+		return $lon * D2R;
 	}
 	sub _lat2y {
 		my ($lat) = @_;
-		my $latr = $lat * $d2r;
+		my $latr = $lat * D2R;
 		return log(abs((1 + sin($latr)) / cos($latr)));
 	}
 	sub lon2x {
@@ -2110,5 +2109,4 @@ sub diagf {
 }
 
 1;
-
 
