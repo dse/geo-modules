@@ -508,10 +508,10 @@ sub style_node {
 	my $contents = "\n";
 	
 	$contents .= <<'END';
-        .WHITE      { fill: #fff; }
-        .MAP_BORDER { fill: none !important; stroke-linejoin: square !important; }
-        .OPEN       { fill: none !important; stroke-linecap: round; stroke-linejoin: round; }
-        .GRID_TEXT  {
+	.WHITE      { fill: #fff; }
+	.MAP_BORDER { fill: none !important; stroke-linejoin: square !important; }
+	.OPEN       { fill: none !important; stroke-linecap: round; stroke-linejoin: round; }
+	.GRID_TEXT  {
 		font-size: 6px;
 		font-style: normal;
 		font-variant: normal;
@@ -531,8 +531,8 @@ END
 	foreach my $class (sort keys %{$self->{classes}}) {
 		my $css   = $self->compose_style_string(class => $class);
 		my $css_2 = $self->compose_style_string(class => $class, style_attr_name => "style_2");
-		$contents .= "        .${class}   { $css }\n";
-		$contents .= "        .${class}_2 { $css_2 }\n" if $self->has_style_2(class => $class);
+		$contents .= "\t.${class}   { $css }\n";
+		$contents .= "\t.${class}_2 { $css_2 }\n" if $self->has_style_2(class => $class);
 	}
 
 	$style->removeChildNodes();
