@@ -2054,7 +2054,7 @@ sub finish_xml {
 	close($fh);
 	$self->diag("done.\n");
 }
-
+
 sub diag {
 	my ($self, @args) = @_;
 	return unless $verbose;
