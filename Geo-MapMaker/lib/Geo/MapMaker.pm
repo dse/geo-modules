@@ -1327,7 +1327,6 @@ sub draw_openstreetmap_maps {
 
 	my %index_tag;
 	foreach my $info (@{$self->{osm_layers}}) {
-		$info->{tags} = $self->normalize_tags($info->{tags});
 		foreach my $tag (@{$info->{tags}}) {
 			$index_tag{$tag->{k}} = 1;
 		}
@@ -1565,24 +1564,6 @@ sub points_to_path {
 	}
 	$result .= " z" if $closed;
 	return $result;
-}
-
-sub normalize_tags {
-	my ($self, $tags) = @_;
-	$tags ||= [];
-	if (ref($tags) ne "ARRAY") {
-		$tags = [$tags];
-	}
-	my $limit = "";
-	if (scalar(@$tags)) {
-		my $tag;
-		foreach $tag (@$tags) {
-			if (ref($tag) ne "HASH") {
-				$tag = { k => $tag };
-			}
-		}
-	}
-	return $tags;
 }
 
 sub clipped_group {
@@ -2073,7 +2054,7 @@ sub finish_xml {
 	close($fh);
 	$self->diag("done.\n");
 }
-
+
 sub diag {
 	my ($self, @args) = @_;
 	return unless $verbose;
