@@ -1828,10 +1828,6 @@ sub draw_grid {
 				my $text_node = $self->text_node(x => $x, y => $y, class => $text_2_class, text => $lat_text);
 				$clipped_group->appendChild($text_node);
 			}
-			# foreach my $x ($xw + 18, $xe - 18) {
-			# 	my $text_node = $self->text_node(x => $x, y => $y, class => $text_class, text => $lat_text);
-			# 	$clipped_group->appendChild($text_node);
-			# }
 		}
 
 		for (my $lon = int($west / $increment) * $increment; $lon <= $east; $lon += $increment) {
@@ -1848,10 +1844,6 @@ sub draw_grid {
 				my $text_node = $self->text_node(x => $x, y => $y, class => $text_2_class, text => $lon_text);
 				$clipped_group->appendChild($text_node);
 			}
-			# foreach my $y ($ys - 2, $yn + 8) {
-			# 	my $text_node = $self->text_node(x => $x, y => $y, class => $text_class, text => $lon_text);
-			# 	$clipped_group->appendChild($text_node);
-			# }
 		}
 	}
 }
