@@ -1295,29 +1295,16 @@ sub draw_transit_routes {
 				my $map_area_layer = $self->map_area_layer($map_area);
 				my $transit_map_layer = $self->transit_map_layer($map_area_layer);
 
-				foreach my $shape_id (@shape_id) {
+				my $shape_collections = [{ group => $route_group{$agency_route},
+							   shapes => []
+							 },
+							 { group => $exceptions_group,
+							   shapes => []
+							 }];
 
-					next unless $shape_svg_coords{$map_area_index};
-					next unless $shape_svg_coords{$map_area_index}{$agency_route};
-					next unless $shape_svg_coords{$map_area_index}{$agency_route}{$shape_id};
-
-					my @svg_coords = @{$shape_svg_coords{$map_area_index}{$agency_route}{$shape_id}};
-					my $route_group;
-					if ($shape_excluded{$agency_route}{$shape_id}) {
-						next;
-					}
-					elsif ($shape_excepted{$agency_route}{$shape_id}) {
-						$route_group = $exceptions_group;
-					}
-					else {
-						$route_group = $route_group{$agency_route};
-					}
-					next unless $route_group;
+				foreach my $collection (@$shape_collections) {
+					my $route_group = $collection->{group};
 					my $route_group_class = $route_group->{class};
-
-					my $class   = "${route_group_class} route_${agency_id} route_${route_short_name}";
-					my $class_2 = "${route_group_class}_2 route_${agency_id}_2 route_${route_short_name}_2";
-					
 					my $route_group_layer = $self->layer(name    => $route_group->{name},
 									     z_index => $route_group->{index},
 									     parent  => $transit_map_layer);
@@ -1325,11 +1312,45 @@ sub draw_transit_routes {
 								       parent => $route_group_layer);
 					my $clipped_group = $self->clipped_group(parent => $route_layer,
 										 clip_path_id => $map_area->{clip_path_id});
-					my $polyline = $self->polyline(points => \@svg_coords, class => $class);
-					$clipped_group->appendChild($polyline);
-					if ($self->has_style_2(class => $class)) {
-						my $polyline_2 = $self->polyline(points => \@svg_coords, class => $class_2);
-						$clipped_group->appendChild($polyline_2);
+					$collection->{class}   = "${route_group_class} route_${agency_id} route_${route_short_name}";
+					$collection->{class_2} = "${route_group_class}_2 route_${agency_id}_2 route_${route_short_name}_2";
+					$collection->{route_group_layer} = $route_group_layer;
+					$collection->{route_layer}       = $route_layer;
+					$collection->{clipped_group} = $clipped_group;
+				}
+				
+				foreach my $shape_id (@shape_id) {
+					next unless $shape_svg_coords{$map_area_index};
+					next unless $shape_svg_coords{$map_area_index}{$agency_route};
+					next unless $shape_svg_coords{$map_area_index}{$agency_route}{$shape_id};
+
+					my @svg_coords = @{$shape_svg_coords{$map_area_index}{$agency_route}{$shape_id}};
+					my $collection;
+					if ($shape_excluded{$agency_route}{$shape_id}) {
+						next;
+					} elsif ($shape_excepted{$agency_route}{$shape_id}) {
+						$collection = $shape_collections->[1];
+					} else {
+						$collection = $shape_collections->[0];
+					}
+					next unless $collection;
+					push(@{$collection->{shapes}}, \@svg_coords);
+				}
+				foreach my $collection (@$shape_collections) {
+					warn(".\n");
+					$collection->{shapes} = [ find_chunks(@{$collection->{shapes}}) ];
+				}
+				foreach my $collection (@$shape_collections) {
+					my $class             = $collection->{class};
+					my $class_2           = $collection->{class_2};
+					my $clipped_group     = $collection->{clipped_group};
+					foreach my $shape (@{$collection->{shapes}}) {
+						my $polyline = $self->polyline(points => $shape, class => $class);
+						$clipped_group->appendChild($polyline);
+						if ($self->has_style_2(class => $class)) {
+							my $polyline_2 = $self->polyline(points => $shape, class => $class_2);
+							$clipped_group->appendChild($polyline_2);
+						}
 					}
 				}
 			}
@@ -1917,6 +1938,24 @@ sub text_node {
 sub find_chunks {
 	my @paths = @_;
 
+	my $idcount = 0;
+	my %coords2id;
+	my @id2coords;
+
+	foreach my $path (@paths) {
+		foreach my $coord (@$path) {
+			next unless ref($coord) eq "ARRAY";
+			my $key = join($;, @$coord);
+			if (!$coords2id{$key}) {
+				$coords2id{$key} = $idcount;
+				$id2coords[$idcount] = [@$coord];
+				++$idcount;
+			}
+			$coord = $coords2id{$key};
+		}
+		print("@$path\n");
+	}
+
 	my @chunks = ();
 	my $chunk_id_counter = -1;
 
@@ -2058,6 +2097,9 @@ sub find_chunks {
 				}
 			}
 		}
+	}
+	foreach my $chunk (@chunks) {
+		@$chunk = map { $id2coords[$_] } @$chunk;
 	}
 	return @chunks;
 }
