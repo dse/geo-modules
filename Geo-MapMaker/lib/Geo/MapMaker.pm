@@ -1874,8 +1874,6 @@ sub draw_crop_lines {
 
 	my $crop_lines_layer = $self->layer(name => "Crop Lines", z_index => 9997);
 	$crop_lines_layer->removeChildNodes();
-	my $clipped_group = $self->clipped_group(parent => $crop_lines_layer,
-						 clip_path_id => $map_area->{clip_path_id});
 
 	my $south = $self->{south}; my $ys = $self->lat2y($south);
 	my $north = $self->{north}; my $yn = $self->lat2y($north);
@@ -1895,7 +1893,7 @@ sub draw_crop_lines {
 		warn($d);
 		$path->setAttribute("d", $d);
 		$path->setAttribute("class", $class);
-		$clipped_group->appendChild($path);
+		$crop_lines_layer->appendChild($path);
 	}
 
 	# horizontal lines, from top to bottom
@@ -1906,7 +1904,7 @@ sub draw_crop_lines {
 		warn($d);
 		$path->setAttribute("d", $d);
 		$path->setAttribute("class", $class);
-		$clipped_group->appendChild($path);
+		$crop_lines_layer->appendChild($path);
 	}
 }
 
