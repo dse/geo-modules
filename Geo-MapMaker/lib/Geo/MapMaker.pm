@@ -2,6 +2,7 @@ package Geo::MapMaker;
 use warnings;
 use strict;
 use Carp qw(croak);
+use YAML::Syck qw(Dump);
 
 # NOTE: "ground" and "background" are apparently treated as the same
 # classname in SVG, or some shit.
@@ -69,6 +70,7 @@ BEGIN {
 		      route_colors
 		      route_overrides
 		      grid
+		      crop_lines
 		      osm_layers
 		      inset_maps
 		      _map_areas
@@ -538,8 +540,8 @@ END
 	foreach my $class (sort keys %{$self->{classes}}) {
 		my $css   = $self->compose_style_string(class => $class);
 		my $css_2 = $self->compose_style_string(class => $class, style_attr_name => "style_2");
-		$contents .= "\t.${class}   { $css }\n";
-		$contents .= "\t.${class}_2 { $css_2 }\n" if $self->has_style_2(class => $class);
+		$contents .= "\t.${class}    { $css }\n";
+		$contents .= "\t.${class}__2 { $css_2 }\n" if $self->has_style_2(class => $class);
 	}
 
 	$style->removeChildNodes();
@@ -1050,7 +1052,7 @@ sub draw_transit_stops {
 		$self->diagf("Drawing transit stops for %s ... ", $gtfs->{data}->{name});
 		
 		my $class        = "transit-stop";
-		my $class_2      = "transit-stop_2";
+		my $class_2      = "transit-stop__2";
 		my $has_style_2  = $self->has_style_2(class => $class);
 		my $r   = $self->get_style_property(class => $class,
 						    property => "r") // 1.0;
@@ -1145,7 +1147,7 @@ sub draw_transit_routes {
 	}
 	if (defined $exceptions_group) {
 		$exceptions_class   = $exceptions_group->{class};
-		$exceptions_class_2 = $exceptions_group->{class} . "_2";
+		$exceptions_class_2 = $exceptions_group->{class} . "__2";
 	}
 
 	my %shape_direction_id;	
@@ -1313,7 +1315,7 @@ sub draw_transit_routes {
 					my $clipped_group = $self->clipped_group(parent => $route_layer,
 										 clip_path_id => $map_area->{clip_path_id});
 					$collection->{class}   = "${route_group_class} route_${agency_id} route_${route_short_name}";
-					$collection->{class_2} = "${route_group_class}_2 route_${agency_id}_2 route_${route_short_name}_2";
+					$collection->{class_2} = "${route_group_class}__2 route_${agency_id}__2 route_${route_short_name}__2";
 					$collection->{route_group_layer} = $route_group_layer;
 					$collection->{route_layer}       = $route_layer;
 					$collection->{clipped_group} = $clipped_group;
@@ -1545,8 +1547,8 @@ sub draw_openstreetmap_maps {
 
 				my $open_class     = "OPEN " . $info->{class};
 				my $closed_class   =           $info->{class};
-				my $open_class_2   = "OPEN " . $info->{class} . "_2";
-				my $closed_class_2 =           $info->{class} . "_2";
+				my $open_class_2   = "OPEN " . $info->{class} . "__2";
+				my $closed_class_2 =           $info->{class} . "__2";
 				
 				foreach my $way (@ways) {
 					$way->{used} = 1;
@@ -1653,13 +1655,13 @@ sub clipped_group {
 sub layer {
 	my ($self, %args) = @_;
 	my $insertion_point = $args{insertion_point};
-	my $name = $args{name};
-	my $parent = $args{parent};
-	my $z_index = $args{z_index};
-	my $writable = $args{writable};
-	my $id = $args{id};
-	my $no_create = $args{no_create};
-	
+	my $name            = $args{name};
+	my $parent          = $args{parent} // $self->{_svg_doc_elt};
+	my $z_index         = $args{z_index};
+	my $writable        = $args{writable};
+	my $id              = $args{id};
+	my $no_create       = $args{no_create};
+
 	if (defined $parent) {
 		if (defined $id) {
 			my ($existing) = $parent->findnodes("svg:g[\@id='$id']");
@@ -1847,6 +1849,67 @@ sub remove_grid {
 	}
 }
 
+sub remove_crop_lines {
+	my ($self) = @_;
+	my $crop_lines_layer = $self->layer(name => "Crop Lines", no_create => 1);
+	if ($crop_lines_layer) {
+		$crop_lines_layer->unbindNode();
+	}
+}
+
+sub draw_crop_lines {
+	my ($self) = @_;
+
+	my $crop_lines = $self->{crop_lines};
+	my $crop_x = eval { $crop_lines->{x} } // 4;
+	my $crop_y = eval { $crop_lines->{y} } // 4;
+	my $class = eval { $crop_lines->{class} } // "crop-lines";
+
+	print STDERR Dump($crop_lines);
+
+	$self->init_xml();
+	$self->stuff_all_layers_need();
+	my $map_area = $self->{_map_areas}->[0];
+	$self->update_scale($map_area);
+
+	my $crop_lines_layer = $self->layer(name => "Crop Lines", z_index => 9997);
+	$crop_lines_layer->removeChildNodes();
+	my $clipped_group = $self->clipped_group(parent => $crop_lines_layer,
+						 clip_path_id => $map_area->{clip_path_id});
+
+	my $south = $self->{south}; my $ys = $self->lat2y($south);
+	my $north = $self->{north}; my $yn = $self->lat2y($north);
+	my $east  = $self->{east};  my $xe = $self->lon2x($east);
+	my $west  = $self->{west};  my $xw = $self->lon2x($west);
+
+	my $top    = 0;
+	my $bottom = $self->{paper_height};
+	my $left   = 0;
+	my $right  = $self->{paper_width};
+
+	# vertical lines, from left to right
+	foreach my $x (1 .. ($crop_x - 1)) {
+		my $xx = $xe + ($xw - $xe) * ($x / $crop_x);
+		my $path = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
+		my $d = sprintf("M %.2f,%.2f %.2f,%.2f", $xx, $top, $xx, $bottom);
+		warn($d);
+		$path->setAttribute("d", $d);
+		$path->setAttribute("class", $class);
+		$clipped_group->appendChild($path);
+	}
+
+	# horizontal lines, from top to bottom
+	foreach my $y (1 .. ($crop_y - 1)) {
+		my $yy = $yn + ($ys - $yn) * ($y / $crop_y);
+		my $path = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
+		my $d = sprintf("M %.2f,%.2f %.2f,%.2f", $left, $yy, $right, $yy);
+		warn($d);
+		$path->setAttribute("d", $d);
+		$path->setAttribute("class", $class);
+		$clipped_group->appendChild($path);
+	}
+}
+
 sub draw_grid {
 	my ($self) = @_;
 	my $grid = $self->{grid};
@@ -1884,7 +1947,7 @@ sub draw_grid {
 			my $y = $self->lat2y($lat);
 
 			my $path = $doc->createElementNS($NS{"svg"}, "path");
-			$path->setAttribute("d", "M $xw,$y $xe,$y");
+			$path->setAttribute("d", sprintf("M %.2f,%.2f %.2f,%.2f", $xw, $y, $xe, $y));
 			$path->setAttribute("class", $class);
 			$clipped_group->appendChild($path);
 

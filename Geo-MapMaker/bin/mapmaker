@@ -40,6 +40,10 @@ where COMMAND is one of:
 	draw-openstreetmap-maps
 	draw-transit-routes
 	update-styles
+	draw-grid
+	remove-grid
+	draw-crop-lines
+	remove-crop-lines
 END
 }
 sub run {
@@ -229,3 +233,16 @@ sub cmd__remove_grid {
 	$mm->remove_grid();
 }
 
+sub cmd__draw_crop_lines {
+	my ($self) = @_;
+	my $mm = $self->{mapmaker};
+	die("map MAPNAME must be specified.\n") unless $mm;
+	$mm->draw_crop_lines();
+}
+
+sub cmd__remove_crop_lines {
+	my ($self) = @_;
+	my $mm = $self->{mapmaker};
+	die("map MAPNAME must be specified.\n") unless $mm;
+	$mm->remove_crop_lines();
+}
