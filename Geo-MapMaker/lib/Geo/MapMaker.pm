@@ -71,6 +71,7 @@ BEGIN {
 		      route_overrides
 		      grid
 		      crop_lines
+		      crop_marks
 		      osm_layers
 		      inset_maps
 		      _map_areas
@@ -1853,55 +1854,141 @@ sub remove_crop_lines {
 	if ($crop_lines_layer) {
 		$crop_lines_layer->unbindNode();
 	}
+	my $crop_marks_layer = $self->layer(name => "Crop Marks", no_create => 1);
+	if ($crop_marks_layer) {
+		$crop_marks_layer->unbindNode();
+	}
 }
 
 sub draw_crop_lines {
 	my ($self) = @_;
 
+	$self->remove_crop_lines(); # incase z-index changes
+
 	my $crop_lines = $self->{crop_lines};
 	my $crop_x = eval { $crop_lines->{x} } // 4;
 	my $crop_y = eval { $crop_lines->{y} } // 4;
-	my $class = eval { $crop_lines->{class} } // "crop-lines";
-
-	print STDERR Dump($crop_lines);
+	my $crop_lines_class = eval { $crop_lines->{class} } // "crop-lines";
 
 	$self->init_xml();
 	$self->stuff_all_layers_need();
 	my $map_area = $self->{_map_areas}->[0];
 	$self->update_scale($map_area);
 
-	my $crop_lines_layer = $self->layer(name => "Crop Lines", z_index => 9997);
+	my $crop_lines_layer = $self->layer(name => "Crop Lines", z_index => 9996);
 	$crop_lines_layer->removeChildNodes();
 
-	my $south = $self->{south}; my $ys = $self->lat2y($south);
-	my $north = $self->{north}; my $yn = $self->lat2y($north);
-	my $east  = $self->{east};  my $xe = $self->lon2x($east);
-	my $west  = $self->{west};  my $xw = $self->lon2x($west);
+	my $south = $self->{south}; my $y_south = $self->lat2y($south);
+	my $north = $self->{north}; my $y_north = $self->lat2y($north);
+	my $east  = $self->{east};  my $x_east = $self->lon2x($east);
+	my $west  = $self->{west};  my $x_west = $self->lon2x($west);
 
 	my $top    = 0;
 	my $bottom = $self->{paper_height};
 	my $left   = 0;
 	my $right  = $self->{paper_width};
 
+	warn(sprintf("\$top    = %.2f\n", $top));
+	warn(sprintf("\$north  = %.2f\n", $north));
+	warn(sprintf("\$south  = %.2f\n", $south));
+	warn(sprintf("\$bottom = %.2f\n", $bottom));
+
+	warn(sprintf("\$left   = %.2f\n", $left));
+	warn(sprintf("\$x_west = %.2f\n", $x_west));
+	warn(sprintf("\$x_east = %.2f\n", $x_east));
+	warn(sprintf("\$right  = %.2f\n", $right));
+
 	# vertical lines, from left to right
 	foreach my $x (1 .. ($crop_x - 1)) {
-		my $xx = $xe + ($xw - $xe) * ($x / $crop_x);
+		my $xx = $x_east + ($x_west - $x_east) * ($x / $crop_x);
 		my $path = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
 		my $d = sprintf("M %.2f,%.2f %.2f,%.2f", $xx, $top, $xx, $bottom);
 		$path->setAttribute("d", $d);
-		$path->setAttribute("class", $class);
+		$path->setAttribute("class", $crop_lines_class);
 		$crop_lines_layer->appendChild($path);
 	}
 
 	# horizontal lines, from top to bottom
 	foreach my $y (1 .. ($crop_y - 1)) {
-		my $yy = $yn + ($ys - $yn) * ($y / $crop_y);
+		my $yy = $y_north + ($y_south - $y_north) * ($y / $crop_y);
 		my $path = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
 		my $d = sprintf("M %.2f,%.2f %.2f,%.2f", $left, $yy, $right, $yy);
 		$path->setAttribute("d", $d);
-		$path->setAttribute("class", $class);
+		$path->setAttribute("class", $crop_lines_class);
 		$crop_lines_layer->appendChild($path);
 	}
+
+	### CROP MARKS ###
+
+	my $crop_marks = $self->{crop_marks};
+	my $crop_size = eval { $crop_marks->{size} } // 22.5;
+	my $crop_marks_class = eval { $crop_marks->{class} } // "crop-marks";
+
+	my $crop_marks_layer = $self->layer(name => "Crop Marks", z_index => 9997);
+	$crop_marks_layer->removeChildNodes();
+
+	# crop marks inside the map
+	foreach my $x (1 .. ($crop_x - 1)) {
+		foreach my $y (1 .. ($crop_y - 1)) {
+			my $xx = $x_east + ($x_west - $x_east) * ($x / $crop_x);
+			my $yy = $y_north + ($y_south - $y_north) * ($y / $crop_y);
+			my $x1 = $xx - $crop_size;
+			my $x2 = $xx + $crop_size;
+			my $y1 = $yy - $crop_size;
+			my $y2 = $yy + $crop_size;
+
+			my $path1 = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
+			my $d1    = sprintf("M %.2f,%.2f %.2f,%.2f", $xx, $y1, $xx, $y2);
+			$path1->setAttribute("d", $d1);
+			$path1->setAttribute("class", $crop_marks_class);
+			$crop_marks_layer->appendChild($path1);
+
+			my $path2 = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
+			my $d2    = sprintf("M %.2f,%.2f %.2f,%.2f", $x1, $yy, $x2, $yy);
+			$path2->setAttribute("d", $d2);
+			$path2->setAttribute("class", $crop_marks_class);
+			$crop_marks_layer->appendChild($path2);
+		}
+	}
+
+	# vertical lines, from left to right
+	foreach my $x (1 .. ($crop_x - 1)) {
+		my $xx = $x_east + ($x_west - $x_east) * ($x / $crop_x);
+
+		my $path1 = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
+		my $d1    = sprintf("M %.2f,%.2f %.2f,%.2f", $xx, $top, $xx, $y_north);
+
+		$path1->setAttribute("d", $d1);
+		$path1->setAttribute("class", $crop_marks_class);
+		$crop_marks_layer->appendChild($path1);
+
+		my $path2 = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
+		my $d2    = sprintf("M %.2f,%.2f %.2f,%.2f", $xx, $y_south, $xx, $bottom);
+
+		$path2->setAttribute("d", $d2);
+		$path2->setAttribute("class", $crop_marks_class);
+		$crop_marks_layer->appendChild($path2);
+	}
+
+	# horizontal lines, from top to bottom
+	foreach my $y (1 .. ($crop_y - 1)) {
+		my $yy = $y_north + ($y_south - $y_north) * ($y / $crop_y);
+
+		my $path1 = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
+		my $d1 = sprintf("M %.2f,%.2f %.2f,%.2f", $left, $yy, $x_west, $yy);
+
+		$path1->setAttribute("d", $d1);
+		$path1->setAttribute("class", $crop_marks_class);
+		$crop_marks_layer->appendChild($path1);
+
+		my $path2 = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
+		my $d2 = sprintf("M %.2f,%.2f %.2f,%.2f", $x_east, $yy, $right, $yy);
+
+		$path2->setAttribute("d", $d2);
+		$path2->setAttribute("class", $crop_marks_class);
+		$crop_marks_layer->appendChild($path2);
+	}
+
 }
 
 sub draw_grid {
@@ -1931,17 +2018,17 @@ sub draw_grid {
 		my $clipped_group = $self->clipped_group(parent => $grid_layer,
 							 clip_path_id => $map_area->{clip_path_id});
 
-		my $south = $self->{south}; my $ys = $self->lat2y($south);
-		my $north = $self->{north}; my $yn = $self->lat2y($north);
-		my $east = $self->{east};   my $xe = $self->lon2x($east);
-		my $west = $self->{west};   my $xw = $self->lon2x($west);
+		my $south = $self->{south}; my $y_south = $self->lat2y($south);
+		my $north = $self->{north}; my $y_north = $self->lat2y($north);
+		my $east = $self->{east};   my $x_east = $self->lon2x($east);
+		my $west = $self->{west};   my $x_west = $self->lon2x($west);
 
 		for (my $lat = int($south / $increment) * $increment; $lat <= $north; $lat += $increment) {
 			my $lat_text = sprintf($format, $lat);
 			my $y = $self->lat2y($lat);
 
 			my $path = $doc->createElementNS($NS{"svg"}, "path");
-			$path->setAttribute("d", sprintf("M %.2f,%.2f %.2f,%.2f", $xw, $y, $xe, $y));
+			$path->setAttribute("d", sprintf("M %.2f,%.2f %.2f,%.2f", $x_west, $y, $x_east, $y));
 			$path->setAttribute("class", $class);
 			$clipped_group->appendChild($path);
 
@@ -1957,7 +2044,7 @@ sub draw_grid {
 			my $x = $self->lon2x($lon);
 
 			my $path = $doc->createElementNS($NS{"svg"}, "path");
-			$path->setAttribute("d", "M $x,$ys $x,$yn");
+			$path->setAttribute("d", "M $x,$y_south $x,$y_north");
 			$path->setAttribute("class", $class);
 			$clipped_group->appendChild($path);
 
