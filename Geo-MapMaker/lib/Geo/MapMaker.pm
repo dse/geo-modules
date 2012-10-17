@@ -347,21 +347,29 @@ END
 	}
 
 	$self->{_read_filename} = $self->{filename};
+
+	$self->upgrade_mapmaker_version();
 }
 
 sub upgrade_mapmaker_version_from_0_to_1 {
 	my ($self) = @_;
-	my $doc_elt = $self->{_svg_doc_elt};
-	if (!$doc_elt) { return; }
-	my $version = $doc_elt->getAttributeNS($NS{"mapmaker"}, "version");
-	if (!$version) {
-		$doc_elt->setAttributeNS($NS{"mapmaker"}, "1");
-	}
 }
 
 sub upgrade_mapmaker_version {
 	my ($self) = @_;
-	$self->upgrade_mapmaker_version_from_0_to_1();
+	my $doc_elt = $self->{_svg_doc_elt};
+	if (!$doc_elt) { return; }
+	my $version = $doc_elt->getAttributeNS($NS{"mapmaker"}, "version") // 0;
+	while (TRUE) {
+		my $next_version = $version + 1;
+		my $sub_name = "upgrade_mapmaker_version_from_${version}_to_${next_version}";
+		last if (!(exists &$sub_name));
+		warn("Upgrading from version $version to version $next_version ...\n");
+		$self->$sub_name();
+		$version = $next_version;
+		$doc_elt->setAttributeNS($NS{"mapmaker"}, "version", $version);
+		warn("Done.\n");
+	}
 }
 
 sub findnodes {
