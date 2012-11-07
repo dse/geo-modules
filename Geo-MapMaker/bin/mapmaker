@@ -44,6 +44,9 @@ where COMMAND is one of:
 	remove-grid
 	draw-crop-lines
 	remove-crop-lines
+	save-as FILENAME
+	enable-layers LAYER ...
+	disable-layers LAYER ...
 END
 }
 sub run {
@@ -245,4 +248,27 @@ sub cmd__remove_crop_lines {
 	my $mm = $self->{mapmaker};
 	die("map MAPNAME must be specified.\n") unless $mm;
 	$mm->remove_crop_lines();
+}
+
+sub cmd__save_as {
+	my ($self, $filename) = @_;
+	die("FILENAME must be specified.\n") unless defined $filename;
+	my $mm = $self->{mapmaker};
+	die("map MAPNAME must be specified.\n") unless $mm;
+	$mm->save($filename);
+}
+
+sub cmd__enable_layers {
+	my ($self, @layers) = @_;
+	die("at least one LAYER must be specified.\n") unless scalar @layers;
+	my $mm = $self->{mapmaker};
+	die("map MAPNAME must be specified.\n") unless $mm;
+	$mm->enable_layers(@layers);
+}
+sub cmd__disable_layers {
+	my ($self, @layers) = @_;
+	die("at least one LAYER must be specified.\n") unless scalar @layers;
+	my $mm = $self->{mapmaker};
+	die("map MAPNAME must be specified.\n") unless $mm;
+	$mm->disable_layers(@layers);
 }
