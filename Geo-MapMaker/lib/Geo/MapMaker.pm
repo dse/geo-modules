@@ -134,7 +134,7 @@ sub new {
 
 sub DESTROY {
 	my ($self) = @_;
-	$self->finish_xml();
+	$self->save();
 }
 
 use XML::LibXML qw(:all);
@@ -2344,17 +2344,21 @@ sub find_chunks {
 	return @chunks;
 }
 
-sub finish_xml {
-	my ($self) = @_;
+sub save {
+	my ($self, $filename) = @_;
 
-	if (!(defined($self->{_read_filename}) and
-	      defined($self->{filename}) and
-	      ($self->{_read_filename} eq $self->{filename}))) {
-		return;
+	if (!defined $filename) {
+		if (!(defined($self->{_read_filename}) and
+		      defined($self->{filename}) and
+		      ($self->{_read_filename} eq $self->{filename}))) {
+			return;
+		}
 	}
+	
+	$filename //= $self->{filename};
 
-	open(my $fh, ">", $self->{filename}) or die("cannot write $self->{filename}: $!\n");
-	$self->diag("Writing $self->{filename} ... ");
+	open(my $fh, ">", $filename) or die("cannot write $filename: $!\n");
+	$self->diag("Writing $filename ... ");
 	my $string = $self->{_svg_doc}->toString(1);
 
 	# we're fine with indentation everywhere else, but inserting
