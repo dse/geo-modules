@@ -2,17 +2,22 @@
 use warnings;
 use strict;
 
-use Carp qw(verbose);
-
+use Carp qw();
 use Geo::GTFS;
 use Geo::MapMaker;
-BEGIN { $Geo::GTFS::verbose = 1; }
-BEGIN { $Geo::MapMaker::verbose = 1; }
 use Getopt::Long;
 
 my $shell = My::Shell->new();
 Getopt::Long::Configure("bundling", "gnu_compat");
-Getopt::Long::GetOptions("h|help" => sub { $shell->cmd__help(); exit(0); });
+Getopt::Long::GetOptions("show-stack-traces" => sub { $SIG{__DIE__} = \&Carp::confess; },
+			 "v|verbose+" => \$verbose,
+			 "h|help" => sub { $shell->cmd__help(); exit(0); });
+
+if ($verbose) {
+	$Geo::GTFS::verbose = 1;
+	$Geo::MapMaker::verbose = 1;
+}
+
 $shell->run(@ARGV);
 
 package My::Shell;
@@ -28,8 +33,11 @@ sub cmd__help {
 	my ($self) = @_;
 	print(<<"END");
 usage:
-	$0 list-maps
-	$0 FILENAME COMMAND [ \; COMMAND ... ]
+	$0 [ OPTION ... ] list-maps
+	$0 [ OPTION ... ] FILENAME COMMAND [ \; COMMAND ... ]
+options:
+	-h, --help               display this message
+	    --show-stack-traces  show stack traces
 where COMMAND is one of:
 	openstreetmap-update
 	force-openstreetmap-update
