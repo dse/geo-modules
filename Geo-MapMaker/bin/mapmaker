@@ -8,6 +8,7 @@ use Geo::MapMaker;
 use Getopt::Long;
 
 my $shell = My::Shell->new();
+my $verbose = 0;
 Getopt::Long::Configure("bundling", "gnu_compat");
 Getopt::Long::GetOptions("show-stack-traces" => sub { $SIG{__DIE__} = \&Carp::confess; },
 			 "v|verbose+" => \$verbose,

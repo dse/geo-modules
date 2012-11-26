@@ -1859,13 +1859,13 @@ sub update_or_create_layer {
 		$layer = $self->{_svg_doc}->createElementNS($NS{"svg"}, "g");
 		if ($insertion_point) {
 			if (defined $but_before) {
-				my $new = $insertion_point->findnodes("previous-sibling::node()[@inkscape::label='$but_before']");
+				my $new = $insertion_point->findnodes("previous-sibling::node()[\@inkscape::label='$but_before']");
 				if ($new) {
 					$insertion_point = $new;
 				}
 			}
 			if (defined $but_after) {
-				my $new = $insertion_point->findnodes("next-sibling::node()[@inkscape::label='$but_after']/next-sibling::node()[1]");
+				my $new = $insertion_point->findnodes("next-sibling::node()[\@inkscape::label='$but_after']/next-sibling::node()[1]");
 				if ($new) {
 					$insertion_point = $new;
 				}
