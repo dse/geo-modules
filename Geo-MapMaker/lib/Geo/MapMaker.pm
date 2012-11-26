@@ -2,6 +2,7 @@ package Geo::MapMaker;
 use warnings;
 use strict;
 use Carp qw(croak);
+use Carp qw(confess);
 use YAML::Syck qw(Dump);
 
 use constant FALSE => 0;
@@ -144,6 +145,7 @@ use XML::LibXML qw(:all);
 use LWP::Simple;
 use URI;
 use Carp qw(croak);
+use Carp qw(confess);
 use File::Path qw(mkpath);
 use File::Basename;
 use List::MoreUtils qw(all firstidx uniq);
@@ -532,6 +534,11 @@ sub update_or_create_style_node {
 	.WHITE      { fill: #fff; }
 	.MAP_BORDER { fill: none !important; stroke-linejoin: square !important; }
 	.OPEN       { fill: none !important; stroke-linecap: round; stroke-linejoin: round; }
+	.TEXT_NODE_BASE {
+		text-align: center;
+		text-anchor: middle;
+	}
+        /*
 	.GRID_TEXT  {
 		font-size: 6px;
 		font-style: normal;
@@ -547,6 +554,7 @@ sub update_or_create_style_node {
 		stroke: none;
 		font-family: Arial;
         }
+        */
 END
 
 	foreach my $class (sort keys %{$self->{classes}}) {
@@ -630,12 +638,18 @@ sub update_or_create_map_area_layer {
 	my $insertion_point = $self->find_layer_insertion_point();
 	my $layer_name      = $map_area->{name} // ("Inset " . $map_area->{index});
 
+	my $more_options = {};
+
 	if ($under) {
+		$more_options->{but_before} = $layer_name;
 		$layer_name .= " (under)";
+	} else {
+		$more_options->{but_after} = $layer_name . " (under)";
 	}
 	
 	$self->{_dirty_} = 1;
 	my $map_area_layer = $self->update_or_create_layer(%$options,
+							   %$more_options,
 							   name            => $layer_name,
 							   parent          => $doc_elt,
 							   insertion_point => $insertion_point,
@@ -1124,12 +1138,9 @@ sub draw_transit_stops {
 				my $y = $self->lat2y($lat);
 				return if $x < $svg_west  || $x > $svg_east;
 				return if $y < $svg_north || $y > $svg_south;
-				my $circle = $self->{_svg_doc}->createElementNS($NS{"svg"}, "circle");
-				$circle->setAttribute("cx", sprintf("%.2f", $x));
-				$circle->setAttribute("cy", sprintf("%.2f", $y));
-				$circle->setAttribute("class", $class);
-				$circle->setAttribute("r", sprintf("%.2f", $r));
-				$circle->setAttribute("title", $title) if $title;
+				my $circle = $self->circle_node(x => $x, y => $y,
+								class => $class, r => $r,
+								title => $title);
 				$clipped_group->appendChild($circle);
 			};
 		
@@ -1442,14 +1453,6 @@ sub draw_openstreetmap_maps {
 	my ($self) = @_;
 
 	$self->init_xml();
-
-	my %index_tag;
-	foreach my $info (@{$self->{osm_layers}}) {
-		foreach my $tag (@{$info->{tags}}) {
-			$index_tag{$tag->{k}} = 1;
-		}
-	}
-
 	$self->{_dirty_} = 1;
 	$self->stuff_all_layers_need();
 	
@@ -1478,7 +1481,27 @@ sub draw_openstreetmap_maps {
 	my $num_maps = scalar(@{$self->{_map_xml_filenames}});
 	my $map_number = 0;
 	my %wayid_used;
-	
+	my %nodeid_used;
+
+	my %way_preindex_k;
+	my %node_preindex_k;
+	my %way_preindex_kv;
+	my %node_preindex_kv;
+	foreach my $info (@{$self->{osm_layers}}) {
+		my $tags = $info->{tags};
+		my $type = $info->{type} // "way"; # 'way' or 'node'
+		foreach my $tag (@$tags) {
+			my ($k, $v) = @{$tag}{qw(k v)};
+			if ($type eq "way") {
+				$way_preindex_k{$k} = 1;
+				$way_preindex_kv{$k,$v} = 1 if defined $v;
+			} elsif ($type eq "node") {
+				$node_preindex_k{$k} = 1;
+				$node_preindex_kv{$k,$v} = 1 if defined $v;
+			}
+		}
+	}
+
 	foreach my $filename (@{$self->{_map_xml_filenames}}) {
 		$map_number += 1;
 
@@ -1488,7 +1511,13 @@ sub draw_openstreetmap_maps {
 
 		$self->diag("  Finding <node> elements ... ");
 		my @nodes = $doc->findnodes("/osm/node");
-		my %nodes;
+
+		my %node_coords;
+		my %node_info;
+		my %node_index_k;
+		my %node_index_kv;
+		my %nodeid_exclude;
+
 		$self->diag(scalar(@nodes) . " elements found.\n");
 		foreach my $map_area (@{$self->{_map_areas}}) {
 			$self->update_scale($map_area);
@@ -1508,9 +1537,33 @@ sub draw_openstreetmap_maps {
 				my $xzone = ($svgx <= $svg_west)  ? -1 : ($svgx >= $svg_east)  ? 1 : 0;
 				my $yzone = ($svgy <= $svg_north) ? -1 : ($svgy >= $svg_south) ? 1 : 0;
 				my $result = [$svgx, $svgy, $xzone, $yzone];
-				$nodes{$id}[$index] = $result;
+				$node_coords{$id}[$index] = $result;
 			}
-			$self->diag("done.\n");
+		}
+		$self->diag("done.\n");
+
+		foreach my $node (@nodes) {
+			my $id = $node->getAttribute("id");
+			if ($nodeid_used{$id}) { # for all split-up areas
+				$nodeid_exclude{$id} = 1; # for this split-up area
+				next;
+			}
+			$nodeid_used{$id} = 1;
+
+			my $result = { id => $id, tags => {} };
+
+			my @tag = $node->findnodes("tag");
+			foreach my $tag (@tag) {
+				my $k = $tag->getAttribute("k");
+				my $v = $tag->getAttribute("v");
+				$result->{tags}->{$k} = $v;
+				if ($node_preindex_kv{$k,$v}) {
+					push(@{$node_index_kv{$k, $v}}, $result);
+				}
+				if ($node_preindex_k{$k}) {
+					push(@{$node_index_k{$k}}, $result);
+				}
+			}
 		}
 		$self->diag("done.\n");
 
@@ -1518,14 +1571,15 @@ sub draw_openstreetmap_maps {
 		my @ways = $doc->findnodes("/osm/way");
 
 		my %ways;
-		my %ways_index_k;
-		my %ways_index_kv;
+		my %way_index_k;
+		my %way_index_kv;
 		my %wayid_exclude;
+
 		$self->diag(scalar(@ways) . " elements found; indexing ... ");
 		foreach my $way (@ways) {
 			my $id = $way->getAttribute("id");
-			if ($wayid_used{$id}) {
-				$wayid_exclude{$id} = 1;
+			if ($wayid_used{$id}) { # for all split-up areas
+				$wayid_exclude{$id} = 1; # for this split-up area
 				next;
 			}
 			$wayid_used{$id} = 1;
@@ -1545,10 +1599,13 @@ sub draw_openstreetmap_maps {
 			foreach my $tag (@tag) {
 				my $k = $tag->getAttribute("k");
 				my $v = $tag->getAttribute("v");
-				next unless $index_tag{$k};
-				push(@{$ways_index_k{$k}}, $result);
-				push(@{$ways_index_kv{$k, $v}}, $result);
 				$result->{tags}->{$k} = $v;
+				if ($way_preindex_kv{$k,$v}) {
+					push(@{$way_index_kv{$k, $v}}, $result);
+				}
+				if ($way_preindex_k{$k}) {
+					push(@{$way_index_k{$k}}, $result);
+				}
 			}
 		}
 		$self->diag("done.\n");
@@ -1562,7 +1619,7 @@ sub draw_openstreetmap_maps {
 				my $id = $way->getAttribute("id");
 				next if $wayid_exclude{$id};
 				my @nodeid = @{$ways{$id}{nodeid}};
-				my @points = map { $nodes{$_}[$index] } @nodeid;
+				my @points = map { $node_coords{$_}[$index] } @nodeid;
 				$ways{$id}{points}[$index] = \@points;
 			}
 			$self->diag("done.\n");
@@ -1577,70 +1634,122 @@ sub draw_openstreetmap_maps {
 			foreach my $info (@{$self->{osm_layers}}) {
 				my $name = $info->{name};
 				my $tags = $info->{tags};
-				my $class = $info->{class};
 				my $group = $info->{_map_area_group}[$index];
+				my $type = $info->{type} // "way"; # 'way' or 'node'
 
-				my @ways;
-				foreach my $tag (@$tags) {
-					my $k = $tag->{k};
-					my $v = $tag->{v};
-					if (defined $v) {
-						eval { push(@ways, @{$ways_index_kv{$k, $v}}); };
-					} else {
-						eval { push(@ways, @{$ways_index_k{$k}}); };
+				if ($type eq "way") {
+
+					my $class = $info->{class};
+
+					my @ways;
+					foreach my $tag (@$tags) {
+						my $k = $tag->{k};
+						my $v = $tag->{v};
+						if (defined $v) {
+							eval { push(@ways, @{$way_index_kv{$k, $v}}); };
+						}
+						else {
+							eval { push(@ways, @{$way_index_k{$k}}); };
+						}
 					}
-				}
-				@ways = uniq @ways;
-				$self->diagf("\r  %-77.77s", 
-					     sprintf("%s (%s objects) ...",
-						     $name, scalar(@ways)));
+					@ways = uniq @ways;
 
-				my $options = {};
-				if ($map_area->{scale_stroke_width} && exists $map_area->{zoom}) {
-					$options->{scale} = $map_area->{zoom};
-				}
+					$self->diagf("  %s (%d objects) ...\n", $name, scalar(@ways));
 
-				my $open_class     = "OPEN " . $info->{class};
-				my $closed_class   =           $info->{class};
-				my $open_class_2   = "OPEN " . $info->{class} . "__2";
-				my $closed_class_2 =           $info->{class} . "__2";
+					my $options = {};
+					if ($map_area->{scale_stroke_width} && exists $map_area->{zoom}) {
+						$options->{scale} = $map_area->{zoom};
+					}
+
+					my $open_class     = "OPEN " . $info->{class};
+					my $closed_class   =           $info->{class};
+					my $open_class_2   = "OPEN " . $info->{class} . "__2";
+					my $closed_class_2 =           $info->{class} . "__2";
 				
-				foreach my $way (@ways) {
-					$way->{used} = 1;
-					my $points = $way->{points}[$index];
+					foreach my $way (@ways) {
+						$way->{used} = 1;
+						my $points = $way->{points}[$index];
 
-					if (all { $_->[POINT_X_ZONE] == -1 } @$points) { next; }
-					if (all { $_->[POINT_X_ZONE] ==  1 } @$points) { next; }
-					if (all { $_->[POINT_Y_ZONE] == -1 } @$points) { next; }
-					if (all { $_->[POINT_Y_ZONE] ==  1 } @$points) { next; }
+						if (all { $_->[POINT_X_ZONE] == -1 } @$points) { next; }
+						if (all { $_->[POINT_X_ZONE] ==  1 } @$points) { next; }
+						if (all { $_->[POINT_Y_ZONE] == -1 } @$points) { next; }
+						if (all { $_->[POINT_Y_ZONE] ==  1 } @$points) { next; }
 
-					if ($way->{closed}) {
-						my $polygon = $self->polygon(points => $points,
-									     class => $closed_class);
-						$group->appendChild($polygon);
-						if ($self->has_style_2(class => $class)) {
-							my $polygon_2 = $self->polygon(points => $points,
-										       class => $closed_class_2);
-							$group->appendChild($polygon_2);
+						if ($way->{closed}) {
+							my $polygon = $self->polygon(points => $points,
+										     class => $closed_class);
+							$group->appendChild($polygon);
+							if ($self->has_style_2(class => $class)) {
+								my $polygon_2 = $self->polygon(points => $points,
+											       class => $closed_class_2);
+								$group->appendChild($polygon_2);
+							}
 						}
-					} else {
-						my $polyline = $self->polyline(points => $points,
-									       class => $open_class);
-						$group->appendChild($polyline);
-						if ($self->has_style_2(class => $class)) {
-							my $polyline_2 = $self->polyline(points => $points,
-											 class => $open_class_2);
-							$group->appendChild($polyline_2);
+						else {
+							my $polyline = $self->polyline(points => $points,
+										       class => $open_class);
+							$group->appendChild($polyline);
+							if ($self->has_style_2(class => $class)) {
+								my $polyline_2 = $self->polyline(points => $points,
+												 class => $open_class_2);
+								$group->appendChild($polyline_2);
+							}
 						}
 					}
+				} elsif ($type eq "node") {
+
+
+					my @nodes;
+					foreach my $tag (@$tags) {
+						my $k = $tag->{k};
+						my $v = $tag->{v};
+						if (defined $v) {
+							eval { push(@nodes, @{$node_index_kv{$k, $v}}); };
+						}
+						else {
+							eval { push(@nodes, @{$node_index_k{$k}}); };
+						}
+					}
+					@nodes = uniq @nodes;
+
+					$self->diagf("  %s (%s objects) ...\n", $name, scalar(@nodes));
+
+					if ($info->{output_text}) {
+						my $class = $info->{text_class};
+						foreach my $node (@nodes) {
+							$node->{used} = 1;
+							my $coords = $node_coords{$node->{id}}[$index];
+							my ($x, $y) = @$coords;
+							# don't care about if out of bounds i guess
+							my $text = $node->{tags}->{name};
+							my $text_node = $self->text_node(x => $x, y => $y,
+											 text => $text,
+											 class => $class);
+							$group->appendChild($text_node);
+						}
+					}
+
+					if ($info->{output_dot}) {
+						my $class = $info->{dot_class};
+						my $r = $self->get_style_property(class => $class, property => "r");
+						foreach my $node (@nodes) {
+							$node->{used} = 1;
+							my $coords = $node_coords{$node->{id}}[$index];
+							my ($x, $y) = @$coords;
+							# don't care about if out of bounds i guess
+							my $circle = $self->circle_node(x => $x, y => $y, class => $class, r => $r);
+							$group->appendChild($circle);
+						}
+					}
+
 				}
 			}
 
 			$self->diag("\ndone.\n");
 		}
 
-		foreach my $k (keys(%ways_index_k)) {
-			my @unused = grep { !$_->{used} } @{$ways_index_k{$k}};
+		foreach my $k (keys(%way_index_k)) {
+			my @unused = grep { !$_->{used} } @{$way_index_k{$k}};
 			foreach my $v (map { $_->{tags}->{$k} } @unused) {
 				$unused{$k,$v} += 1;
 			}
@@ -1726,6 +1835,9 @@ sub update_or_create_layer {
 	my $children_autogenerated = $args{children_autogenerated};
 	my $recurse                = $args{recurse};
 
+	my $but_before             = $args{but_before};
+	my $but_after              = $args{but_after};
+
 	my $search_prefix = "";
 	if ($recurse) {
 		if ($no_create) {
@@ -1746,6 +1858,18 @@ sub update_or_create_layer {
 		$self->{_dirty_} = 1;
 		$layer = $self->{_svg_doc}->createElementNS($NS{"svg"}, "g");
 		if ($insertion_point) {
+			if (defined $but_before) {
+				my $new = $insertion_point->findnodes("previous-sibling::node()[@inkscape::label='$but_before']");
+				if ($new) {
+					$insertion_point = $new;
+				}
+			}
+			if (defined $but_after) {
+				my $new = $insertion_point->findnodes("next-sibling::node()[@inkscape::label='$but_after']/next-sibling::node()[1]");
+				if ($new) {
+					$insertion_point = $new;
+				}
+			}
 			$parent->insertBefore($layer, $insertion_point);
 		} elsif (defined $z_index) {
 			my $prefix = "";
@@ -1819,10 +1943,10 @@ sub create_element {
 		croak("create_element: prefix must be specified.  ($name)");
 	}
 	if ($autogenerated) {
-		$element->setAttributeNS($NS{"mapmaker"}, "autogenerated", "true");
+		$element->setAttributeNS($NS{"mapmaker"}, "mapmaker::autogenerated", "true");
 	}
 	if ($children_autogenerated) {
-		$element->setAttributeNS($NS{"mapmaker"}, "children-autogenerated", "true");
+		$element->setAttributeNS($NS{"mapmaker"}, "mapmaker::children-autogenerated", "true");
 	}
 	return $element;
 }
@@ -2139,8 +2263,8 @@ sub draw_grid {
 	$self->stuff_all_layers_need();
 
 	my $class = $grid->{class};
-	my $text_class   = "GRID_TEXT " . $grid->{"text-class"};
-	my $text_2_class = "GRID_TEXT " . $grid->{"text-2-class"};
+	my $text_class   = $grid->{"text-class"};
+	my $text_2_class = $grid->{"text-2-class"};
 
 	foreach my $map_area (@{$self->{_map_areas}}) {
 		$self->update_scale($map_area);
@@ -2194,21 +2318,39 @@ sub draw_grid {
 	}
 }
 
+sub circle_node {
+	my ($self, %args) = @_;
+	my $x = $args{x};
+	my $y = $args{y};
+	my $r = $args{r} // 1.0;
+	my $class = $args{class};
+	my $title = $args{title};
+
+	my $doc = $self->{_svg_doc};
+	my $circle_node = $doc->createElementNS($NS{"svg"}, "circle");
+	$circle_node->setAttribute("cx", sprintf("%.2f", $x));
+	$circle_node->setAttribute("cy", sprintf("%.2f", $y));
+	$circle_node->setAttribute("class", $class);
+	$circle_node->setAttribute("r", sprintf("%.2f", $r));
+	$circle_node->setAttribute("title", $title) if defined $title && $title =~ /\S/;
+	return $circle_node;
+}
+
 sub text_node {
-	print STDERR (".");
 	my ($self, %args) = @_;
 	my $x = $args{x};
 	my $y = $args{y};
 	my $text = $args{text};
 	my $class = $args{class};
+
 	my $doc = $self->{_svg_doc};
 	my $text_node = $doc->createElementNS($NS{"svg"}, "text");
-	$text_node->setAttribute("x", $x);
-	$text_node->setAttribute("y", $y);
-	$text_node->setAttribute("class", $class);
+	$text_node->setAttribute("x", sprintf("%.2f", $x));
+	$text_node->setAttribute("y", sprintf("%.2f", $y));
+	$text_node->setAttribute("class", "TEXT_NODE_BASE " . $class);
 	my $tspan_node = $doc->createElementNS($NS{"svg"}, "tspan");
-	$tspan_node->setAttribute("x", $x);
-	$tspan_node->setAttribute("y", $y);
+	$tspan_node->setAttribute("x", sprintf("%.2f", $x));
+	$tspan_node->setAttribute("y", sprintf("%.2f", $y));
 	$tspan_node->appendText($text);
 	$text_node->appendChild($tspan_node);
 	return $text_node;
