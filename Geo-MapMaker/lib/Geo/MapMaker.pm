@@ -193,7 +193,7 @@ sub _update_openstreetmap {
 		$self->_update_openstreetmap($force, $west,       $center_lat, $center_lon, $north);
 		$self->_update_openstreetmap($force, $center_lon, $center_lat, $east,       $north);
 	} elsif (-e $xml_filename && !$force) {
-		warn("Not updating $xml_filename\n");
+		warn("Not updating $xml_filename\n") if $verbose;
 		push(@{$self->{_map_xml_filenames}}, $xml_filename);
 	} else {
 		my $ua = LWP::UserAgent->new();
@@ -340,6 +340,13 @@ END
 		} else {
 			$map_area->{clip_path_id} = "inset__${index}__clip_path";
 		}
+		if ($index == 0) {
+			$map_area->{id_prefix} = "";
+		} elsif (defined $id) {
+			$map_area->{id_prefix} = $id . "_";
+		} else {
+			$map_area->{id_prefix} = "ma" . $index . "_";
+		}
 	}
 
 	$self->{_read_filename} = $self->{filename};
@@ -440,7 +447,7 @@ BEGIN {
 			$self->{_svg_west} += $extra_horizontal_room / 2;
 		}
 		
-		if (!$map_area->{is_main}) {
+		if (!($map_area->{is_main})) {
 			# recalculate
 			$w = $map_area->{west};
 			$e = $map_area->{east};
@@ -511,6 +518,7 @@ sub find_or_create_defs_node {
 		$defs = $doc->createElementNS($NS{"svg"}, "defs");
 		$doc_elt->insertBefore($defs, $doc_elt->firstChild());
 	}
+	$defs->setAttribute("id", "geoMapmakerDefs");
 	return $defs;
 }
 
@@ -527,6 +535,7 @@ sub update_or_create_style_node {
 		$style->setAttribute("type", "text/css");
 		$defs->appendChild($style);
 	}
+	$style->setAttribute("id", "geoMapmakerStyles");
 
 	my $contents = "\n";
 	
@@ -648,8 +657,30 @@ sub update_or_create_map_area_layer {
 	}
 	
 	$self->{_dirty_} = 1;
+	
+	my $class = $options->{class};
+	if (defined $class) {
+		$class .= " mapAreaLayer";
+	} else {
+		$class = "mapAreaLayer";
+	}
+	if ($map_area->{is_main}) {
+		$class .= " mainMapAreaLayer";
+	} else {
+		$class .= " insetMapAreaLayer";
+	}
+
+	my $id;
+	if ($map_area->{is_main}) {
+		$id = $options->{id} // "mapAreaLayer_main";
+	} else {
+		$id = $options->{id} // "mapAreaLayer_" . $map_area->{id};
+	}
+
 	my $map_area_layer = $self->update_or_create_layer(%$options,
 							   %$more_options,
+							   class           => $class,
+							   id              => $id,
 							   name            => $layer_name,
 							   parent          => $doc_elt,
 							   insertion_point => $insertion_point,
@@ -663,9 +694,11 @@ sub update_or_create_map_area_layer {
 }
 
 sub update_or_create_background_layer {
-	my ($self, $map_layer) = @_;
+	my ($self, $map_area, $map_layer) = @_;
 	$self->{_dirty_} = 1;
 	my $background = $self->update_or_create_layer(name => "Background Color",
+						       class => "backgroundColorLayer",
+						       id => $map_area->{id_prefix} . "backgroundColorLayer",
 						       z_index => 1,
 						       parent => $map_layer,
 						       insensitive => 1,
@@ -676,15 +709,19 @@ sub update_or_create_background_layer {
 				    y      => $self->{_svg_north},
 				    width  => $self->{_svg_east} - $self->{_svg_west},
 				    height => $self->{_svg_south} - $self->{_svg_north},
-				    class  => "map-background");
+				    class  => "map-background BACKGROUND",
+				    id     => $map_area->{id_prefix} . "map-background"
+				   );
 	$background->appendChild($rect);
 	return $background;
 }
 
 sub update_or_create_white_layer {
-	my ($self, $map_layer) = @_;
+	my ($self, $map_area, $map_layer) = @_;
 	$self->{_dirty_} = 1;
 	my $background = $self->update_or_create_layer(name => "White Background",
+						       class => "whiteBackgroundLayer",
+						       id => $map_area->{id_prefix} . "whiteBackgroundLayer",
 						       z_index => 0,
 						       parent => $map_layer,
 						       insensitive => 1,
@@ -695,15 +732,19 @@ sub update_or_create_white_layer {
 				    y      => $self->{_svg_north},
 				    width  => $self->{_svg_east} - $self->{_svg_west},
 				    height => $self->{_svg_south} - $self->{_svg_north},
-				    class  => "WHITE");
+				    class  => "map-white WHITE",
+				    id     => $map_area->{id_prefix} . "whiteRect"
+				   );
 	$background->appendChild($rect);
 	return $background;
 }
 
 sub update_or_create_border_layer {
-	my ($self, $map_layer) = @_;
+	my ($self, $map_area, $map_layer) = @_;
 	$self->{_dirty_} = 1;
 	my $border = $self->update_or_create_layer(name => "Border",
+						   class => "borderLayer",
+						   id => $map_area->{id_prefix} . "borderLayer",
 						   z_index => 9999,
 						   parent => $map_layer,
 						   insensitive => 1,
@@ -714,15 +755,19 @@ sub update_or_create_border_layer {
 				    y      => $self->{_svg_north},
 				    width  => $self->{_svg_east} - $self->{_svg_west},
 				    height => $self->{_svg_south} - $self->{_svg_north},
-				    class  => "map-border MAP_BORDER");
+				    class  => "map-border MAP_BORDER",
+				    id     => $map_area->{id_prefix} . "map-border"
+				   );
 	$border->appendChild($rect);
 	return $border;
 }
 
 sub update_or_create_openstreetmap_layer {
-	my ($self, $map_area_layer) = @_;
+	my ($self, $map_area, $map_area_layer) = @_;
 	$self->{_dirty_} = 1;
 	my $layer = $self->update_or_create_layer(name => "OpenStreetMap",
+						  class => "openStreetMapLayer",
+						  id => $map_area->{id_prefix} . "openStreetMapLayer",
 						  z_index => 100,
 						  parent => $map_area_layer,
 						  autogenerated => 1);
@@ -730,9 +775,11 @@ sub update_or_create_openstreetmap_layer {
 }
 
 sub update_or_create_transit_map_layer {
-	my ($self, $map_area_layer) = @_;
+	my ($self, $map_area, $map_area_layer) = @_;
 	$self->{_dirty_} = 1;
 	my $layer = $self->update_or_create_layer(name => "Transit",
+						  class => "transitMapLayer",
+						  id => $map_area->{id_prefix} . "transitMapLayer",
 						  z_index => 200,
 						  parent => $map_area_layer,
 						  autogenerated => 1);
@@ -740,9 +787,11 @@ sub update_or_create_transit_map_layer {
 }
 
 sub update_or_create_transit_stops_layer {
-	my ($self, $map_area_layer) = @_;
+	my ($self, $map_area, $map_area_layer) = @_;
 	$self->{_dirty_} = 1;
 	my $layer = $self->update_or_create_layer(name => "Transit Stops",
+						  class => "transitStopsLayer",
+						  id => $map_area->{id_prefix} . "transitStopsLayer",
 						  z_index => 300,
 						  parent => $map_area_layer,
 						  insensitive => 1,
@@ -1068,7 +1117,7 @@ sub clear_transit_map_layers {
 	foreach my $map_area (@{$self->{_map_areas}}) {
 		$self->update_scale($map_area);
 		my $map_area_layer = $self->update_or_create_map_area_layer($map_area);
-		my $transit_map_layer = $self->update_or_create_transit_map_layer($map_area_layer);
+		my $transit_map_layer = $self->update_or_create_transit_map_layer($map_area, $map_area_layer);
 		$self->erase_autogenerated_content($transit_map_layer);
 	}
 }
@@ -1079,7 +1128,7 @@ sub clear_transit_stops_layers {
 	foreach my $map_area (@{$self->{_map_areas}}) {
 		$self->update_scale($map_area);
 		my $map_area_layer = $self->update_or_create_map_area_layer($map_area);
-		my $transit_stops_layer = $self->update_or_create_transit_stops_layer($map_area_layer);
+		my $transit_stops_layer = $self->update_or_create_transit_stops_layer($map_area, $map_area_layer);
 		$self->erase_autogenerated_content($transit_stops_layer);
 	}
 }
@@ -1120,13 +1169,14 @@ sub draw_transit_stops {
 			my $svg_south = $self->{_svg_south};
 		
 			my $map_area_layer = $self->update_or_create_map_area_layer($map_area);
-			my $transit_stops_layer = $self->update_or_create_transit_stops_layer($map_area_layer);
+			my $transit_stops_layer = $self->update_or_create_transit_stops_layer($map_area, $map_area_layer);
 			$self->erase_autogenerated_content($transit_stops_layer);
 			my $clipped_group = $self->find_or_create_clipped_group(parent => $transit_stops_layer,
 										clip_path_id => $map_area->{clip_path_id});
 
 			my $plot = sub {
-				my ($stop, $class, $r) = @_;
+				my ($stop, $class, $r, $suffix) = @_;
+				$suffix //= "";
 				my $stop_id   = $stop->{stop_id};
 				my $stop_code = $stop->{stop_code};
 				my $stop_name = $stop->{stop_name};
@@ -1138,9 +1188,10 @@ sub draw_transit_stops {
 				my $y = $self->lat2y($lat);
 				return if $x < $svg_west  || $x > $svg_east;
 				return if $y < $svg_north || $y > $svg_south;
-				my $circle = $self->circle_node(x => $x, y => $y,
-								class => $class, r => $r,
-								title => $title);
+				my $circle = $self->circle_node(x => $x, y => $y, r => $r,
+								class => $class,
+								title => $title,
+								id => "ts_" . $stop_code . $suffix);
 				$clipped_group->appendChild($circle);
 			};
 		
@@ -1149,7 +1200,7 @@ sub draw_transit_stops {
 			}
 			if ($has_style_2) {
 				foreach my $stop ($self->get_transit_stops($gtfs)) {
-					$plot->($stop, $class_2, $r_2);
+					$plot->($stop, $class_2, $r_2, "_2");
 				}
 			}
 		}
@@ -1350,7 +1401,7 @@ sub draw_transit_routes {
 				$self->update_scale($map_area);
 				
 				my $map_area_layer = $self->update_or_create_map_area_layer($map_area);
-				my $transit_map_layer = $self->update_or_create_transit_map_layer($map_area_layer);
+				my $transit_map_layer = $self->update_or_create_transit_map_layer($map_area, $map_area_layer);
 				
 				my $shape_collections = [{ group => $route_group{$agency_route},
 							   shapes => []
@@ -1358,23 +1409,27 @@ sub draw_transit_routes {
 							 { group => $exceptions_group,
 							   shapes => []
 							 }];
-
+				
 				foreach my $collection (@$shape_collections) {
 					my $route_group = $collection->{group};
 					my $route_group_class = $route_group->{class};
 					my $route_group_layer = $self->update_or_create_layer(name    => $route_group->{name},
+											      class   => "transitRouteGroupLayer",
+											      id      => $map_area->{id_prefix} . "transitRouteGroupLayer_rt" . $route_short_name,
 											      z_index => $route_group->{index},
 											      parent  => $transit_map_layer,
 											      autogenerated => 1);
-					my $route_layer = $self->update_or_create_layer(name => $route_name,
+					my $route_layer = $self->update_or_create_layer(name   => $route_name,
+											class  => "transitRouteLayer",
+											id     => $map_area->{id_prefix} . "transitRouteLayer_rt" . $route_short_name,
 											parent => $route_group_layer,
 											insensitive => 1,
 											autogenerated => 1,
 											children_autogenerated => 1);
 					my $clipped_group = $self->find_or_create_clipped_group(parent => $route_layer,
-										 clip_path_id => $map_area->{clip_path_id});
-					$collection->{class}   = "${route_group_class} route_${agency_id} route_${route_short_name}";
-					$collection->{class_2} = "${route_group_class}__2 route_${agency_id}__2 route_${route_short_name}__2";
+												clip_path_id => $map_area->{clip_path_id});
+					$collection->{class}   = "${route_group_class} ta_${agency_id}_rt rt_${route_short_name}";
+					$collection->{class_2} = "${route_group_class}__2 ta_${agency_id}_rt__2 rt_${route_short_name}__2";
 					$collection->{route_group_layer} = $route_group_layer;
 					$collection->{route_layer}       = $route_layer;
 					$collection->{clipped_group}     = $clipped_group;
@@ -1404,13 +1459,18 @@ sub draw_transit_routes {
 					my $class             = $collection->{class};
 					my $class_2           = $collection->{class_2};
 					my $clipped_group     = $collection->{clipped_group};
+					my $index = 0;
 					foreach my $shape (@{$collection->{shapes}}) {
-						my $polyline = $self->polyline(points => $shape, class => $class);
+						my $id = $map_area->{id_prefix} . "rt" . $route_short_name . "_ch" . $index;
+						my $id2 = $id . "_2";
+						my $polyline = $self->polyline(points => $shape, class => $class, id => $id);
 						$clipped_group->appendChild($polyline);
 						if ($self->has_style_2(class => $class)) {
-							my $polyline_2 = $self->polyline(points => $shape, class => $class_2);
+							my $polyline_2 = $self->polyline(points => $shape, class => $class_2, id => $id2);
 							$clipped_group->appendChild($polyline_2);
 						}
+					} continue {
+						$index += 1;
 					}
 				}
 			}
@@ -1442,10 +1502,10 @@ sub stuff_all_layers_need {
 		my $map_area_under_layer = $self->update_or_create_map_area_layer($map_area, { under => 1 });
 		my $map_area_layer = $self->update_or_create_map_area_layer($map_area);
 		$self->update_or_create_clip_path_node($map_area);
-		$self->update_or_create_white_layer($map_area_under_layer);
-		$self->update_or_create_background_layer($map_area_under_layer);
+		$self->update_or_create_white_layer($map_area, $map_area_under_layer);
+		$self->update_or_create_background_layer($map_area, $map_area_under_layer);
 		$self->update_or_create_style_node();
-		$self->update_or_create_border_layer($map_area_layer);
+		$self->update_or_create_border_layer($map_area, $map_area_layer);
 	}
 }
 
@@ -1458,9 +1518,11 @@ sub draw_openstreetmap_maps {
 	
 	foreach my $map_area (@{$self->{_map_areas}}) {
 		$self->update_scale($map_area);
+		my $prefix = $map_area->{id_prefix};
 		my $map_area_layer = $self->update_or_create_map_area_layer($map_area);
 		my $clip_path_id = $map_area->{clip_path_id};
-		my $osm_layer = $self->update_or_create_openstreetmap_layer($map_area_layer);
+		my $osm_layer = $self->update_or_create_openstreetmap_layer($map_area,
+									    $map_area_layer);
 		$self->erase_autogenerated_content($osm_layer);
 		foreach my $info (@{$self->{osm_layers}}) {
 			my $layer = $self->update_or_create_layer(name => $info->{name},
@@ -1468,7 +1530,8 @@ sub draw_openstreetmap_maps {
 								  insensitive => 1,
 								  autogenerated => 1,
 								  children_autogenerated => 1);
-			my $group = $self->find_or_create_clipped_group(parent => $layer, clip_path_id => $clip_path_id);
+			my $group = $self->find_or_create_clipped_group(parent => $layer,
+									clip_path_id => $clip_path_id);
 			$group->removeChildNodes(); # OK
 			$info->{_map_area_layer} //= [];
 			$info->{_map_area_group} //= [];
@@ -1675,23 +1738,30 @@ sub draw_openstreetmap_maps {
 						if (all { $_->[POINT_Y_ZONE] == -1 } @$points) { next; }
 						if (all { $_->[POINT_Y_ZONE] ==  1 } @$points) { next; }
 
+						my $id  = $map_area->{id_prefix} . "w" . $way->{id};
+						my $id2 = $map_area->{id_prefix} . "w" . $way->{id} . "_2";
+
 						if ($way->{closed}) {
 							my $polygon = $self->polygon(points => $points,
-										     class => $closed_class);
+										     class => $closed_class,
+										     id => $id);
 							$group->appendChild($polygon);
 							if ($self->has_style_2(class => $class)) {
 								my $polygon_2 = $self->polygon(points => $points,
-											       class => $closed_class_2);
+											       class => $closed_class_2,
+											       id => $id2);
 								$group->appendChild($polygon_2);
 							}
 						}
 						else {
 							my $polyline = $self->polyline(points => $points,
-										       class => $open_class);
+										       class => $open_class,
+										       id => $id);
 							$group->appendChild($polyline);
 							if ($self->has_style_2(class => $class)) {
 								my $polyline_2 = $self->polyline(points => $points,
-												 class => $open_class_2);
+												 class => $open_class_2,
+												 id => $id2);
 								$group->appendChild($polyline_2);
 							}
 						}
@@ -1722,9 +1792,9 @@ sub draw_openstreetmap_maps {
 							my ($x, $y) = @$coords;
 							# don't care about if out of bounds i guess
 							my $text = $node->{tags}->{name};
-							my $text_node = $self->text_node(x => $x, y => $y,
-											 text => $text,
-											 class => $class);
+							my $id  = $map_area->{id_prefix} . "tn" . $node->{id};
+							my $text_node = $self->text_node(x => $x, y => $y, text => $text,
+											 class => $class, id => $id);
 							$group->appendChild($text_node);
 						}
 					}
@@ -1737,7 +1807,9 @@ sub draw_openstreetmap_maps {
 							my $coords = $node_coords{$node->{id}}[$index];
 							my ($x, $y) = @$coords;
 							# don't care about if out of bounds i guess
-							my $circle = $self->circle_node(x => $x, y => $y, class => $class, r => $r);
+							my $id  = $map_area->{id_prefix} . "cn" . $node->{id};
+							my $circle = $self->circle_node(x => $x, y => $y, r => $r,
+											class => $class, id => $id);
 							$group->appendChild($circle);
 						}
 					}
@@ -1756,14 +1828,16 @@ sub draw_openstreetmap_maps {
 		}
 	}
 
-	print("You may also want to include...\n");
-	foreach my $kv (sort keys %unused) {
-		my ($k, $v) = split($;, $kv);
-		my $n = $unused{$kv};
-		printf("  { %-25s %-25s } # %6d objects\n",
-		       "k: '$k',",
-		       "v: '$v'",
-		       $n);
+	if ($verbose >= 2) {
+		print("You may also want to include...\n");
+		foreach my $kv (sort keys %unused) {
+			my ($k, $v) = split($;, $kv);
+			my $n = $unused{$kv};
+			printf("  { %-25s %-25s } # %6d objects\n",
+			       "k: '$k',",
+			       "v: '$v'",
+			       $n);
+		}
 	}
 }
 
@@ -1771,7 +1845,8 @@ sub polygon {
 	my ($self, %args) = @_;
 	my $path = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
 	$path->setAttribute("d", $self->points_to_path(1, @{$args{points}}));
-	$path->setAttribute("class", $args{class});
+	$path->setAttribute("class", $args{class}) if defined $args{class};
+	$path->setAttribute("id",    $args{id})    if defined $args{id};
 	return $path;
 }
 
@@ -1779,7 +1854,8 @@ sub polyline {
 	my ($self, %args) = @_;
 	my $path = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
 	$path->setAttribute("d", $self->points_to_path(0, @{$args{points}}));
-	$path->setAttribute("class", $args{class});
+	$path->setAttribute("class", $args{class}) if defined $args{class};
+	$path->setAttribute("id",    $args{id})    if defined $args{id};
 	return $path;
 }
 
@@ -1812,6 +1888,8 @@ sub find_or_create_clipped_group {
 	my $group = $self->{_svg_doc}->createElementNS($NS{"svg"}, "g");
 	$group->setAttribute("clip-path" => "url(#${clip_path_id})");
 	$group->setAttribute("clip-rule" => "nonzero");
+	$group->setAttribute("class", $args{class}) if defined $args{class};
+	$group->setAttribute("id",    $args{id})    if defined $args{id};
 	if ($parent) {
 		$parent->appendChild($group);
 	}
@@ -1829,6 +1907,7 @@ sub update_or_create_layer {
 	my $z_index                = $args{z_index};
 	my $insensitive            = $args{insensitive};
 	my $id                     = $args{id};
+	my $class                  = $args{class};
 	my $no_create              = $args{no_create};
 	my $no_modify              = $args{no_modify};
 	my $autogenerated          = $args{autogenerated};
@@ -1894,6 +1973,11 @@ sub update_or_create_layer {
 		} else {
 			$layer->removeAttribute("id");
 		}
+		if (defined $class) {
+			$layer->setAttribute("class", $class);
+		} else {
+			$layer->removeAttribute("class");
+		}
 		if (defined $name) {
 			$layer->setAttributeNS($NS{"inkscape"}, "label", $name);
 		} else {
@@ -1948,6 +2032,8 @@ sub create_element {
 	if ($children_autogenerated) {
 		$element->setAttributeNS($NS{"mapmaker"}, "mapmaker:children-autogenerated", "true");
 	}
+	$element->setAttribute("class", $args{class}) if defined $args{class};
+	$element->setAttribute("id",    $args{id})    if defined $args{id};
 	return $element;
 }
 
@@ -1961,16 +2047,11 @@ sub rectangle {
 			$left, $top, $right, $bottom, $left);
 	my $path = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
 	$path->setAttribute("d", $d);
-	$path->setAttribute("class",  $args{class});
+	$path->setAttribute("class",  $args{class}) if defined $args{class};
+	$path->setAttribute("id",     $args{id})    if defined $args{id};
 	return $path;
-	
-	my $rect = $self->{_svg_doc}->createElementNS($NS{"svg"}, "rect");
-	$rect->setAttribute("x",      $args{x});
-	$rect->setAttribute("y",      $args{y});
-	$rect->setAttribute("width",  $args{width});
-	$rect->setAttribute("height", $args{height});
-	$rect->setAttribute("class",  $args{class});
-	return $rect;
+
+	# we're not using a rectangle node here for some reason...
 }
 
 ###############################################################################
@@ -2324,6 +2405,7 @@ sub circle_node {
 	my $y = $args{y};
 	my $r = $args{r} // 1.0;
 	my $class = $args{class};
+	my $id = $args{id};
 	my $title = $args{title};
 
 	my $doc = $self->{_svg_doc};
@@ -2333,6 +2415,7 @@ sub circle_node {
 	$circle_node->setAttribute("class", $class);
 	$circle_node->setAttribute("r", sprintf("%.2f", $r));
 	$circle_node->setAttribute("title", $title) if defined $title && $title =~ /\S/;
+	$circle_node->setAttribute("id", $id) if defined $id;
 	return $circle_node;
 }
 
@@ -2342,16 +2425,19 @@ sub text_node {
 	my $y = $args{y};
 	my $text = $args{text};
 	my $class = $args{class};
+	my $id = $args{id};
 
 	my $doc = $self->{_svg_doc};
 	my $text_node = $doc->createElementNS($NS{"svg"}, "text");
 	$text_node->setAttribute("x", sprintf("%.2f", $x));
 	$text_node->setAttribute("y", sprintf("%.2f", $y));
 	$text_node->setAttribute("class", "TEXT_NODE_BASE " . $class);
+	$text_node->setAttribute("id", $id) if defined $id;
 	my $tspan_node = $doc->createElementNS($NS{"svg"}, "tspan");
 	$tspan_node->setAttribute("x", sprintf("%.2f", $x));
 	$tspan_node->setAttribute("y", sprintf("%.2f", $y));
 	$tspan_node->appendText($text);
+	$tspan_node->setAttribute("id", $id . "_s") if defined $id;
 	$text_node->appendChild($tspan_node);
 	return $text_node;
 }
