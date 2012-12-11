@@ -104,6 +104,7 @@ BEGIN {
 use fields @_FIELDS;
 
 our $verbose = 0;
+our $debug = {};
 
 sub new {
 	my ($class, %options) = @_;
@@ -338,7 +339,7 @@ END
 		} elsif (defined $id) {
 			$map_area->{clip_path_id} = "inset_${id}_clip_path";
 		} else {
-			$map_area->{clip_path_id} = "inset__${index}__clip_path";
+			$map_area->{clip_path_id} = "inset${index}_clip_path";
 		}
 		if ($index == 0) {
 			$map_area->{id_prefix} = "";
@@ -570,7 +571,7 @@ END
 		my $css   = $self->compose_style_string(class => $class);
 		my $css_2 = $self->compose_style_string(class => $class, style_attr_name => "style_2");
 		$contents .= "\t.${class}    { $css }\n";
-		$contents .= "\t.${class}__2 { $css_2 }\n" if $self->has_style_2(class => $class);
+		$contents .= "\t.${class}_2 { $css_2 }\n" if $self->has_style_2(class => $class);
 	}
 
 	$self->{_dirty_} = 1;
@@ -1153,7 +1154,7 @@ sub draw_transit_stops {
 		$self->diagf("Drawing transit stops for %s ... ", $gtfs->{data}->{name});
 		
 		my $class        = "transit-stop";
-		my $class_2      = "transit-stop__2";
+		my $class_2      = "transit-stop_2";
 		my $has_style_2  = $self->has_style_2(class => $class);
 		my $r   = $self->get_style_property(class => $class,
 						    property => "r") // 1.0;
@@ -1250,7 +1251,7 @@ sub draw_transit_routes {
 	}
 	if (defined $exceptions_group) {
 		$exceptions_class   = $exceptions_group->{class};
-		$exceptions_class_2 = $exceptions_group->{class} . "__2";
+		$exceptions_class_2 = $exceptions_group->{class} . "_2";
 	}
 
 	my %shape_direction_id;	
@@ -1297,11 +1298,24 @@ sub draw_transit_routes {
 			$shape_excepted{$agency_route}{$_} = 1 foreach @excepted_shape_id;
 			$shape_excluded{$agency_route}{$_} = 1 foreach @excluded_shape_id;
 
-			my $route_group_name =
-				($self->{transit_route_overrides}->{$route_short_name}->{group}     //
-				 $self->{transit_route_overrides}->{$agency_route}->{group}         //
-				 $self->{transit_orig_route_color_mapping}->{$route_color}->{group} //
-				 $self->{transit_route_defaults}->{group});
+			my $route_group_name;
+			if (defined($route_group_name = $self->{transit_route_overrides}->{$route_short_name}->{group})) {
+				$self->warnf("  route $route_short_name => $route_group_name [by route override]\n")
+					if $debug->{routegroup} or $verbose >= 2;
+			}
+			elsif (defined($route_group_name = $self->{transit_route_overrides}->{$agency_route}->{group})) {
+				$self->warnf("  route $route_short_name => $route_group_name [by agency/route override]\n")
+					if $debug->{routegroup} or $verbose >= 2;
+			}
+			elsif (defined($route_group_name = $self->{transit_orig_route_color_mapping}->{$route_color}->{group})) {
+				$self->warnf("  route $route_short_name => $route_group_name [by route color $route_color]\n")
+					if $debug->{routegroup} or $verbose >= 2;
+			}
+			elsif (defined($route_group_name = $self->{transit_route_defaults}->{group})) {
+				$self->warnf("  route $route_short_name => $route_group_name [by default]\n")
+					if $debug->{routegroup} or $verbose >= 2;
+			}
+
 			my $route_group = $route_group_by_name{$route_group_name};
 			next unless $route_group;
 			$route_group{$agency_route} = $route_group;
@@ -1429,7 +1443,7 @@ sub draw_transit_routes {
 					my $clipped_group = $self->find_or_create_clipped_group(parent => $route_layer,
 												clip_path_id => $map_area->{clip_path_id});
 					$collection->{class}   = "${route_group_class} ta_${agency_id}_rt rt_${route_short_name}";
-					$collection->{class_2} = "${route_group_class}__2 ta_${agency_id}_rt__2 rt_${route_short_name}__2";
+					$collection->{class_2} = "${route_group_class}_2 ta_${agency_id}_rt_2 rt_${route_short_name}_2";
 					$collection->{route_group_layer} = $route_group_layer;
 					$collection->{route_layer}       = $route_layer;
 					$collection->{clipped_group}     = $clipped_group;
@@ -1717,7 +1731,8 @@ sub draw_openstreetmap_maps {
 					}
 					@ways = uniq @ways;
 
-					$self->diagf("  %s (%d objects) ...\n", $name, scalar(@ways));
+					$self->warnf("  %s (%d objects) ...\n", $name, scalar(@ways))
+						if $debug->{countobjectsbygroup} or $verbose >= 2;
 
 					my $options = {};
 					if ($map_area->{scale_stroke_width} && exists $map_area->{zoom}) {
@@ -1726,8 +1741,8 @@ sub draw_openstreetmap_maps {
 
 					my $open_class     = "OPEN " . $info->{class};
 					my $closed_class   =           $info->{class};
-					my $open_class_2   = "OPEN " . $info->{class} . "__2";
-					my $closed_class_2 =           $info->{class} . "__2";
+					my $open_class_2   = "OPEN " . $info->{class} . "_2";
+					my $closed_class_2 =           $info->{class} . "_2";
 				
 					foreach my $way (@ways) {
 						$way->{used} = 1;
@@ -1767,8 +1782,6 @@ sub draw_openstreetmap_maps {
 						}
 					}
 				} elsif ($type eq "node") {
-
-
 					my @nodes;
 					foreach my $tag (@$tags) {
 						my $k = $tag->{k};
@@ -1782,7 +1795,8 @@ sub draw_openstreetmap_maps {
 					}
 					@nodes = uniq @nodes;
 
-					$self->diagf("  %s (%s objects) ...\n", $name, scalar(@nodes));
+					$self->warnf("  %s (%d objects) ...\n", $name, scalar(@nodes))
+						if $debug->{countobjectsbygroup} or $verbose >= 2;
 
 					if ($info->{output_text}) {
 						my $class = $info->{text_class};
@@ -2708,10 +2722,17 @@ sub diag {
 	return unless $verbose;
 	print STDERR (@args);
 }
-
 sub diagf {
 	my ($self, $format, @args) = @_;
 	return unless $verbose;
+	printf STDERR ($format, @args);
+}
+sub warn {
+	my ($self, @args) = @_;
+	print STDERR (@args);
+}
+sub warnf {
+	my ($self, $format, @args) = @_;
 	printf STDERR ($format, @args);
 }
 
