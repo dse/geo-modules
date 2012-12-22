@@ -13,9 +13,8 @@ Version 0.02
 	
 =cut
 	
-
-our $VERSION = '0.02';
-	
+our $VERSION = '0.03';
+warn("Geo::GTFS $VERSION\n");
 	
 =head1 SYNOPSIS
 	
@@ -49,7 +48,13 @@ use fields qw(url
 	      _dbh
 	      _dir
 	      _zip_filename
-	      _sqlite_filename);
+	      _sqlite_filename
+	      kml_doc
+	      kml_root
+	      kml_Document
+	      aliases
+	      aliases_filename
+	    );
 
 =head1 CONSTRUCTOR
 
@@ -102,6 +107,7 @@ use Carp qw(croak);
 use DBI;
 use File::Path qw(mkpath);
 use File::Basename;
+use XML::LibXML;
 
 sub update {
 	my ($self) = @_;
@@ -597,6 +603,84 @@ sub get_sqlite_filename {
 	my ($self) = @_;
 	return $self->{_sqlite_filename} //=
 		sprintf("%s/google_transit.sqlite", $self->get_dir());
+}
+
+sub kml {
+	my ($self, $name, $description) = @_;
+	my $parser = XML::LibXML->new();
+	$parser->set_options({ no_blanks => 1 });
+	my $doc = $parser->parse_string(<<"END");
+<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"></kml>
+END
+	$self->{kml_doc}      = $doc;
+	my $root     = $self->{kml_root}     = $doc->documentElement();
+	my $Document = $self->{kml_Document} = $doc->createElement("Document");
+	$root->appendChild($Document);
+	if (defined $name) {
+		$self->add_node_with_text($Document, "name", $name);
+	}
+	if (defined $description) {
+		$self->add_node_with_text($Document, "description", $description);
+	}
+	$self->add_kml_stops();
+	return $doc;
+}
+sub add_kml_stops {
+	my ($self) = @_;
+	my ($doc, $root, $Document) = @$self{qw(kml_doc kml_root kml_Document)};
+	my $Folder = $doc->createElement("Folder");
+	$Document->appendChild($Folder);
+	$self->add_node_with_text($Folder, "name", "stops");
+	$self->add_node_with_text($Folder, "description", "Bus stops.");
+	my @stops = $self->select_all_stops();
+	foreach my $stop (@stops) {
+		my $Placemark = $self->add_node($Folder, "Placemark");
+		$self->add_node_with_text($Placemark, "name", $stop->{stop_name});
+		my $description = sprintf("%s\n", $stop->{stop_name});
+		$description   .= sprintf("%s\n", $stop->{stop_description})
+			if defined $stop->{stop_description};
+		$description   .= sprintf("stop_id: %s; stop_code: %s\n",
+					  $stop->{stop_id}, $stop->{stop_code});
+		my @routes = $self->select_routes_served_by_stop_id($stop->{stop_id});
+		my $routes = join(", ", @routes);
+		$description   .= sprintf("routes served: %s\n", $routes);
+
+		my $Point = $self->add_node($Placemark, "Point");
+		$self->add_node_with_text($Point, "coordinates",
+					  sprintf("%f,%f",
+						  $stop->{stop_lon},
+						  $stop->{stop_lat}));
+	}
+}
+sub add_node_with_text {
+	my ($self, $parent, $name, $text) = @_;
+	my $doc = $self->{kml_doc};
+	my $node = $doc->createElement($name);
+	$node->appendTextNode($text);
+	$parent->appendChild($node);
+	return $node;
+}
+sub add_node {
+	my ($self, $parent, $name) = @_;
+	my $doc = $self->{kml_doc};
+	my $node = $doc->createElement($name);
+	$parent->appendChild($node);
+	return $node;
+}
+sub select_all_stops {
+	my ($self) = @_;
+	return $self->selectall("select * from stops", {});
+}
+sub select_routes_served_by_stop_id {
+	my ($self, $stop_id) = @_;
+	my $sql = <<"END";
+		select	distinct routes.*
+		from	routes
+		join	trips      on routes.route_id = trips.route_id
+		join	stop_times on trips.trip_id = stop_times.trip_id
+		where	stop_times.stop_id = ?
+END
+	return $self->selectall($sql, {}, $stop_id);
 }
 
 =head1 SEE ALSO
