@@ -97,7 +97,7 @@ sub method {
 	$command =~ s{-}{_}g;
 	return $self->can("cmd__$command");
 }
-sub cmd__kml {
+sub get_gtfs_url {
 	my ($self, $what) = @_;
 	my $alias;
 	my $url;
@@ -107,23 +107,33 @@ sub cmd__kml {
 		$alias = $what;
 		$url = $self->{aliases}->{$alias};
 		if (!$url) {
-			warn("$0: kml: '$alias' is neither an alias nor a URL\n");
-			return 0;
+			warn("$0: '$what' is neither an alias nor a URL\n");
+			return undef;
 		}
 	}
+	return $url;
+}
+sub cmd__kml {
+	my ($self, $what) = @_;
+	my $url = $self->get_gtfs_url($what);
+	return undef unless defined $url;
 	my $gtfs = Geo::GTFS->new($url);
 	my $doc = $gtfs->kml();
 	print $doc->toString(1);
 }
 sub cmd__update {
-	my ($self, $url) = @_;
+	my ($self, $what) = @_;
+	my $url = $self->get_gtfs_url($what);
+	return undef unless defined $url;
 	my $gtfs = Geo::GTFS->new($url);
 	$gtfs->update();
 	$gtfs->repopulate();
 	return 1;
 }
 sub cmd__repopulate {
-	my ($self, $url) = @_;
+	my ($self, $what) = @_;
+	my $url = $self->get_gtfs_url($what);
+	return undef unless defined $url;
 	my $gtfs = Geo::GTFS->new($url);
 	$gtfs->repopulate();
 	return 1;
@@ -138,10 +148,10 @@ sub cmd__alias {
 	my @url = grep { $_ =~ $url_regex } @args;
 	if (!scalar @url) {
 		warn("$0: alias: no URL specified\n");
-		return 0;
+		return undef;
 	} elsif (scalar @url > 1) {
 		warn("$0: alias: more than one URL specified\n");
-		return 0;
+		return undef;
 	}
 	my ($url) = @url;
 	my @aliases = grep { $_ !~ $url_regex } @args;
@@ -156,5 +166,21 @@ sub cmd__delete_alias {
 		delete $self->{aliases}->{alias};
 	}
 	return 1;
+}
+sub cmd__list_agencies {
+	my ($self, $what) = @_;
+	my $url = $self->get_gtfs_url($what);
+	return undef unless defined $url;
+	my $gtfs = Geo::GTFS->new($url);
+	my @agencies = $gtfs->select_all_agencies();
+	print Dump(@agencies);
+}
+sub cmd__list_routes {
+	my ($self, $what) = @_;
+	my $url = $self->get_gtfs_url($what);
+	return undef unless defined $url;
+	my $gtfs = Geo::GTFS->new($url);
+	my @routes = $gtfs->select_all_routes();
+	print Dump(@routes);
 }
 1;
