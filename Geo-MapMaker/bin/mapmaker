@@ -9,15 +9,24 @@ use Getopt::Long;
 
 my $shell = My::Shell->new();
 my $verbose = 0;
+my $debug = {};
 Getopt::Long::Configure("bundling", "gnu_compat");
 Getopt::Long::GetOptions("show-stack-traces" => sub { $SIG{__DIE__} = \&Carp::confess; },
 			 "v|verbose+" => \$verbose,
+			 "D|debug=s" => sub {
+				 foreach (split(/[\s,]+/, $_[1])) {
+					 if (/=/) { my ($k, $v) = ($`, $');
+						    warn("debug: $k => $v\n");
+						    $debug->{$`} = $'; }
+					 else     { warn("debug: $_ => 1\n");
+						    $debug->{$_} = 1;  }
+				 }
+			 },
 			 "h|help" => sub { $shell->cmd__help(); exit(0); });
 
-if ($verbose) {
-	$Geo::GTFS::verbose = 1;
-	$Geo::MapMaker::verbose = 1;
-}
+$Geo::GTFS::verbose     = $verbose;
+$Geo::MapMaker::verbose = $verbose;
+$Geo::MapMaker::debug   = $debug; 
 
 $shell->run(@ARGV);
 
@@ -56,6 +65,7 @@ where COMMAND is one of:
 	save-as FILENAME
 	enable-layers LAYER ...
 	disable-layers LAYER ...
+	list-layers
 END
 }
 sub run {
@@ -281,3 +291,10 @@ sub cmd__disable_layers {
 	die("map MAPNAME must be specified.\n") unless $mm;
 	$mm->disable_layers(@layers);
 }
+sub cmd__list_layers {
+	my ($self) = @_;
+	my $mm = $self->{mapmaker};
+	die("map MAPNAME must be specified.\n") unless $mm;
+	$mm->list_layers();
+}
+
