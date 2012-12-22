@@ -1,0 +1,160 @@
+#!/usr/bin/perl
+use warnings;
+use strict;
+use File::Basename;
+use File::Spec;
+
+BEGIN {
+	if (File::Spec->canonpath(dirname($0)) eq
+	    File::Spec->canonpath($ENV{HOME} . "/bin")) {
+		my $devdir = "$ENV{HOME}/git/geo-modules/Geo-GTFS/lib";
+		if (-d $devdir) {
+			warn("Adding $devdir\n");
+			require lib;
+			import lib $devdir;
+		}
+	}
+}
+
+use Carp qw();
+use Geo::GTFS;
+use Getopt::Long;
+
+my $verbose = 0;
+my $debug = {};
+
+my $shell = My::GTFS::Shell->new();
+
+Getopt::Long::Configure("bundling", "gnu_compat");
+Getopt::Long::GetOptions("show-stack-traces" => sub { $SIG{__DIE__} = \&Carp::confess; },
+			 "v|verbose+" => \$verbose,
+			 "D|debug=s" => sub {
+				 foreach (split(/[\s,]+/, $_[1])) {
+					 if (/=/) { my ($k, $v) = ($`, $');
+						    warn("debug: $k => $v\n");
+						    $debug->{$`} = $'; }
+					 else     { warn("debug: $_ => 1\n");
+						    $debug->{$_} = 1;  }
+				 }
+			 },
+			 "h|help" => sub { $shell->help(); exit(0); });
+
+$shell->run(@ARGV);
+
+package My::GTFS::Shell;
+use YAML::Syck;
+use File::Basename;
+use List::MoreUtils;
+use File::Path qw(make_path);
+sub new {
+	my ($class, %args) = @_;
+	my $self = bless({%args}, $class);
+	$self->init();
+	return $self;
+}
+sub init {
+	my ($self) = @_;
+	my $aliases_file = $self->{aliases_file} = $ENV{HOME} . "/.geo-gtfs/aliases";
+	if (-e $self->{aliases_file}) {
+		$self->{aliases} = LoadFile($self->{aliases_file});
+	} else {
+		$self->{aliases} = {};
+	}
+	$self->{url_regex} = qr{^(https?|ftp)://};
+}
+sub DESTROY {
+	my ($self) = @_;
+	my $aliases_file = $self->{aliases_file};
+	make_path(dirname($aliases_file));
+	DumpFile($aliases_file, $self->{aliases});
+}
+sub help {
+	my ($self) = @_;
+	print(<<"END");
+usage: $0 [OPTION ...] COMMAND [ARG ...]
+commands:
+	kml GTFS-URL             -- spits out some KML.
+	alias                    -- lists aliases
+	alias GTFS-URL ALIAS ... -- adds aliases
+	delete-alias ALIAS ...   -- removes aliases
+END
+}
+sub run {
+	my ($self, $command, @args) = @_;
+	if (!defined $command) {
+		warn("$0: no command specified\n");
+		return undef;
+	}
+	my $method = $self->method($command);
+	if (!$method) {
+		warn("$0: no such command: '$command'\n");
+		return undef;
+	}
+	$self->$method(@args);
+}
+sub method {
+	my ($self, $command) = @_;
+	$command =~ s{-}{_}g;
+	return $self->can("cmd__$command");
+}
+sub cmd__kml {
+	my ($self, $what) = @_;
+	my $alias;
+	my $url;
+	if ($what =~ $self->{url_regex}) {
+		$url = $what;
+	} else {
+		$alias = $what;
+		$url = $self->{aliases}->{$alias};
+		if (!$url) {
+			warn("$0: kml: '$alias' is neither an alias nor a URL\n");
+			return 0;
+		}
+	}
+	my $gtfs = Geo::GTFS->new($url);
+	my $doc = $gtfs->kml();
+	print $doc->toString(1);
+}
+sub cmd__update {
+	my ($self, $url) = @_;
+	my $gtfs = Geo::GTFS->new($url);
+	$gtfs->update();
+	$gtfs->repopulate();
+	return 1;
+}
+sub cmd__repopulate {
+	my ($self, $url) = @_;
+	my $gtfs = Geo::GTFS->new($url);
+	$gtfs->repopulate();
+	return 1;
+}
+sub cmd__alias {
+	my ($self, @args) = @_;
+	if (!scalar @args) {
+		print Dump($self->{aliases});
+		return 1;
+	}
+	my $url_regex = $self->{url_regex};
+	my @url = grep { $_ =~ $url_regex } @args;
+	if (!scalar @url) {
+		warn("$0: alias: no URL specified\n");
+		return 0;
+	} elsif (scalar @url > 1) {
+		warn("$0: alias: more than one URL specified\n");
+		return 0;
+	}
+	my ($url) = @url;
+	my @aliases = grep { $_ !~ $url_regex } @args;
+	foreach my $alias (@aliases) {
+		$self->{aliases}->{$alias} = $url;
+	}
+	return 1;
+}
+sub cmd__delete_alias {
+	my ($self, @args) = @_;
+	foreach my $alias (@args) {
+		delete $self->{aliases}->{alias};
+	}
+	return 1;
+}
+1;
