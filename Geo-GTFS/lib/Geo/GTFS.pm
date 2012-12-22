@@ -606,7 +606,7 @@ sub get_sqlite_filename {
 }
 
 sub kml {
-	my ($self, $name, $description) = @_;
+	my ($self) = @_;
 	my $parser = XML::LibXML->new();
 	$parser->set_options({ no_blanks => 1 });
 	my $doc = $parser->parse_string(<<"END");
@@ -616,15 +616,16 @@ END
 	my $root     = $self->{kml_root}     = $doc->documentElement();
 	my $Document = $self->{kml_Document} = $doc->createElement("Document");
 	$root->appendChild($Document);
-	if (defined $name) {
-		$self->add_node_with_text($Document, "name", $name);
-	}
-	if (defined $description) {
-		$self->add_node_with_text($Document, "description", $description);
-	}
+
+	my @agencies = $self->select_all_agencies();
+	my $name = join("; ", map { $_->{agency_name} } @agencies);
+
+	$self->add_node_with_text($Document, "name", $name);
+	$self->add_node_with_cdata($Document, "description", Dump(@agencies));
 	$self->add_kml_stops();
 	return $doc;
 }
+use YAML::Syck;
 sub add_kml_stops {
 	my ($self) = @_;
 	my ($doc, $root, $Document) = @$self{qw(kml_doc kml_root kml_Document)};
@@ -634,17 +635,23 @@ sub add_kml_stops {
 	$self->add_node_with_text($Folder, "description", "Bus stops.");
 	my @stops = $self->select_all_stops();
 	foreach my $stop (@stops) {
-		my $Placemark = $self->add_node($Folder, "Placemark");
-		$self->add_node_with_text($Placemark, "name", $stop->{stop_name});
-		my $description = sprintf("%s\n", $stop->{stop_name});
-		$description   .= sprintf("%s\n", $stop->{stop_description})
-			if defined $stop->{stop_description};
-		$description   .= sprintf("stop_id: %s; stop_code: %s\n",
-					  $stop->{stop_id}, $stop->{stop_code});
 		my @routes = $self->select_routes_served_by_stop_id($stop->{stop_id});
-		my $routes = join(", ", @routes);
-		$description   .= sprintf("routes served: %s\n", $routes);
+		my $routes_served = [];
+		foreach my $route (@routes) {
+			my $name = sprintf("%s - %s",
+					   $route->{route_short_name},
+					   $route->{route_long_name});
+			push(@$routes_served, $name);
+		}
+		$stop->{routes_served} = $routes_served;
 
+		my $name = $stop->{stop_name};
+		$name .= " - " . $stop->{stop_desc}
+			if defined $stop->{stop_desc} and $stop->{stop_desc} ne "";
+
+		my $Placemark = $self->add_node($Folder, "Placemark");
+		$self->add_node_with_text($Placemark, "name", $name);
+		$self->add_node_with_cdata($Placemark, "description", Dump($stop));
 		my $Point = $self->add_node($Placemark, "Point");
 		$self->add_node_with_text($Point, "coordinates",
 					  sprintf("%f,%f",
@@ -660,12 +667,29 @@ sub add_node_with_text {
 	$parent->appendChild($node);
 	return $node;
 }
+sub add_node_with_cdata {
+	my ($self, $parent, $name, $text) = @_;
+	my $doc = $self->{kml_doc};
+	my $node = $doc->createElement($name);
+	my $cdata = $doc->createCDATASection($text);
+	$parent->appendChild($node);
+	$node->appendChild($cdata);
+	return $node;
+}
 sub add_node {
 	my ($self, $parent, $name) = @_;
 	my $doc = $self->{kml_doc};
 	my $node = $doc->createElement($name);
 	$parent->appendChild($node);
 	return $node;
+}
+sub select_all_agencies {
+	my ($self) = @_;
+	return $self->selectall("select * from agency", {});
+}
+sub select_all_routes {
+	my ($self) = @_;
+	return $self->selectall("select * from routes", {});
 }
 sub select_all_stops {
 	my ($self) = @_;
@@ -681,6 +705,17 @@ sub select_routes_served_by_stop_id {
 		where	stop_times.stop_id = ?
 END
 	return $self->selectall($sql, {}, $stop_id);
+}
+sub select_stop_times_by_stop_id_route_id {
+	my ($self, $stop_id, $route_id) = @_;
+	my $sql = <<"END";
+		select	stop_times.*
+		from	routes
+		join	trips      on routes.route_id = trips.route_id
+		join	stop_times on trips.trip_id = stop_times.trip_id
+		where	stop_times.stop_id = ? and routes.route_id = ?
+END
+	return $self->selectall($sql, {}, $stop_id, $route_id);
 }
 
 =head1 SEE ALSO
