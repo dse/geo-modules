@@ -20,21 +20,18 @@ use Carp qw();
 use Geo::GTFS;
 use Getopt::Long;
 
-my $verbose = 0;
-my $debug = {};
-
 my $shell = My::GTFS::Shell->new();
 
 Getopt::Long::Configure("bundling", "gnu_compat");
 Getopt::Long::GetOptions("show-stack-traces" => sub { $SIG{__DIE__} = \&Carp::confess; },
-			 "v|verbose+" => \$verbose,
+			 "v|verbose+" => sub { ++$shell->{verbose} },
 			 "D|debug=s" => sub {
 				 foreach (split(/[\s,]+/, $_[1])) {
 					 if (/=/) { my ($k, $v) = ($`, $');
 						    warn("debug: $k => $v\n");
-						    $debug->{$`} = $'; }
+						    $shell->{debug}->{$`} = $'; }
 					 else     { warn("debug: $_ => 1\n");
-						    $debug->{$_} = 1;  }
+						    $shell->{debug}->{$_} = 1;  }
 				 }
 			 },
 			 "h|help" => sub { $shell->help(); exit(0); });
@@ -61,6 +58,8 @@ sub init {
 		$self->{aliases} = {};
 	}
 	$self->{url_regex} = qr{^(https?|ftp)://};
+	$self->{verbose} = 0;
+	$self->{debug} = {};
 }
 sub DESTROY {
 	my ($self) = @_;
@@ -113,11 +112,19 @@ sub get_gtfs_url {
 	}
 	return $url;
 }
+sub gtfs {
+	my ($self, $url) = @_;
+	$self->{gtfs} //= {};
+	my $gtfs = $self->{gtfs}->{url} //= Geo::GTFS->new($url);
+	$gtfs->{verbose} = $self->{verbose};
+	$gtfs->{debug}   = $self->{debug};
+	return $gtfs;
+}
 sub cmd__kml {
 	my ($self, $what) = @_;
 	my $url = $self->get_gtfs_url($what);
 	return undef unless defined $url;
-	my $gtfs = Geo::GTFS->new($url);
+	my $gtfs = $self->gtfs($url);
 	my $doc = $gtfs->kml();
 	print $doc->toString(1);
 }
@@ -125,17 +132,17 @@ sub cmd__update {
 	my ($self, $what) = @_;
 	my $url = $self->get_gtfs_url($what);
 	return undef unless defined $url;
-	my $gtfs = Geo::GTFS->new($url);
+	my $gtfs = $self->gtfs($url);
 	$gtfs->update();
-	$gtfs->repopulate();
+	$gtfs->force_repopulate();
 	return 1;
 }
 sub cmd__repopulate {
 	my ($self, $what) = @_;
 	my $url = $self->get_gtfs_url($what);
 	return undef unless defined $url;
-	my $gtfs = Geo::GTFS->new($url);
-	$gtfs->repopulate();
+	my $gtfs = $self->gtfs($url);
+	$gtfs->force_repopulate();
 	return 1;
 }
 sub cmd__alias {
@@ -171,7 +178,7 @@ sub cmd__list_agencies {
 	my ($self, $what) = @_;
 	my $url = $self->get_gtfs_url($what);
 	return undef unless defined $url;
-	my $gtfs = Geo::GTFS->new($url);
+	my $gtfs = $self->gtfs($url);
 	my @agencies = $gtfs->select_all_agencies();
 	print Dump(@agencies);
 }
@@ -179,7 +186,7 @@ sub cmd__list_routes {
 	my ($self, $what) = @_;
 	my $url = $self->get_gtfs_url($what);
 	return undef unless defined $url;
-	my $gtfs = Geo::GTFS->new($url);
+	my $gtfs = $self->gtfs($url);
 	my @routes = $gtfs->select_all_routes();
 	print Dump(@routes);
 }
