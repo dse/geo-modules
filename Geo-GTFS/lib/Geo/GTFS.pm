@@ -45,6 +45,7 @@ the repopulate (or force_repopulate) method is called.
 use fields qw(url
 	      data
 	      verbose
+	      debug
 	      _dbh
 	      _dir
 	      _zip_filename
@@ -79,13 +80,12 @@ anonymous hash:
 
 =cut
 
-our $verbose = 0;
-
 sub new {
 	my ($class, $url, $options) = @_;
 	my $self = fields::new($class);
 	$self->{url} = $url;
-	$self->{verbose} = $verbose;
+	$self->{verbose} = 0;
+	$self->{debug} = {};
 	$self->{data} = {};
 	if ($options) {
 		while (my ($k, $v) = each(%$options)) {
@@ -156,6 +156,8 @@ sub repopulate {
 		    $file_mtime == $populated_mtime) {
 			return;
 		}
+	} else {
+		$self->drop_tables();
 	}
 	$self->_create_tables();
 	$self->_repopulate_tables();
@@ -241,7 +243,9 @@ create table if not exists stops (
 	location_type		integer		default 0,
 		-- 0 = stop
 		-- 1 = station with one or more stops
-	parent_station		varchar(16)	references stops(stop_id)
+	parent_station		varchar(16)	references stops(stop_id),
+	stop_timezone		varchar(256),
+	wheelchair_boarding	integer		default 0
 );
 END
 	$dbh->do(<<"END");
@@ -618,21 +622,35 @@ END
 	$root->appendChild($Document);
 
 	my @agencies = $self->select_all_agencies();
-	my $name = join("; ", map { $_->{agency_name} } @agencies);
 
-	$self->add_node_with_text($Document, "name", $name);
-	$self->add_node_with_cdata($Document, "description", Dump(@agencies));
+	my $name = join("; ", map { $_->{agency_name} } @agencies);
+	$Document->appendTextChild("name", $name);
+
+	# $self->add_node_with_cdata($Document, "description", Dump(@agencies));
+
+	my @description = ();
+	foreach my $agency (@agencies) {
+		my $desc = $agency->{agency_name};
+		$desc .= " - " . $agency->{agency_phone} if eval { $agency->{agency_phone} ne "" };
+		$desc .= " - " . $agency->{agency_url} if eval { $agency->{agency_url} ne "" };
+		push(@description, $desc);
+	}
+	my $description = join(";\n", @description);
+	$Document->appendTextChild("description", $description);
+	
 	$self->add_kml_stops();
+	$self->add_kml_routes();
 	return $doc;
 }
 use YAML::Syck;
 sub add_kml_stops {
 	my ($self) = @_;
 	my ($doc, $root, $Document) = @$self{qw(kml_doc kml_root kml_Document)};
-	my $Folder = $doc->createElement("Folder");
-	$Document->appendChild($Folder);
-	$self->add_node_with_text($Folder, "name", "stops");
-	$self->add_node_with_text($Folder, "description", "Bus stops.");
+	my $Folder = $Document->addNewChild(undef, "Folder");
+	$Folder->appendTextChild("open", 0);
+	$Folder->appendTextChild("visibility", 0);
+	$Folder->appendTextChild("name", "Stops");
+	$Folder->appendTextChild("description", "Transit stops");
 	my @stops = $self->select_all_stops();
 	foreach my $stop (@stops) {
 		my @routes = $self->select_routes_served_by_stop_id($stop->{stop_id});
@@ -649,23 +667,87 @@ sub add_kml_stops {
 		$name .= " - " . $stop->{stop_desc}
 			if defined $stop->{stop_desc} and $stop->{stop_desc} ne "";
 
-		my $Placemark = $self->add_node($Folder, "Placemark");
-		$self->add_node_with_text($Placemark, "name", $name);
-		$self->add_node_with_cdata($Placemark, "description", Dump($stop));
-		my $Point = $self->add_node($Placemark, "Point");
-		$self->add_node_with_text($Point, "coordinates",
-					  sprintf("%f,%f",
-						  $stop->{stop_lon},
-						  $stop->{stop_lat}));
+		my $Placemark = $Folder->addNewChild(undef, "Placemark");
+		$Placemark->appendTextChild("name", $name);
+		$Placemark->appendTextChild("visibility", 0);
+
+		# $self->add_node_with_cdata($Placemark, "description", Dump($stop));
+
+		my $desc = "";
+		$desc .= sprintf("stop_code: %s\n", $stop->{stop_code});
+		$desc .= sprintf("stop_id:   %s\n", $stop->{stop_id});
+		$desc .= sprintf("routes_served:\n");
+		$desc .= sprintf("  - %s\n", $_) foreach @{$stop->{routes_served}};
+		{
+			$desc =~ s{^}{" " x 10}gem;
+			$desc .= " " x 8;
+			$desc = "\n" . $desc;
+		}
+		$Placemark->appendTextChild("description", $desc);
+		
+		my $Point = $Placemark->addNewChild(undef, "Point");
+		$Point->appendTextChild("coordinates",
+					sprintf("%f,%f",
+						$stop->{stop_lon},
+						$stop->{stop_lat}));
 	}
 }
-sub add_node_with_text {
-	my ($self, $parent, $name, $text) = @_;
-	my $doc = $self->{kml_doc};
-	my $node = $doc->createElement($name);
-	$node->appendTextNode($text);
-	$parent->appendChild($node);
-	return $node;
+sub add_kml_routes {
+	my ($self) = @_;
+	my ($doc, $root, $Document) = @$self{qw(kml_doc kml_root kml_Document)};
+
+	# {
+	# 	my $Style = $Document->addNewChild(undef, "Style"); 
+	# 	$Style->setAttribute("id", "transitRouteStyle");
+	# 	my $LineStyle = $Style->addNewChild(undef, "LineStyle");
+	# 	$LineStyle->appendTextChild("color", "99ff5533");
+	# 	$LineStyle->appendTextChild("width", 4);
+	# 	my $PolyStyle = $Style->addNewChild(undef, "PolyStyle");
+	# 	$PolyStyle->appendTextChild("color", "66ff5533");
+	# }
+
+	my $Folder = $doc->createElement("Folder");
+	$Document->appendChild($Folder);
+	$Folder->appendTextChild("name", "Routes");
+	$Folder->appendTextChild("description", "Transit routes");
+	my @routes = $self->select_all_routes();
+	foreach my $route (@routes) {
+		my $name = $route->{route_short_name};
+		$name .= " - " . $route->{route_long_name}
+			if defined $route->{route_long_name}
+				and $route->{route_long_name} ne "";
+		my $Placemark = $Folder->addNewChild(undef, "Placemark");
+		$Placemark->appendTextChild("name", $name);
+		$Placemark->appendTextChild("visibility", 1);
+		# $self->add_node_with_cdata($Placemark, "description", Dump($route));
+
+		my $Style = $Placemark->addNewChild(undef, "Style");
+		my $LineStyle = $Style->addNewChild(undef, "LineStyle");
+		$LineStyle->appendTextChild("width", 4);
+		$LineStyle->appendTextChild("color", "ff" . lc($route->{route_color}));
+
+		my $MultiGeometry = $Placemark->addNewChild(undef, "MultiGeometry");
+		my @shape_ids = $self->select_route_shape_ids($route->{route_id});
+		foreach my $shape_id (@shape_ids) {
+			my $LineString = $MultiGeometry->addNewChild(undef, "LineString");
+			$LineString->appendTextChild("tessellate", 1);
+			my @points = $self->select_shape_points($shape_id);
+			$LineString->appendTextChild("description", "shape_id: $shape_id");
+			my $coordinates = "";
+			foreach my $point (@points) {
+				$coordinates .= 
+					sprintf("%f,%f,0\n",
+						$point->{shape_pt_lon},
+						$point->{shape_pt_lat});
+			}
+			{
+				$coordinates = "\n" . $coordinates;
+				$coordinates =~ s{^}{" " x 14}gem;
+				$coordinates .= " " x 12;
+			}
+			$LineString->appendTextChild("coordinates", $coordinates);
+		}
+	}
 }
 sub add_node_with_cdata {
 	my ($self, $parent, $name, $text) = @_;
@@ -674,13 +756,6 @@ sub add_node_with_cdata {
 	my $cdata = $doc->createCDATASection($text);
 	$parent->appendChild($node);
 	$node->appendChild($cdata);
-	return $node;
-}
-sub add_node {
-	my ($self, $parent, $name) = @_;
-	my $doc = $self->{kml_doc};
-	my $node = $doc->createElement($name);
-	$parent->appendChild($node);
 	return $node;
 }
 sub select_all_agencies {
@@ -716,6 +791,26 @@ sub select_stop_times_by_stop_id_route_id {
 		where	stop_times.stop_id = ? and routes.route_id = ?
 END
 	return $self->selectall($sql, {}, $stop_id, $route_id);
+}
+sub select_route_shape_ids {
+	my ($self, $route_id) = @_;
+	my $sql = <<"END";
+		select	distinct shape_id
+		from	routes
+		join	trips	on routes.route_id = trips.route_id
+		where	routes.route_id = ?
+END
+	return map { $_->{shape_id} } $self->selectall($sql, {}, $route_id);
+}
+sub select_shape_points {
+	my ($self, $shape_id) = @_;
+	my $sql = <<"END";
+		select		*
+		from		shapes
+		where		shape_id = ?
+		order by	shape_pt_sequence
+END
+	return $self->selectall($sql, {}, $shape_id);
 }
 
 =head1 SEE ALSO
