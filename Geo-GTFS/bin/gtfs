@@ -3,17 +3,15 @@ use warnings;
 use strict;
 use File::Basename;
 use File::Spec;
+use Cwd qw(abs_path);
 
 BEGIN {
-	if (File::Spec->canonpath(dirname($0)) eq
-	    File::Spec->canonpath($ENV{HOME} . "/bin")) {
 		my $devdir = "$ENV{HOME}/git/geo-modules/Geo-GTFS/lib";
 		if (-d $devdir) {
 			warn("Adding $devdir\n");
 			require lib;
 			import lib $devdir;
 		}
-	}
 }
 
 use Carp qw();
@@ -117,7 +115,7 @@ sub gtfs {
 	$self->{gtfs} //= {};
 	my $gtfs = $self->{gtfs}->{url} //= Geo::GTFS->new($url);
 	$gtfs->{verbose} = $self->{verbose};
-	$gtfs->{debug}   = $self->{debug};
+	#$gtfs->{debug}   = $self->{debug};
 	return $gtfs;
 }
 sub cmd__kml {
