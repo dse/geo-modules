@@ -6,12 +6,12 @@ use File::Spec;
 use Cwd qw(abs_path);
 
 BEGIN {
-		my $devdir = "$ENV{HOME}/git/geo-modules/Geo-GTFS/lib";
-		if (-d $devdir) {
-			warn("Adding $devdir\n");
-			require lib;
-			import lib $devdir;
-		}
+	my $devdir = "$ENV{HOME}/git/geo-modules/Geo-GTFS/lib";
+	if (-d $devdir) {
+		warn("Adding $devdir\n");
+		require lib;
+		import lib $devdir;
+	}
 }
 
 use Carp qw();
