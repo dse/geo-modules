@@ -61,13 +61,22 @@ our @_FIELDS;
 BEGIN {
 	@_FIELDS = qw(filename
 		      _read_filename
-		      north south east west
-		      map_data_north
-		      map_data_south
-		      map_data_east
-		      map_data_west
-		      paper_width_px paper_height_px paper_margin_px
+
+		      north_deg
+		      south_deg
+		      east_deg
+		      west_deg
+
+		      map_data_north_deg
+		      map_data_south_deg
+		      map_data_east_deg
+		      map_data_west_deg
+
+		      paper_width_px
+		      paper_height_px
+		      paper_margin_px
 		      fudge_factor_px
+
 		      extend_to_full_page
 		      vertical_align
 		      horizontal_align
@@ -90,10 +99,27 @@ BEGIN {
 		      _nodes
 		      _ways
 		      _scale
-		      _south_y       _north_y       _east_x       _west_x
-		      _south_y_outer _north_y_outer _east_x_outer _west_x_outer
-		      _svg_west       _svg_east       _svg_north       _svg_south
-		      _svg_west_outer _svg_east_outer _svg_north_outer _svg_south_outer
+
+		      _west_er
+		      _east_er
+		      _north_er
+		      _south_er
+
+		      _west_er_outer
+		      _east_er_outer
+		      _north_er_outer
+		      _south_er_outer
+
+		      _west_svg
+		      _east_svg
+		      _north_svg
+		      _south_svg
+
+		      _west_svg_outer
+		      _east_svg_outer
+		      _north_svg_outer
+		      _south_svg_outer
+
 		      _cache
 		      include
 		      transit_route_overrides
@@ -174,31 +200,31 @@ sub update_openstreetmap {
 }
 
 sub _update_openstreetmap {
-	my ($self, $force, $west, $south, $east, $north) = @_;
+	my ($self, $force, $west_deg, $south_deg, $east_deg, $north_deg) = @_;
 
-	$west  //= ($self->{map_data_west}  // $self->{west});
-	$south //= ($self->{map_data_south} // $self->{south});
-	$east  //= ($self->{map_data_east}  // $self->{east});
-	$north //= ($self->{map_data_north} // $self->{north});
+	$west_deg  //= ($self->{map_data_west_deg}  // $self->{west_deg});
+	$south_deg //= ($self->{map_data_south_deg} // $self->{south_deg});
+	$east_deg  //= ($self->{map_data_east_deg}  // $self->{east_deg});
+	$north_deg //= ($self->{map_data_north_deg} // $self->{north_deg});
 
-	my $center_lat = ($north + $south) / 2;
-	my $center_lon = ($west + $east) / 2;
+	my $center_lat = ($north_deg + $south_deg) / 2;
+	my $center_lon = ($west_deg + $east_deg) / 2;
 
 	my $url = sprintf("http://api.openstreetmap.org/api/0.6/map?bbox=%.8f,%.8f,%.8f,%.8f",
-			  $west, $south, $east, $north);
+			  $west_deg, $south_deg, $east_deg, $north_deg);
 	my $txt_filename = sprintf("%s/.geo-mapmaker-osm/map_%.8f_%.8f_%.8f_%.8f_bbox.txt",
-				   $ENV{HOME}, $west, $south, $east, $north);
+				   $ENV{HOME}, $west_deg, $south_deg, $east_deg, $north_deg);
 	my $xml_filename = sprintf("%s/.geo-mapmaker-osm/map_%.8f_%.8f_%.8f_%.8f_bbox.xml",
-				   $ENV{HOME}, $west, $south, $east, $north);
+				   $ENV{HOME}, $west_deg, $south_deg, $east_deg, $north_deg);
 
 	mkpath(dirname($xml_filename));
 	my $status = eval { file_get_contents($txt_filename); };
 
 	if ($status && $status eq "split-up") {
-		$self->_update_openstreetmap($force, $west,       $south,      $center_lon, $center_lat);
-		$self->_update_openstreetmap($force, $center_lon, $south,      $east,       $center_lat);
-		$self->_update_openstreetmap($force, $west,       $center_lat, $center_lon, $north);
-		$self->_update_openstreetmap($force, $center_lon, $center_lat, $east,       $north);
+		$self->_update_openstreetmap($force, $west_deg,       $south_deg,      $center_lon, $center_lat);
+		$self->_update_openstreetmap($force, $center_lon, $south_deg,      $east_deg,       $center_lat);
+		$self->_update_openstreetmap($force, $west_deg,       $center_lat, $center_lon, $north_deg);
+		$self->_update_openstreetmap($force, $center_lon, $center_lat, $east_deg,       $north_deg);
 	} elsif (-e $xml_filename && !$force) {
 		warn("Not updating $xml_filename\n") if $verbose;
 		push(@{$self->{_map_xml_filenames}}, $xml_filename);
@@ -213,12 +239,12 @@ sub _update_openstreetmap {
 			# ok then
 		} elsif ($rc == 400) {
 			file_put_contents($txt_filename, "split-up");
-			my $center_lat = ($north + $south) / 2;
-			my $center_lon = ($west + $east) / 2;
-			$self->_update_openstreetmap($force, $west,       $south,      $center_lon, $center_lat);
-			$self->_update_openstreetmap($force, $center_lon, $south,      $east,       $center_lat);
-			$self->_update_openstreetmap($force, $west,       $center_lat, $center_lon, $north);
-			$self->_update_openstreetmap($force, $center_lon, $center_lat, $east,       $north);
+			my $center_lat = ($north_deg + $south_deg) / 2;
+			my $center_lon = ($west_deg + $east_deg) / 2;
+			$self->_update_openstreetmap($force, $west_deg,       $south_deg,      $center_lon, $center_lat);
+			$self->_update_openstreetmap($force, $center_lon, $south_deg,      $east_deg,       $center_lat);
+			$self->_update_openstreetmap($force, $west_deg,       $center_lat, $center_lon, $north_deg);
+			$self->_update_openstreetmap($force, $center_lon, $center_lat, $east_deg,       $north_deg);
 		} elsif (is_success($rc)) {
 			push(@{$self->{_map_xml_filenames}}, $xml_filename);
 			# ok then
@@ -412,15 +438,15 @@ use constant D2R => atan2(1, 1) / 45;
 BEGIN {
 	sub update_scale {
 		my ($self, $map_area) = @_;
-		my $w = $self->{west};			 # in degrees
-		my $e = $self->{east};			 # in degrees
-		my $n = $self->{north};			 # in degrees
-		my $s = $self->{south};			 # in degrees
+		my $w = $self->{west_deg};			 # in degrees
+		my $e = $self->{east_deg};			 # in degrees
+		my $n = $self->{north_deg};			 # in degrees
+		my $s = $self->{south_deg};			 # in degrees
 		# specifically, a 'unit' is 6378.1370 km equatorial radius, WGS-84 ellipsoid ***
-		my $wx = $self->{_west_x} = _lon2x($w);	 # units of equatorial radius
-		my $ex = $self->{_east_x} = _lon2x($e);	 # units
-		my $ny = $self->{_north_y} = _lat2y($n); # units
-		my $sy = $self->{_south_y} = _lat2y($s); # units
+		my $wx = $self->{_west_er} = _lon2x($w);	 # units of equatorial radius
+		my $ex = $self->{_east_er} = _lon2x($e);	 # units
+		my $ny = $self->{_north_er} = _lat2y($n); # units
+		my $sy = $self->{_south_er} = _lat2y($s); # units
 		my $width  = $ex - $wx;			 # units
 		my $height = $ny - $sy;			 # units
 		my $pww = $self->{paper_width_px}  - 2 * $self->{paper_margin_px} - 2 * $self->{fudge_factor_px}; # in px
@@ -432,38 +458,38 @@ BEGIN {
 		}
 
 		# assuming top left
-		$self->{_svg_north} = $self->{paper_margin_px} + $self->{fudge_factor_px}; # so lat2y works
-		$self->{_svg_south} = $self->lat2y($self->{south});
-		$self->{_svg_west}  = $self->{paper_margin_px} + $self->{fudge_factor_px}; # so lon2x works
-		$self->{_svg_east}  = $self->lon2x($self->{east});
+		$self->{_north_svg} = $self->{paper_margin_px} + $self->{fudge_factor_px}; # so lat2y works
+		$self->{_south_svg} = $self->lat2y($self->{south_deg});
+		$self->{_west_svg}  = $self->{paper_margin_px} + $self->{fudge_factor_px}; # so lon2x works
+		$self->{_east_svg}  = $self->lon2x($self->{east_deg});
 
-		my $extra_horizontal_room = $self->{paper_width_px}  - $self->{paper_margin_px} - $self->{_svg_east};
-		my $extra_vertical_room   = $self->{paper_height_px} - $self->{paper_margin_px} - $self->{_svg_south};
+		my $extra_horizontal_room = $self->{paper_width_px}  - $self->{paper_margin_px} - $self->{_east_svg};
+		my $extra_vertical_room   = $self->{paper_height_px} - $self->{paper_margin_px} - $self->{_south_svg};
 
 		if ($self->{vertical_align} eq "bottom") {
-			$self->{_svg_north} += $extra_vertical_room;
-			$self->{_svg_south} += $extra_vertical_room;
+			$self->{_north_svg} += $extra_vertical_room;
+			$self->{_south_svg} += $extra_vertical_room;
 		} elsif ($self->{vertical_align} eq "center") {
-			$self->{_svg_north} += $extra_vertical_room / 2;
-			$self->{_svg_south} += $extra_vertical_room / 2;
+			$self->{_north_svg} += $extra_vertical_room / 2;
+			$self->{_south_svg} += $extra_vertical_room / 2;
 		}
 		if ($self->{horizontal_align} eq "right") {
-			$self->{_svg_east} += $extra_horizontal_room;
-			$self->{_svg_west} += $extra_horizontal_room;
+			$self->{_east_svg} += $extra_horizontal_room;
+			$self->{_west_svg} += $extra_horizontal_room;
 		} elsif ($self->{horizontal_align} eq "center") {
-			$self->{_svg_east} += $extra_horizontal_room / 2;
-			$self->{_svg_west} += $extra_horizontal_room / 2;
+			$self->{_east_svg} += $extra_horizontal_room / 2;
+			$self->{_west_svg} += $extra_horizontal_room / 2;
 		}
 		
-		$self->{_svg_north_outer} = $self->{_svg_north} - $self->{fudge_factor_px};
-		$self->{_svg_south_outer} = $self->{_svg_south} + $self->{fudge_factor_px};
-		$self->{_svg_west_outer}  = $self->{_svg_west}  - $self->{fudge_factor_px};
-		$self->{_svg_east_outer}  = $self->{_svg_east}  + $self->{fudge_factor_px};
+		$self->{_north_svg_outer} = $self->{_north_svg} - $self->{fudge_factor_px};
+		$self->{_south_svg_outer} = $self->{_south_svg} + $self->{fudge_factor_px};
+		$self->{_west_svg_outer}  = $self->{_west_svg}  - $self->{fudge_factor_px};
+		$self->{_east_svg_outer}  = $self->{_east_svg}  + $self->{fudge_factor_px};
 
-		$self->{_west_x_outer}    = $self->{_west_x}    - $self->{fudge_factor_px} / $self->{_scale};
-		$self->{_east_x_outer}    = $self->{_east_x}    + $self->{fudge_factor_px} / $self->{_scale};
-		$self->{_north_y_outer}   = $self->{_north_y}   - $self->{fudge_factor_px} / $self->{_scale};
-		$self->{_south_y_outer}   = $self->{_south_y}   + $self->{fudge_factor_px} / $self->{_scale};
+		$self->{_west_er_outer}    = $self->{_west_er}    - $self->{fudge_factor_px} / $self->{_scale};
+		$self->{_east_er_outer}    = $self->{_east_er}    + $self->{fudge_factor_px} / $self->{_scale};
+		$self->{_north_er_outer}   = $self->{_north_er}   - $self->{fudge_factor_px} / $self->{_scale};
+		$self->{_south_er_outer}   = $self->{_south_er}   + $self->{fudge_factor_px} / $self->{_scale};
 
 		# $self->{west_outer}  = ...;
 		# $self->{east_outer}  = ...;
@@ -472,51 +498,51 @@ BEGIN {
 
 		if (!($map_area->{is_main})) {
 			# recalculate
-			$w = $map_area->{west};
-			$e = $map_area->{east};
-			$n = $map_area->{north};
-			$s = $map_area->{south};
-			$wx = $self->{_west_x}  = _lon2x($w); # units
-			$ex = $self->{_east_x}  = _lon2x($e); # units
-			$ny = $self->{_north_y} = _lat2y($n); # units
-			$sy = $self->{_south_y} = _lat2y($s); # units
+			$w = $map_area->{west_deg};
+			$e = $map_area->{east_deg};
+			$n = $map_area->{north_deg};
+			$s = $map_area->{south_deg};
+			$wx = $self->{_west_er}  = _lon2x($w); # units
+			$ex = $self->{_east_er}  = _lon2x($e); # units
+			$ny = $self->{_north_er} = _lat2y($n); # units
+			$sy = $self->{_south_er} = _lat2y($s); # units
 			$width  = $ex - $wx;		      # units
 			$height = $ny - $sy;		      # units
 			if (exists $map_area->{zoom}) {
 				$self->{_scale} *= $map_area->{zoom};
 			}
 			if (exists $map_area->{left}) {
-				$self->{_svg_west} += $map_area->{left};
-				$self->{_svg_east} = $self->{_svg_west} + $self->{_scale} * $width;
+				$self->{_west_svg} += $map_area->{left};
+				$self->{_east_svg} = $self->{_west_svg} + $self->{_scale} * $width;
 			} elsif (exists $map_area->{right}) {
-				$self->{_svg_east} -= $map_area->{right};
-				$self->{_svg_west} = $self->{_svg_east} - $self->{_scale} * $width;
+				$self->{_east_svg} -= $map_area->{right};
+				$self->{_west_svg} = $self->{_east_svg} - $self->{_scale} * $width;
 			}
 			if (exists $map_area->{top}) {
-				$self->{_svg_north} += $map_area->{top};
-				$self->{_svg_south} = $self->{_svg_north} + $self->{_scale} * $height;
+				$self->{_north_svg} += $map_area->{top};
+				$self->{_south_svg} = $self->{_north_svg} + $self->{_scale} * $height;
 			} elsif (exists $map_area->{bottom}) {
-				$self->{_svg_south} -= $map_area->{bottom};
-				$self->{_svg_north} = $self->{_svg_south} - $self->{_scale} * $height;
+				$self->{_south_svg} -= $map_area->{bottom};
+				$self->{_north_svg} = $self->{_south_svg} - $self->{_scale} * $height;
 			}
 		}
 	}
 	sub _lon2x {
-		my ($lon) = @_;
-		return $lon * D2R;
+		my ($lon_deg) = @_;
+		return $lon_deg * D2R;
 	}
 	sub _lat2y {
-		my ($lat) = @_;
-		my $latr = $lat * D2R;
+		my ($lat_deg) = @_;
+		my $latr = $lat_deg * D2R;
 		return log(abs((1 + sin($latr)) / cos($latr)));
 	}
 	sub lon2x {
-		my ($self, $lon) = @_;
-		return $self->{_svg_west} + $self->{_scale} * (_lon2x($lon) - $self->{_west_x});
+		my ($self, $lon_deg) = @_;
+		return $self->{_west_svg} + $self->{_scale} * (_lon2x($lon_deg) - $self->{_west_er});
 	}
 	sub lat2y {
-		my ($self, $lat) = @_;
-		return $self->{_svg_north} + $self->{_scale} * ($self->{_north_y} - _lat2y($lat));
+		my ($self, $lat_deg) = @_;
+		return $self->{_north_svg} + $self->{_scale} * ($self->{_north_er} - _lat2y($lat_deg));
 	}
 
 	#                       y_svg = north_svg + scale * (north_er - y_er)
@@ -533,12 +559,12 @@ BEGIN {
 
 	sub y2lat {
 		my ($self, $y_svg) = @_;
-		my $y_er = $self->{_north_y} - ($y_svg - $self->{_svg_north}) / $self->{_scale};
+		my $y_er = $self->{_north_er} - ($y_svg - $self->{_north_svg}) / $self->{_scale};
 		return 360 / pi * atan(exp(-$y_er)) - 90;
 	}
 	sub x2lon {
 		my ($self, $x_svg) = @_;
-		my $x_er = $self->{_west_x}  + ($x_svg - $self->{_svg_west}) / $self->{_scale};
+		my $x_er = $self->{_west_er}  + ($x_svg - $self->{_west_svg}) / $self->{_scale};
 		return $x_er / pi * 180;
 	}
 
@@ -546,10 +572,10 @@ BEGIN {
 
 sub clip_path_d {
 	my ($self) = @_;
-	my $left   = $self->{_svg_west_outer};
-	my $right  = $self->{_svg_east_outer};
-	my $top    = $self->{_svg_north_outer};
-	my $bottom = $self->{_svg_south_outer};
+	my $left   = $self->{_west_svg_outer};
+	my $right  = $self->{_east_svg_outer};
+	my $top    = $self->{_north_svg_outer};
+	my $bottom = $self->{_south_svg_outer};
 	my $d = sprintf("M %.2f %.2f H %.2f V %.2f H %.2f Z",
 			$left, $top, $right, $bottom, $left);
 	return $d;
@@ -752,10 +778,10 @@ sub update_or_create_background_layer {
 						       autogenerated => 1,
 						       children_autogenerated => 1);
 	$background->removeChildNodes(); # OK
-	my $rect = $self->rectangle(x      => $self->{_svg_west},
-				    y      => $self->{_svg_north},
-				    width  => $self->{_svg_east} - $self->{_svg_west},
-				    height => $self->{_svg_south} - $self->{_svg_north},
+	my $rect = $self->rectangle(x      => $self->{_west_svg},
+				    y      => $self->{_north_svg},
+				    width  => $self->{_east_svg} - $self->{_west_svg},
+				    height => $self->{_south_svg} - $self->{_north_svg},
 				    class  => "map-background BACKGROUND",
 				    id     => $map_area->{id_prefix} . "map-background"
 				   );
@@ -775,10 +801,10 @@ sub update_or_create_white_layer {
 						       autogenerated => 1,
 						       children_autogenerated => 1);
 	$background->removeChildNodes(); # OK
-	my $rect = $self->rectangle(x      => $self->{_svg_west},
-				    y      => $self->{_svg_north},
-				    width  => $self->{_svg_east} - $self->{_svg_west},
-				    height => $self->{_svg_south} - $self->{_svg_north},
+	my $rect = $self->rectangle(x      => $self->{_west_svg},
+				    y      => $self->{_north_svg},
+				    width  => $self->{_east_svg} - $self->{_west_svg},
+				    height => $self->{_south_svg} - $self->{_north_svg},
 				    class  => "map-white WHITE",
 				    id     => $map_area->{id_prefix} . "whiteRect"
 				   );
@@ -798,10 +824,10 @@ sub update_or_create_border_layer {
 						   autogenerated => 1,
 						   children_autogenerated => 1);
 	$border->removeChildNodes(); # OK
-	my $rect = $self->rectangle(x      => $self->{_svg_west},
-				    y      => $self->{_svg_north},
-				    width  => $self->{_svg_east} - $self->{_svg_west},
-				    height => $self->{_svg_south} - $self->{_svg_north},
+	my $rect = $self->rectangle(x      => $self->{_west_svg_outer},
+				    y      => $self->{_north_svg_outer},
+				    width  => $self->{_east_svg_outer} - $self->{_west_svg_outer},
+				    height => $self->{_south_svg_outer} - $self->{_north_svg_outer},
 				    class  => "map-border MAP_BORDER",
 				    id     => $map_area->{id_prefix} . "map-border"
 				   );
@@ -1151,8 +1177,8 @@ sub get_transit_route_shape_points {
 END
 	$sth->execute($shape_id);
 	my @result;
-	while (my ($lon, $lat) = $sth->fetchrow_array()) {
-		push(@result, [$lon, $lat]);
+	while (my ($lon_deg, $lat_deg) = $sth->fetchrow_array()) {
+		push(@result, [$lon_deg, $lat_deg]);
 	}
 	$sth->finish();
 	return @result;
@@ -1210,10 +1236,10 @@ sub draw_transit_stops {
 	
 		foreach my $map_area (@{$self->{_map_areas}}) {
 			$self->update_scale($map_area);
-			my $svg_west  = $self->{_svg_west};
-			my $svg_east  = $self->{_svg_east};
-			my $svg_north = $self->{_svg_north};
-			my $svg_south = $self->{_svg_south};
+			my $west_svg  = $self->{_west_svg};
+			my $east_svg  = $self->{_east_svg};
+			my $north_svg = $self->{_north_svg};
+			my $south_svg = $self->{_south_svg};
 		
 			my $map_area_layer = $self->update_or_create_map_area_layer($map_area);
 			my $transit_stops_layer = $self->update_or_create_transit_stops_layer($map_area, $map_area_layer);
@@ -1228,13 +1254,13 @@ sub draw_transit_stops {
 				my $stop_code = $stop->{stop_code};
 				my $stop_name = $stop->{stop_name};
 				my $stop_desc = $stop->{stop_desc};
-				my $lat       = $stop->{stop_lat};
-				my $lon       = $stop->{stop_lon};
+				my $lat_deg       = $stop->{stop_lat};
+				my $lon_deg       = $stop->{stop_lon};
 				my $title = join(" - ", grep { $_ } ($stop_code, $stop_name, $stop_desc));
-				my $x = $self->lon2x($lon);
-				my $y = $self->lat2y($lat);
-				return if $x < $svg_west  || $x > $svg_east;
-				return if $y < $svg_north || $y > $svg_south;
+				my $x = $self->lon2x($lon_deg);
+				my $y = $self->lat2y($lat_deg);
+				return if $x < $west_svg  || $x > $east_svg;
+				return if $y < $north_svg || $y > $south_svg;
 				my $circle = $self->circle_node(x => $x, y => $y, r => $r,
 								class => $class,
 								title => $title,
@@ -1369,18 +1395,18 @@ sub draw_transit_routes {
 			foreach my $map_area (@{$self->{_map_areas}}) {
 				my $map_area_index = $map_area->{index};
 				$self->update_scale($map_area);
-				my $svg_west  = $self->{_svg_west};
-				my $svg_east  = $self->{_svg_east};
-				my $svg_north = $self->{_svg_north};
-				my $svg_south = $self->{_svg_south};
+				my $west_svg  = $self->{_west_svg};
+				my $east_svg  = $self->{_east_svg};
+				my $north_svg = $self->{_north_svg};
+				my $south_svg = $self->{_south_svg};
 				foreach my $shape_id (@shape_id) {
 					my @coords = $self->get_transit_route_shape_points($gtfs, $shape_id);
 					$shape_coords{$agency_route}{$shape_id} = [@coords];
 					my @svg_coords = map {
 						my $svgx = $self->lon2x($_->[0]);
 						my $svgy = $self->lat2y($_->[1]);
-						my $xzone = ($svgx <= $svg_west)  ? -1 : ($svgx >= $svg_east)  ? 1 : 0;
-						my $yzone = ($svgy <= $svg_north) ? -1 : ($svgy >= $svg_south) ? 1 : 0;
+						my $xzone = ($svgx <= $west_svg)  ? -1 : ($svgx >= $east_svg)  ? 1 : 0;
+						my $yzone = ($svgy <= $north_svg) ? -1 : ($svgy >= $south_svg) ? 1 : 0;
 						[ $svgx, $svgy, $xzone, $yzone ];
 					} @coords;
 					if (all { $_->[POINT_X_ZONE] == -1 } @svg_coords) { next; }
@@ -1412,20 +1438,20 @@ sub draw_transit_routes {
 			next unless defined $agency_route_A;
 			next unless defined $agency_route_B;
 			$self->diag("  overlap $agency_route_A $agency_route_B...");
-			my $north = $overlap->{north};
-			my $south = $overlap->{south};
-			my $east  = $overlap->{east};
-			my $west  = $overlap->{west};
+			my $north_deg = $overlap->{north_deg};
+			my $south_deg = $overlap->{south_deg};
+			my $east_deg  = $overlap->{east_deg};
+			my $west_deg  = $overlap->{west_deg};
 			foreach my $map_area (@{$self->{_map_areas}}) {
 				my $map_area_index = $map_area->{index};
 				$self->update_scale($map_area);
-				my $svg_north = defined $north ? $self->lat2y($north) : undef;
-				my $svg_south = defined $south ? $self->lat2y($south) : undef;
-				my $svg_east  = defined $east  ? $self->lon2x($east)  : undef;
-				my $svg_west  = defined $west  ? $self->lon2x($west)  : undef;
+				my $north_svg = defined $north_deg ? $self->lat2y($north_deg) : undef;
+				my $south_svg = defined $south_deg ? $self->lat2y($south_deg) : undef;
+				my $east_svg  = defined $east_deg  ? $self->lon2x($east_deg)  : undef;
+				my $west_svg  = defined $west_deg  ? $self->lon2x($west_deg)  : undef;
 				foreach my $shape_id_B (keys(%{$shape_svg_coords{$map_area_index}{$agency_route_B}})) {
 					foreach my $shape_id_A (keys(%{$shape_svg_coords{$map_area_index}{$agency_route_A}})) {
-						move_line_away($svg_north, $svg_south, $svg_east, $svg_west,
+						move_line_away($north_svg, $south_svg, $east_svg, $west_svg,
 							       $separation,
 							       $direction,
 							       $shape_svg_coords{$map_area_index}{$agency_route_B}{$shape_id_B},
@@ -1663,18 +1689,18 @@ sub draw_openstreetmap_maps {
 			my $index = $map_area->{index};
 			my $area_name = $map_area->{name};
 			$self->diag("    Indexing for map area $area_name ... ");
-			my $svg_west  = $self->{_svg_west};
-			my $svg_east  = $self->{_svg_east};
-			my $svg_north = $self->{_svg_north};
-			my $svg_south = $self->{_svg_south};
+			my $west_svg  = $self->{_west_svg};
+			my $east_svg  = $self->{_east_svg};
+			my $north_svg = $self->{_north_svg};
+			my $south_svg = $self->{_south_svg};
 			foreach my $node (@nodes) {
 				my $id  = $node->getAttribute("id");
-				my $lat = 0 + $node->getAttribute("lat");
-				my $lon = 0 + $node->getAttribute("lon");
-				my $svgx = $self->lon2x($lon);
-				my $svgy = $self->lat2y($lat);
-				my $xzone = ($svgx <= $svg_west)  ? -1 : ($svgx >= $svg_east)  ? 1 : 0;
-				my $yzone = ($svgy <= $svg_north) ? -1 : ($svgy >= $svg_south) ? 1 : 0;
+				my $lat_deg = 0 + $node->getAttribute("lat");
+				my $lon_deg = 0 + $node->getAttribute("lon");
+				my $svgx = $self->lon2x($lon_deg);
+				my $svgy = $self->lat2y($lat_deg);
+				my $xzone = ($svgx <= $west_svg)  ? -1 : ($svgx >= $east_svg)  ? 1 : 0;
+				my $yzone = ($svgy <= $north_svg) ? -1 : ($svgy >= $south_svg) ? 1 : 0;
 				my $result = [$svgx, $svgy, $xzone, $yzone];
 				$node_coords{$id}[$index] = $result;
 			}
@@ -2287,10 +2313,10 @@ sub draw_crop_lines {
 							     children_autogenerated => 1);
 	$crop_lines_layer->removeChildNodes(); # OK
 
-	my $south = $self->{south}; my $y_south = $self->lat2y($south);
-	my $north = $self->{north}; my $y_north = $self->lat2y($north);
-	my $east  = $self->{east};  my $x_east = $self->lon2x($east);
-	my $west  = $self->{west};  my $x_west = $self->lon2x($west);
+	my $south_deg = $self->{south_deg}; my $y_south = $self->lat2y($south_deg);
+	my $north_deg = $self->{north_deg}; my $y_north = $self->lat2y($north_deg);
+	my $east_deg  = $self->{east_deg};  my $x_east = $self->lon2x($east_deg);
+	my $west_deg  = $self->{west_deg};  my $x_west = $self->lon2x($west_deg);
 
 	my $top    = 0;
 	my $bottom = $self->{paper_height_px};
@@ -2298,8 +2324,8 @@ sub draw_crop_lines {
 	my $right  = $self->{paper_width_px};
 
 	warn(sprintf("\$top    = %.2f\n", $top));
-	warn(sprintf("\$north  = %.2f\n", $north));
-	warn(sprintf("\$south  = %.2f\n", $south));
+	warn(sprintf("\$north_deg  = %.2f\n", $north_deg));
+	warn(sprintf("\$south_deg  = %.2f\n", $south_deg));
 	warn(sprintf("\$bottom = %.2f\n", $bottom));
 
 	warn(sprintf("\$left   = %.2f\n", $left));
@@ -2436,38 +2462,38 @@ sub draw_grid {
 		my $clipped_group = $self->find_or_create_clipped_group(parent => $grid_layer,
 							 clip_path_id => $map_area->{clip_path_id});
 
-		my $south = $self->{south}; my $y_south = $self->lat2y($south);
-		my $north = $self->{north}; my $y_north = $self->lat2y($north);
-		my $east = $self->{east};   my $x_east = $self->lon2x($east);
-		my $west = $self->{west};   my $x_west = $self->lon2x($west);
+		my $south_deg = $self->{south_deg}; my $y_south = $self->lat2y($south_deg);
+		my $north_deg = $self->{north_deg}; my $y_north = $self->lat2y($north_deg);
+		my $east_deg = $self->{east_deg};   my $x_east = $self->lon2x($east_deg);
+		my $west_deg = $self->{west_deg};   my $x_west = $self->lon2x($west_deg);
 
-		for (my $lat = int($south / $increment) * $increment; $lat <= $north; $lat += $increment) {
-			my $lat_text = sprintf($format, $lat);
-			my $y = $self->lat2y($lat);
+		for (my $lat_deg = int($south_deg / $increment) * $increment; $lat_deg <= $north_deg; $lat_deg += $increment) {
+			my $lat_text = sprintf($format, $lat_deg);
+			my $y = $self->lat2y($lat_deg);
 
 			my $path = $doc->createElementNS($NS{"svg"}, "path");
 			$path->setAttribute("d", sprintf("M %.2f,%.2f %.2f,%.2f", $x_west, $y, $x_east, $y));
 			$path->setAttribute("class", $class);
 			$clipped_group->appendChild($path);
 
-			for (my $lon = (int($west / $increment) + 0.5) * $increment; $lon <= $east; $lon += $increment) {
-				my $x = $self->lon2x($lon);
+			for (my $lon_deg = (int($west_deg / $increment) + 0.5) * $increment; $lon_deg <= $east_deg; $lon_deg += $increment) {
+				my $x = $self->lon2x($lon_deg);
 				my $text_node = $self->text_node(x => $x, y => $y, class => $text_2_class, text => $lat_text);
 				$clipped_group->appendChild($text_node);
 			}
 		}
 
-		for (my $lon = int($west / $increment) * $increment; $lon <= $east; $lon += $increment) {
-			my $lon_text = sprintf($format, $lon);
-			my $x = $self->lon2x($lon);
+		for (my $lon_deg = int($west_deg / $increment) * $increment; $lon_deg <= $east_deg; $lon_deg += $increment) {
+			my $lon_text = sprintf($format, $lon_deg);
+			my $x = $self->lon2x($lon_deg);
 
 			my $path = $doc->createElementNS($NS{"svg"}, "path");
 			$path->setAttribute("d", "M $x,$y_south $x,$y_north");
 			$path->setAttribute("class", $class);
 			$clipped_group->appendChild($path);
 
-			for (my $lat = (int($south / $increment) + 0.5) * $increment; $lat <= $north; $lat += $increment) {
-				my $y = $self->lat2y($lat);
+			for (my $lat_deg = (int($south_deg / $increment) + 0.5) * $increment; $lat_deg <= $north_deg; $lat_deg += $increment) {
+				my $y = $self->lat2y($lat_deg);
 				my $text_node = $self->text_node(x => $x, y => $y, class => $text_2_class, text => $lon_text);
 				$clipped_group->appendChild($text_node);
 			}
