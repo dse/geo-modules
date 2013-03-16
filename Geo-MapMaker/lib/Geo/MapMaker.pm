@@ -67,6 +67,8 @@ BEGIN {
 		      map_data_east
 		      map_data_west
 		      paper_width paper_height paper_margin
+		      fudge_factor
+		      extend_to_full_page
 		      vertical_align
 		      horizontal_align
 		      classes
@@ -88,8 +90,10 @@ BEGIN {
 		      _nodes
 		      _ways
 		      _scale
-		      _south_y _north_y _east_x _west_x
-		      _svg_west _svg_east _svg_north _svg_south
+		      _south_y       _north_y       _east_x       _west_x
+		      _south_y_outer _north_y_outer _east_x_outer _west_x_outer
+		      _svg_west       _svg_east       _svg_north       _svg_south
+		      _svg_west_outer _svg_east_outer _svg_north_outer _svg_south_outer
 		      _cache
 		      include
 		      transit_route_overrides
@@ -113,6 +117,8 @@ sub new {
 	$self->{paper_width}  = 90 * 8.5;
 	$self->{paper_height} = 90 * 11;
 	$self->{paper_margin} = 90 * 0.25;
+	$self->{fudge_factor} = 90 * 0.25;
+	$self->{extend_to_full_page} = FALSE;
 	$self->{vertical_align} = "top";
 	$self->{horizontal_align} = "left";
 	$self->{_gtfs_list} = [];
@@ -401,6 +407,7 @@ sub add_indexes_to_array {
 	}
 }
 
+use Math::Trig;
 use constant D2R => atan2(1, 1) / 45;
 BEGIN {
 	sub update_scale {
@@ -416,8 +423,8 @@ BEGIN {
 		my $sy = $self->{_south_y} = _lat2y($s); # units
 		my $width  = $ex - $wx;			 # units
 		my $height = $ny - $sy;			 # units
-		my $pww = $self->{paper_width}  - 2 * $self->{paper_margin}; # in px
-		my $phh = $self->{paper_height} - 2 * $self->{paper_margin}; # in px
+		my $pww = $self->{paper_width}  - 2 * $self->{paper_margin} - 2 * $self->{fudge_factor}; # in px
+		my $phh = $self->{paper_height} - 2 * $self->{paper_margin} - 2 * $self->{fudge_factor}; # in px
 		if ($width / $height <= $pww / $phh) {
 			$self->{_scale} = $phh / $height; # px/unit
 		} else {
@@ -425,9 +432,9 @@ BEGIN {
 		}
 
 		# assuming top left
-		$self->{_svg_north} = $self->{paper_margin}; # $self->lat2y($self->{north});
+		$self->{_svg_north} = $self->{paper_margin} + $self->{fudge_factor}; # so lat2y works
 		$self->{_svg_south} = $self->lat2y($self->{south});
-		$self->{_svg_west}  = $self->{paper_margin};
+		$self->{_svg_west}  = $self->{paper_margin} + $self->{fudge_factor}; # so lon2x works
 		$self->{_svg_east}  = $self->lon2x($self->{east});
 
 		my $extra_horizontal_room = $self->{paper_width}  - $self->{paper_margin} - $self->{_svg_east};
@@ -448,6 +455,21 @@ BEGIN {
 			$self->{_svg_west} += $extra_horizontal_room / 2;
 		}
 		
+		$self->{_svg_north_outer} = $self->{_svg_north} - $self->{fudge_factor};
+		$self->{_svg_south_outer} = $self->{_svg_south} + $self->{fudge_factor};
+		$self->{_svg_west_outer}  = $self->{_svg_west}  - $self->{fudge_factor};
+		$self->{_svg_east_outer}  = $self->{_svg_east}  + $self->{fudge_factor};
+
+		$self->{_west_x_outer}    = $self->{_west_x}    - $self->{fudge_factor} / $scale;
+		$self->{_east_x_outer}    = $self->{_east_x}    + $self->{fudge_factor} / $scale;
+		$self->{_north_y_outer}   = $self->{_north_y}   - $self->{fudge_factor} / $scale;
+		$self->{_south_y_outer}   = $self->{_south_y}   + $self->{fudge_factor} / $scale;
+
+		# $self->{west_outer}  = ...;
+		# $self->{east_outer}  = ...;
+		# $self->{north_outer} = ...;
+		# $self->{south_outer} = ...;
+
 		if (!($map_area->{is_main})) {
 			# recalculate
 			$w = $map_area->{west};
@@ -496,14 +518,38 @@ BEGIN {
 		my ($self, $lat) = @_;
 		return $self->{_svg_north} + $self->{_scale} * ($self->{_north_y} - _lat2y($lat));
 	}
+
+	#                       y_svg = north_svg + scale * (north_er - y_er)
+	#           y_svg - north_svg = scale * (north_er - y_er)
+	# (y_svg - north_svg) / scale = north_er - y_er
+	# y_er = north_er - (y_svg - north_svg) / scale
+	# phi = 2 * atan(exp(-y_er)) - pi/2
+	# deg = phi * 180 / pi
+	#
+	#                       x_svg = west_svg + scale * (x_er - west_er)
+	#            x_svg - west_svg = scale * (x_er - west_er)
+	#  (x_svg - west_svg) / scale = x_er - west_er
+	# (x_svg - west_svg) / scale + west_er = x_er
+
+	sub y2lat {
+		my ($self, $y_svg) = @_;
+		my $y_er = $self->{_north_y} - ($y_svg - $self->{_svg_north}) / $self->{_scale};
+		return 360 / pi * atan(exp(-$y_er)) - 90;
+	}
+	sub x2lon {
+		my ($self, $x_svg) = @_;
+		my $x_er = $self->{_west_x}  + ($x_svg - $self->{_svg_west}) / $self->{_scale};
+		return $x_er / pi * 180;
+	}
+
 }
 
 sub clip_path_d {
 	my ($self) = @_;
-	my $left   = $self->{_svg_west};
-	my $right  = $self->{_svg_east};
-	my $top    = $self->{_svg_north};
-	my $bottom = $self->{_svg_south};
+	my $left   = $self->{_svg_west_outer};
+	my $right  = $self->{_svg_east_outer};
+	my $top    = $self->{_svg_north_outer};
+	my $bottom = $self->{_svg_south_outer};
 	my $d = sprintf("M %.2f %.2f H %.2f V %.2f H %.2f Z",
 			$left, $top, $right, $bottom, $left);
 	return $d;
