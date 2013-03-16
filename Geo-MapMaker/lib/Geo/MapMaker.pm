@@ -66,8 +66,8 @@ BEGIN {
 		      map_data_south
 		      map_data_east
 		      map_data_west
-		      paper_width paper_height paper_margin
-		      fudge_factor
+		      paper_width_px paper_height_px paper_margin_px
+		      fudge_factor_px
 		      extend_to_full_page
 		      vertical_align
 		      horizontal_align
@@ -114,10 +114,10 @@ sub new {
 	my ($class, %options) = @_;
 	my $self = fields::new($class);
 	$self->{_cache} = {};
-	$self->{paper_width}  = 90 * 8.5;
-	$self->{paper_height} = 90 * 11;
-	$self->{paper_margin} = 90 * 0.25;
-	$self->{fudge_factor} = 90 * 0.25;
+	$self->{paper_width_px}  = 90 * 8.5;
+	$self->{paper_height_px} = 90 * 11;
+	$self->{paper_margin_px} = 90 * 0.25;
+	$self->{fudge_factor_px} = 90 * 0.25;
 	$self->{extend_to_full_page} = FALSE;
 	$self->{vertical_align} = "top";
 	$self->{horizontal_align} = "left";
@@ -307,8 +307,8 @@ END
 	$self->{_svg_doc} = $doc;
 	$self->{_svg_doc_elt} = $doc_elt;
 
-	$doc_elt->setAttribute("width", sprintf("%.2f", $self->{paper_width}));
-	$doc_elt->setAttribute("height", sprintf("%.2f", $self->{paper_height}));
+	$doc_elt->setAttribute("width", sprintf("%.2f", $self->{paper_width_px}));
+	$doc_elt->setAttribute("height", sprintf("%.2f", $self->{paper_height_px}));
 	$doc_elt->setNamespace($NS{"svg"}, "svg", 0);
 
 	my $xpc = XML::LibXML::XPathContext->new($doc);
@@ -322,9 +322,9 @@ END
 		my ($view) = $doc->findnodes("//sodipodi:namedview[\@id='base']");
 		if ($view) {
 			$view->setAttributeNS($NS{"inkscape"}, "inkscape:cx",
-					      sprintf("%.2f", $self->{paper_width} / 2));
+					      sprintf("%.2f", $self->{paper_width_px} / 2));
 			$view->setAttributeNS($NS{"inkscape"}, "inkscape:cy",
-					      sprintf("%.2f", $self->{paper_height} / 2));
+					      sprintf("%.2f", $self->{paper_height_px} / 2));
 		}
 	}
 		
@@ -423,8 +423,8 @@ BEGIN {
 		my $sy = $self->{_south_y} = _lat2y($s); # units
 		my $width  = $ex - $wx;			 # units
 		my $height = $ny - $sy;			 # units
-		my $pww = $self->{paper_width}  - 2 * $self->{paper_margin} - 2 * $self->{fudge_factor}; # in px
-		my $phh = $self->{paper_height} - 2 * $self->{paper_margin} - 2 * $self->{fudge_factor}; # in px
+		my $pww = $self->{paper_width_px}  - 2 * $self->{paper_margin_px} - 2 * $self->{fudge_factor_px}; # in px
+		my $phh = $self->{paper_height_px} - 2 * $self->{paper_margin_px} - 2 * $self->{fudge_factor_px}; # in px
 		if ($width / $height <= $pww / $phh) {
 			$self->{_scale} = $phh / $height; # px/unit
 		} else {
@@ -432,13 +432,13 @@ BEGIN {
 		}
 
 		# assuming top left
-		$self->{_svg_north} = $self->{paper_margin} + $self->{fudge_factor}; # so lat2y works
+		$self->{_svg_north} = $self->{paper_margin_px} + $self->{fudge_factor_px}; # so lat2y works
 		$self->{_svg_south} = $self->lat2y($self->{south});
-		$self->{_svg_west}  = $self->{paper_margin} + $self->{fudge_factor}; # so lon2x works
+		$self->{_svg_west}  = $self->{paper_margin_px} + $self->{fudge_factor_px}; # so lon2x works
 		$self->{_svg_east}  = $self->lon2x($self->{east});
 
-		my $extra_horizontal_room = $self->{paper_width}  - $self->{paper_margin} - $self->{_svg_east};
-		my $extra_vertical_room   = $self->{paper_height} - $self->{paper_margin} - $self->{_svg_south};
+		my $extra_horizontal_room = $self->{paper_width_px}  - $self->{paper_margin_px} - $self->{_svg_east};
+		my $extra_vertical_room   = $self->{paper_height_px} - $self->{paper_margin_px} - $self->{_svg_south};
 
 		if ($self->{vertical_align} eq "bottom") {
 			$self->{_svg_north} += $extra_vertical_room;
@@ -455,15 +455,15 @@ BEGIN {
 			$self->{_svg_west} += $extra_horizontal_room / 2;
 		}
 		
-		$self->{_svg_north_outer} = $self->{_svg_north} - $self->{fudge_factor};
-		$self->{_svg_south_outer} = $self->{_svg_south} + $self->{fudge_factor};
-		$self->{_svg_west_outer}  = $self->{_svg_west}  - $self->{fudge_factor};
-		$self->{_svg_east_outer}  = $self->{_svg_east}  + $self->{fudge_factor};
+		$self->{_svg_north_outer} = $self->{_svg_north} - $self->{fudge_factor_px};
+		$self->{_svg_south_outer} = $self->{_svg_south} + $self->{fudge_factor_px};
+		$self->{_svg_west_outer}  = $self->{_svg_west}  - $self->{fudge_factor_px};
+		$self->{_svg_east_outer}  = $self->{_svg_east}  + $self->{fudge_factor_px};
 
-		$self->{_west_x_outer}    = $self->{_west_x}    - $self->{fudge_factor} / $scale;
-		$self->{_east_x_outer}    = $self->{_east_x}    + $self->{fudge_factor} / $scale;
-		$self->{_north_y_outer}   = $self->{_north_y}   - $self->{fudge_factor} / $scale;
-		$self->{_south_y_outer}   = $self->{_south_y}   + $self->{fudge_factor} / $scale;
+		$self->{_west_x_outer}    = $self->{_west_x}    - $self->{fudge_factor_px} / $self->{_scale};
+		$self->{_east_x_outer}    = $self->{_east_x}    + $self->{fudge_factor_px} / $self->{_scale};
+		$self->{_north_y_outer}   = $self->{_north_y}   - $self->{fudge_factor_px} / $self->{_scale};
+		$self->{_south_y_outer}   = $self->{_south_y}   + $self->{fudge_factor_px} / $self->{_scale};
 
 		# $self->{west_outer}  = ...;
 		# $self->{east_outer}  = ...;
@@ -1257,8 +1257,8 @@ sub draw_transit_stops {
 
 use constant WGS84_EQUATORIAL_RADIUS_KILOMETERS => 6378.1370; # WGS84
 
+# returns the xxxxxx in 1:xxxxxx scale i.e. 1 inch on the map = this many inches in real life
 sub scale {
-	# returns the xxxxxx in 1:xxxxxx scale i.e. 1 inch on the map = this many inches in real life
 	my ($self) = @_;
 	my $scale = $self->{_scale};    # this many pixels on the map = 1 unit of equatorial radius
 	
@@ -2293,9 +2293,9 @@ sub draw_crop_lines {
 	my $west  = $self->{west};  my $x_west = $self->lon2x($west);
 
 	my $top    = 0;
-	my $bottom = $self->{paper_height};
+	my $bottom = $self->{paper_height_px};
 	my $left   = 0;
-	my $right  = $self->{paper_width};
+	my $right  = $self->{paper_width_px};
 
 	warn(sprintf("\$top    = %.2f\n", $top));
 	warn(sprintf("\$north  = %.2f\n", $north));
