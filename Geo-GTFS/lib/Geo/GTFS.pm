@@ -14,7 +14,6 @@ Version 0.02
 =cut
 	
 our $VERSION = '0.03';
-warn("Geo::GTFS $VERSION\n");
 	
 =head1 SYNOPSIS
 	
