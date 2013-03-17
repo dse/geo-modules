@@ -2,6 +2,18 @@
 use warnings;
 use strict;
 
+BEGIN {
+	foreach my $devdir ("$ENV{HOME}/git/geo-modules/Geo-GTFS/lib",
+			    "$ENV{HOME}/git/geo-modules/Geo-MapMaker/lib") {
+		if (-d $devdir) {
+			warn("Including $devdir\n");
+			$ENV{USE_INLINE_TEMP_CACHE} = 1;
+			require lib;
+			import lib $devdir;
+		}
+	}
+}
+
 use Carp qw();
 use Geo::GTFS;
 use Geo::MapMaker;
@@ -24,10 +36,8 @@ Getopt::Long::GetOptions("show-stack-traces" => sub { $SIG{__DIE__} = \&Carp::co
 			 },
 			 "h|help" => sub { $shell->cmd__help(); exit(0); });
 
-$Geo::GTFS::verbose     = $verbose;
-$Geo::MapMaker::verbose = $verbose;
-$Geo::MapMaker::debug   = $debug; 
-
+$shell->{verbose} = $verbose;
+$shell->{debug} = $debug;
 $shell->run(@ARGV);
 
 package My::Shell;
@@ -128,6 +138,8 @@ sub cmd__map {
 		die("no such map: '$mapname'\n");
 	}
 	my $mapmaker = Geo::MapMaker->new(filename => $mapname, %$mapinfo);
+	$mapmaker->{verbose} = $self->{verbose};
+	$mapmaker->{debug}   = $self->{debug};
 	$self->{mapmaker} = $mapmaker;
 	$self->$method(@args);
 }
