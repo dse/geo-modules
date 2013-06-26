@@ -11,6 +11,20 @@ can use it to get an idea of the module's uses. It is usually a good idea
 to provide version information here so that people can decide whether
 fixes for the module are worth downloading.
 
+PREREQUISITES
+
+	Archive::Zip
+	DBI
+	DBD::Sqlite3
+	Text::CSV
+	Text::CSV_XS
+
+on Debian/Ubuntu:
+
+	sudo apt-get install libarchive-zip-perl libdbi-perl
+	libtext-csv-perl
+	libtext-csv-xs-perl
+	libdbd-sqlite3-perl
 
 INSTALLATION
 
