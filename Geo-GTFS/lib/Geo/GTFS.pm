@@ -86,6 +86,7 @@ sub new {
 	$self->{verbose} = 0;
 	$self->{debug} = {};
 	$self->{data} = {};
+	$self->{aliases_file} = $ENV{HOME} . "/.geo-gtfs/aliases";
 	if ($options) {
 		while (my ($k, $v) = each(%$options)) {
 			$self->{$k} = $v;
@@ -104,9 +105,80 @@ use URI;
 use Archive::Zip qw( :ERROR_CODES :CONSTANTS );
 use Carp qw(croak);
 use DBI;
-use File::Path qw(mkpath);
+use File::Path qw(mkpath make_path);
 use File::Basename;
 use XML::LibXML;
+use YAML::Syck;
+use List::MoreUtils;
+
+sub init_rc {
+	my ($self) = @_;
+	my $aliases_file = $self->{aliases_file};
+	if (-e $self->{aliases_file}) {
+		$self->{aliases} = LoadFile($self->{aliases_file});
+	} else {
+		$self->{aliases} = {};
+	}
+	$self->{url_regex} = qr{^(https?|ftp)://};
+}
+
+sub save_rc {
+	my ($self) = @_;
+	my $aliases_file = $self->{aliases_file};
+	my $aliases      = $self->{aliases};
+	if ($aliases_file && $aliases) {
+		DumpFile($aliases_file, $aliases);
+	}
+}
+
+# accepts either an alias or a URL.
+sub get_url {
+	my ($self, $what) = @_;
+	my $alias;
+	my $url;
+	if ($what =~ $self->{url_regex}) {
+		$url = $what;
+	} else {
+		$alias = $what;
+		$url = $self->{aliases}->{$alias};
+		if (!$url) {
+			die("$0: '$what' is neither an alias nor a URL.");
+		}
+	}
+	return $url;
+}
+
+sub add_aliases {
+	my ($self, @args);
+
+	my $url_regex = $self->{url_regex};
+
+	my @url     = grep { $_ =~ $url_regex } @args;
+	my @aliases = grep { $_ !~ $url_regex } @args;
+
+	if (!@url) {
+		die("$0: you must specify one URL when adding one or more aliases.");
+	} elsif (scalar(@url) > 1) {
+		die("$0: you must specify one URL when adding one or more aliases.");
+	}
+	my ($url) = @url;
+
+	foreach my $alias (@aliases) {
+		$self->{aliases}->{$alias} = $url;
+	}
+}
+
+sub delete_aliases {
+	my ($self, @args) = @_;
+	foreach my $alias (@args) {
+		delete $self->{aliases}->{alias};
+	}
+}
+
+sub list_aliases {
+	my ($self) = @_;
+	print Dump($self->{aliases});
+}
 
 sub update {
 	my ($self) = @_;
