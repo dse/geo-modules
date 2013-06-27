@@ -80,24 +80,38 @@ anonymous hash:
 =cut
 
 sub new {
-	my ($class, $url, $options) = @_;
-	my $self = fields::new($class);
-	$self->{url} = $url;
-	$self->{verbose} = 0;
-	$self->{debug} = {};
-	$self->{data} = {};
-	$self->{aliases_file} = $ENV{HOME} . "/.geo-gtfs/aliases";
-	if ($options) {
-		while (my ($k, $v) = each(%$options)) {
-			$self->{$k} = $v;
-		}
+	my $class = shift();
+	my $url_or_alias = shift();
+	my %args = (
+		    aliases_filename => "$ENV{HOME}/.geo-gtfs/aliases",
+		    verbose          => 0,
+		    debug            => {},
+		    data             => {},
+		   );
+	
+	if (scalar(@_) == 1 && ref($_[0]) eq "HASH") {
+		%args = (%args, %{$_[0]});
+	} elsif (scalar(@_) >= 2) {
+		%args = (%args, @_);
 	}
+
+	my $self = fields::new($class);
+	$self->init_rc();
+	if (defined $url_or_alias) {
+		my $url = $self->get_url($url_or_alias);
+		$self->{url} = $url;
+	}
+	while (my ($k, $v) = each(%args)) {
+		$self->{$k} = $v;
+	}
+
 	return $self;
 }
 
 sub DESTROY {
 	my ($self) = @_;
 	$self->_DESTROY_DBH();	# stfu, DBI!
+	$self->save_rc();
 }
 
 use LWP::Simple;
