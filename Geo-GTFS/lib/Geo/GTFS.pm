@@ -1,7 +1,8 @@
 package Geo::GTFS;
-
 use warnings;
 use strict;
+
+use Geo::GTFS::Aliases;
 	
 =head1 NAME
 	
@@ -83,35 +84,29 @@ sub new {
 	my $class = shift();
 	my $url_or_alias = shift();
 	my %args = (
-		    aliases_filename => "$ENV{HOME}/.geo-gtfs/aliases",
+		    aliases          => Geo::GTFS::Aliases->new(),
 		    verbose          => 0,
 		    debug            => {},
 		    data             => {},
 		   );
-	
 	if (scalar(@_) == 1 && ref($_[0]) eq "HASH") {
 		%args = (%args, %{$_[0]});
 	} elsif (scalar(@_) >= 2) {
 		%args = (%args, @_);
 	}
-
 	my $self = fields::new($class);
-	$self->init_rc();
 	if (defined $url_or_alias) {
-		my $url = $self->get_url($url_or_alias);
-		$self->{url} = $url;
+		my $url = $self->{aliases}->get_url($url_or_alias);
 	}
 	while (my ($k, $v) = each(%args)) {
 		$self->{$k} = $v;
 	}
-
 	return $self;
 }
 
 sub DESTROY {
 	my ($self) = @_;
 	$self->_DESTROY_DBH();	# stfu, DBI!
-	$self->save_rc();
 }
 
 use LWP::Simple;
@@ -125,73 +120,25 @@ use XML::LibXML;
 use YAML::Syck;
 use List::MoreUtils;
 
-sub init_rc {
-	my ($self) = @_;
-	my $aliases_file = $self->{aliases_file};
-	if (-e $self->{aliases_file}) {
-		$self->{aliases} = LoadFile($self->{aliases_file});
-	} else {
-		$self->{aliases} = {};
-	}
-	$self->{url_regex} = qr{^(https?|ftp)://};
-}
-
-sub save_rc {
-	my ($self) = @_;
-	my $aliases_file = $self->{aliases_file};
-	my $aliases      = $self->{aliases};
-	if ($aliases_file && $aliases) {
-		DumpFile($aliases_file, $aliases);
-	}
-}
-
 # accepts either an alias or a URL.
 sub get_url {
 	my ($self, $what) = @_;
-	my $alias;
-	my $url;
-	if ($what =~ $self->{url_regex}) {
-		$url = $what;
-	} else {
-		$alias = $what;
-		$url = $self->{aliases}->{$alias};
-		if (!$url) {
-			die("$0: '$what' is neither an alias nor a URL.");
-		}
-	}
-	return $url;
+	return $self->{aliases}->resolve($what);
 }
 
 sub add_aliases {
 	my ($self, @args);
-
-	my $url_regex = $self->{url_regex};
-
-	my @url     = grep { $_ =~ $url_regex } @args;
-	my @aliases = grep { $_ !~ $url_regex } @args;
-
-	if (!@url) {
-		die("$0: you must specify one URL when adding one or more aliases.");
-	} elsif (scalar(@url) > 1) {
-		die("$0: you must specify one URL when adding one or more aliases.");
-	}
-	my ($url) = @url;
-
-	foreach my $alias (@aliases) {
-		$self->{aliases}->{$alias} = $url;
-	}
+	return $self->{aliases}->add(@args);
 }
 
 sub delete_aliases {
 	my ($self, @args) = @_;
-	foreach my $alias (@args) {
-		delete $self->{aliases}->{alias};
-	}
+	return $self->{aliases}->delete(@args);
 }
 
 sub list_aliases {
-	my ($self) = @_;
-	print Dump($self->{aliases});
+	my ($self, @args) = @_;
+	return $self->{aliases}->list(@args);
 }
 
 sub update {
