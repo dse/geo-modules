@@ -95,11 +95,12 @@ sub new {
 		%args = (%args, @_);
 	}
 	my $self = fields::new($class);
-	if (defined $url_or_alias) {
-		my $url = $self->{aliases}->get_url($url_or_alias);
-	}
 	while (my ($k, $v) = each(%args)) {
 		$self->{$k} = $v;
+	}
+	if (defined $url_or_alias) {
+		my $url = $self->{aliases}->resolve($url_or_alias);
+		$self->{url} = $url;
 	}
 	return $self;
 }
@@ -843,6 +844,28 @@ sub select_shape_points {
 		order by	shape_pt_sequence
 END
 	return $self->selectall($sql, {}, $shape_id);
+}
+
+sub get_trip_by_trip_id {
+	my ($self, $trip_id) = @_;
+	my $sql = <<"END";
+		select	*
+		from	trips
+		where	trip_id = ?
+END
+	my ($record) = $self->selectall($sql, {}, $trip_id);
+	return $record;
+}
+
+sub get_stop_by_stop_id {
+	my ($self, $stop_id) = @_;
+	my $sql = <<"END";
+		select	*
+		from	stops
+		where	stop_id = ?
+END
+	my ($record) = $self->selectall($sql, {}, $stop_id);
+	return $record;
 }
 
 =head1 SEE ALSO
