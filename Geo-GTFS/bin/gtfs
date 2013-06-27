@@ -5,7 +5,6 @@ use strict;
 BEGIN {
 	foreach my $devdir ("$ENV{HOME}/git/geo-modules/Geo-GTFS/lib") {
 		if (-d $devdir) {
-			warn("Including $devdir\n");
 			$ENV{USE_INLINE_TEMP_CACHE} = 1;
 			require lib;
 			import lib $devdir;
@@ -39,34 +38,26 @@ Getopt::Long::GetOptions("show-stack-traces" => sub { $SIG{__DIE__} = \&Carp::co
 $shell->run(@ARGV);
 
 package My::GTFS::Shell;
+
 use YAML::Syck;
 use File::Basename;
 use List::MoreUtils;
 use File::Path qw(make_path);
+
+use Geo::GTFS::Aliases;
+
 sub new {
 	my ($class, %args) = @_;
-	my $self = bless({%args}, $class);
-	$self->init();
+	%args = (
+		 aliases => Geo::GTFS::Aliases->new(),
+		 verbose => 0,
+		 debug   => 0,
+		 %args
+		);
+	my $self = bless(\%args, $class);
 	return $self;
 }
-sub init {
-	my ($self) = @_;
-	my $aliases_file = $self->{aliases_file} = $ENV{HOME} . "/.geo-gtfs/aliases";
-	if (-e $self->{aliases_file}) {
-		$self->{aliases} = LoadFile($self->{aliases_file});
-	} else {
-		$self->{aliases} = {};
-	}
-	$self->{url_regex} = qr{^(https?|ftp)://};
-	$self->{verbose} = 0;
-	$self->{debug} = {};
-}
-sub DESTROY {
-	my ($self) = @_;
-	my $aliases_file = $self->{aliases_file};
-	make_path(dirname($aliases_file));
-	DumpFile($aliases_file, $self->{aliases});
-}
+
 sub help {
 	my ($self) = @_;
 	print(<<"END");
@@ -84,6 +75,7 @@ commands:
         list-routes URL|ALIAS
 END
 }
+
 sub run {
 	my ($self, $command, @args) = @_;
 	if (!defined $command) {
@@ -97,103 +89,91 @@ sub run {
 	}
 	$self->$method(@args);
 }
+
 sub method {
 	my ($self, $command) = @_;
 	$command =~ s{-}{_}g;
 	return $self->can("cmd__$command");
 }
-sub get_gtfs_url {
-	my ($self, $what) = @_;
-	my $alias;
-	my $url;
-	if ($what =~ $self->{url_regex}) {
-		$url = $what;
-	} else {
-		$alias = $what;
-		$url = $self->{aliases}->{$alias};
-		if (!$url) {
-			warn("$0: '$what' is neither an alias nor a URL\n");
-			return undef;
-		}
-	}
-	return $url;
-}
-sub gtfs {
-	my ($self, $url) = @_;
+
+sub gtfs_object {
+	my ($self, $url_or_alias) = @_;
+	die("must specify a GTFS URL or alias.\n") unless defined $url_or_alias;
+
 	$self->{gtfs} //= {};
-	my $gtfs = $self->{gtfs}->{url} //= Geo::GTFS->new($url);
-	$gtfs->{verbose} = $self->{verbose};
-	#$gtfs->{debug}   = $self->{debug};
-	return $gtfs;
+
+	if (exists $self->{gtfs}->{$url_or_alias}) {
+		return $self->{gtfs}->{$url_or_alias};
+	}
+
+	my $gtfs_object = Geo::GTFS->new($url_or_alias);
+	my $url = $gtfs_object->{url};
+	my @aliases = $self->{aliases}->reverse_lookup($url);
+
+	$self->{gtfs}->{$url} = $gtfs_object;
+	foreach my $alias (@aliases) {
+		$self->{gtfs}->{$alias} = $gtfs_object;
+	}
+
+	$gtfs_object->{verbose} = $self->{verbose};
+	return $gtfs_object;
 }
+
 sub cmd__kml {
-	my ($self, $what) = @_;
-	my $url = $self->get_gtfs_url($what);
-	return undef unless defined $url;
-	my $gtfs = $self->gtfs($url);
+	my ($self, $url_or_alias) = @_;
+	my $gtfs = $self->gtfs_object($url_or_alias);
+
 	my $doc = $gtfs->kml();
 	print $doc->toString(1);
 }
+
 sub cmd__update {
-	my ($self, $what) = @_;
-	my $url = $self->get_gtfs_url($what);
-	return undef unless defined $url;
-	my $gtfs = $self->gtfs($url);
+	my ($self, $url_or_alias) = @_;
+	my $gtfs = $self->gtfs_object($url_or_alias);
+
 	$gtfs->update();
 	$gtfs->force_repopulate();
 	return 1;
 }
+
 sub cmd__repopulate {
-	my ($self, $what) = @_;
-	my $url = $self->get_gtfs_url($what);
-	return undef unless defined $url;
-	my $gtfs = $self->gtfs($url);
+	my ($self, $url_or_alias) = @_;
+	my $gtfs = $self->gtfs_object($url_or_alias);
+
 	$gtfs->force_repopulate();
 	return 1;
 }
+
 sub cmd__alias {
 	my ($self, @args) = @_;
-	if (!scalar @args) {
-		print Dump($self->{aliases});
-		return 1;
-	}
-	my $url_regex = $self->{url_regex};
-	my @url = grep { $_ =~ $url_regex } @args;
-	if (!scalar @url) {
-		warn("$0: alias: no URL specified\n");
-		return undef;
-	} elsif (scalar @url > 1) {
-		warn("$0: alias: more than one URL specified\n");
-		return undef;
-	}
-	my ($url) = @url;
-	my @aliases = grep { $_ !~ $url_regex } @args;
-	foreach my $alias (@aliases) {
-		$self->{aliases}->{$alias} = $url;
+	if (!scalar(@args)) {
+		$self->{aliases}->list();
+	} else {
+		$self->{aliases}->add(@args);
 	}
 	return 1;
 }
+
 sub cmd__delete_alias {
 	my ($self, @args) = @_;
-	foreach my $alias (@args) {
-		delete $self->{aliases}->{alias};
-	}
+	$self->{aliases}->delete(@args);
 	return 1;
 }
+
 sub cmd__list_agencies {
-	my ($self, $what) = @_;
-	my $url = $self->get_gtfs_url($what);
-	return undef unless defined $url;
-	my $gtfs = $self->gtfs($url);
+	my ($self, $url_or_alias) = @_;
+	my $gtfs = $self->gtfs_object($url_or_alias);
+
 	my @agencies = $gtfs->select_all_agencies();
 	print Dump(@agencies);
 }
+
 sub cmd__list_routes {
-	my ($self, $what) = @_;
-	my $url = $self->get_gtfs_url($what);
-	return undef unless defined $url;
-	my $gtfs = $self->gtfs($url);
+	my ($self, $url_or_alias) = @_;
+	my $gtfs = $self->gtfs_object($url_or_alias);
+
 	my @routes = $gtfs->select_all_routes();
 	print Dump(@routes);
 }
+
 1;
