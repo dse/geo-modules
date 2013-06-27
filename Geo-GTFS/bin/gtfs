@@ -3,8 +3,7 @@ use warnings;
 use strict;
 
 BEGIN {
-	foreach my $devdir ("$ENV{HOME}/git/geo-modules/Geo-GTFS/lib",
-			    "$ENV{HOME}/git/geo-modules/Geo-MapMaker/lib") {
+	foreach my $devdir ("$ENV{HOME}/git/geo-modules/Geo-GTFS/lib") {
 		if (-d $devdir) {
 			warn("Including $devdir\n");
 			$ENV{USE_INLINE_TEMP_CACHE} = 1;
@@ -34,7 +33,8 @@ Getopt::Long::GetOptions("show-stack-traces" => sub { $SIG{__DIE__} = \&Carp::co
 						    $shell->{debug}->{$_} = 1;  }
 				 }
 			 },
-			 "h|help" => sub { $shell->help(); exit(0); });
+			 "h|help" => sub { $shell->help(); exit(0); })
+	or die("Type '$0 --help' for help.\n");
 
 $shell->run(@ARGV);
 
@@ -76,6 +76,12 @@ commands:
 	alias                    -- lists aliases
 	alias GTFS-URL ALIAS ... -- adds aliases
 	delete-alias ALIAS ...   -- removes aliases
+
+        update URL|ALAIS
+        repopulate URL|ALIAS
+
+        list-agencies URL|ALIAS
+        list-routes URL|ALIAS
 END
 }
 sub run {
