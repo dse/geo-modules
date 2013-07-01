@@ -63,16 +63,22 @@ sub help {
 	print(<<"END");
 usage: $0 [OPTION ...] COMMAND [ARG ...]
 commands:
-	kml GTFS-URL             -- spits out some KML.
-	alias                    -- lists aliases
-	alias GTFS-URL ALIAS ... -- adds aliases
-	delete-alias ALIAS ...   -- removes aliases
+	alias                           -- lists aliases
+	alias GTFS-URL ALIAS ...        -- adds aliases
+	delete-alias ALIAS ...          -- removes aliases
 
         update URL|ALAIS
         repopulate URL|ALIAS
 
         list-agencies URL|ALIAS
         list-routes URL|ALIAS
+
+	kml URL|ALIAS           -- write a KML file to stdout.
+	stops-kml URL|ALIAS     --   same but only include stops
+	routes-kml URL|ALIAS    --   same but only include routes
+				
+	kml-file-set URL|ALIAS FILENAME -- write set of KML files.
+        	FILENAME is only used as a base filename.
 END
 }
 
@@ -133,6 +139,22 @@ sub cmd__kml_file_set {
 
 	warn("kml-file-set\n");
 	$gtfs->write_kml_file_set($filename);
+}
+
+sub cmd__stops_kml {
+	my ($self, $url_or_alias) = @_;
+	my $gtfs = $self->gtfs_object($url_or_alias);
+
+	my $doc = $gtfs->kml_document(stops_only = 1);
+	print $doc->toString(1);
+}
+
+sub cmd__routes_kml {
+	my ($self, $url_or_alias) = @_;
+	my $gtfs = $self->gtfs_object($url_or_alias);
+
+	my $doc = $gtfs->kml_document(routes_only => 1);
+	print $doc->toString(1);
 }
 
 sub cmd__update {
