@@ -123,8 +123,16 @@ sub cmd__kml {
 	my ($self, $url_or_alias) = @_;
 	my $gtfs = $self->gtfs_object($url_or_alias);
 
-	my $doc = $gtfs->kml();
+	my $doc = $gtfs->kml_document();
 	print $doc->toString(1);
+}
+
+sub cmd__kml_file_set {
+	my ($self, $url_or_alias, $filename) = @_;
+	my $gtfs = $self->gtfs_object($url_or_alias);
+
+	warn("kml-file-set\n");
+	$gtfs->write_kml_file_set($filename);
 }
 
 sub cmd__update {
