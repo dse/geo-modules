@@ -2,7 +2,6 @@ package Geo::GTFS;
 use warnings;
 use strict;
 
-use Geo::GTFS::Aliases;
 	
 =head1 NAME
 	
@@ -50,9 +49,6 @@ use fields qw(url
 	      _dir
 	      _zip_filename
 	      _sqlite_filename
-	      kml_doc
-	      kml_root
-	      kml_Document
 	      aliases
 	      aliases_filename
 	    );
@@ -110,16 +106,20 @@ sub DESTROY {
 	$self->_DESTROY_DBH();	# stfu, DBI!
 }
 
-use LWP::Simple;
-use URI;
+use Geo::GTFS::Aliases;
+
 use Archive::Zip qw( :ERROR_CODES :CONSTANTS );
+use Archive::Zip::MemberRead; # do we need this?
 use Carp qw(croak);
 use DBI;
-use File::Path qw(mkpath make_path);
 use File::Basename;
+use File::Path qw(mkpath make_path);
+use LWP::Simple;
+use List::MoreUtils;
+use Text::CSV;
+use URI;
 use XML::LibXML;
 use YAML::Syck;
-use List::MoreUtils;
 
 # accepts either an alias or a URL.
 sub get_url {
@@ -510,9 +510,6 @@ sub _repopulate_tables {
 	$self->_repopulate_data($zip, "feed_info");
 }
 
-use Archive::Zip::MemberRead;
-use Text::CSV;
-
 sub _repopulate_data {
 	my ($self, $zip, $table, $required) = @_;
 
@@ -642,24 +639,11 @@ sub get_sqlite_filename {
 		sprintf("%s/google_transit.sqlite", $self->get_dir());
 }
 
-sub kml {
+sub kml_document {
 	my ($self) = @_;
-	my $parser = XML::LibXML->new();
-	$parser->set_options({ no_blanks => 1 });
-	my $doc = $parser->parse_string(<<"END");
-<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"></kml>
-END
-	$self->{kml_doc}      = $doc;
-	my $root     = $self->{kml_root}     = $doc->documentElement();
-	my $Document = $self->{kml_Document} = $doc->createElement("Document");
-	$root->appendChild($Document);
 
 	my @agencies = $self->select_all_agencies();
-
 	my $name = join("; ", map { $_->{agency_name} } @agencies);
-	$Document->appendTextChild("name", $name);
-
-	# $self->add_node_with_cdata($Document, "description", Dump(@agencies));
 
 	my @description = ();
 	foreach my $agency (@agencies) {
@@ -669,17 +653,88 @@ END
 		push(@description, $desc);
 	}
 	my $description = join(";\n", @description);
-	$Document->appendTextChild("description", $description);
 	
-	$self->add_kml_stops();
-	$self->add_kml_routes();
-	return $doc;
+	my $Document = $self->new_kml_document(name        => $name,
+					       description => $description);
+
+	$self->add_kml_stops($Document);
+	$self->add_kml_routes($Document);
+	return $Document->ownerDocument();
 }
-use YAML::Syck;
+
+sub write_kml_file_set {
+
+	my ($self, $filename) = @_;
+	# specified filename will be something like "foo.kml".
+	# filenames to be written will be things like:
+	#   foo-stops.kml
+	#   foo-route-2.kml
+	#   foo-route-4.kml
+
+	$filename //= "transit.kml";
+
+	my $dirname  = dirname($filename);
+	my $basename = basename($filename, ".kml");
+
+	{
+		my $filename = "${dirname}/${basename}-stops.kml";
+		my $Document = $self->new_kml_document(name => "Transit Stops");
+		$self->add_kml_stops($Document);
+		
+		my $fh;
+		open($fh, ">", $filename) or die("Cannot write $filename: $!\n");
+		my $doc = $Document->ownerDocument();
+		print $fh $Document->ownerDocument()->toString(1);
+		close($fh);
+	}
+
+	my @routes = $self->select_all_routes();
+	foreach my $route (@routes) {
+		my $route_short_name = $route->{route_short_name};
+		my $route_long_name = $route->{route_long_name};
+		my $name = join(" - ", grep { defined $_ }
+				($route_short_name, $route_long_name));
+		warn("Route $name\n");
+
+		my $filename = "${dirname}/${basename}-route-${route_short_name}.kml";
+		my $Document = $self->new_kml_document(name => $name);
+		$self->add_kml_route($route, $Document);
+		
+		my $fh;
+		open($fh, ">", $filename) or die("Cannot write $filename: $!\n");
+		my $doc = $Document->ownerDocument();
+		print $fh $Document->ownerDocument()->toString(1);
+		close($fh);
+	}
+}
+
+sub new_kml_document {
+	my ($self, %args) = @_;
+
+	my $parser = XML::LibXML->new();
+	$parser->set_options({ no_blanks => 1 });
+	my $doc = $parser->parse_string(<<"END");
+<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"></kml>
+END
+	my $Document = $doc->createElement("Document");
+	$doc->setDocumentElement($Document);
+
+	if (defined $args{name}) {
+		$Document->appendTextChild("name", $args{name});
+	}
+	if (defined $args{description}) {
+		$self->add_node_with_cdata($Document, "description", $args{description});
+	}
+
+	return $Document;
+}
+
 sub add_kml_stops {
-	my ($self) = @_;
-	my ($doc, $root, $Document) = @$self{qw(kml_doc kml_root kml_Document)};
-	my $Folder = $Document->addNewChild(undef, "Folder");
+	my ($self, $Parent) = @_;
+	my $doc = $Parent->ownerDocument();
+	my $tagName = $Parent->tagName();
+
+	my $Folder = $Parent->addNewChild(undef, "Folder");
 	$Folder->appendTextChild("open", 0);
 	$Folder->appendTextChild("visibility", 0);
 	$Folder->appendTextChild("name", "Stops");
@@ -704,8 +759,6 @@ sub add_kml_stops {
 		$Placemark->appendTextChild("name", $name);
 		$Placemark->appendTextChild("visibility", 0);
 
-		# $self->add_node_with_cdata($Placemark, "description", Dump($stop));
-
 		my $desc = "";
 		$desc .= sprintf("stop_code: %s\n", $stop->{stop_code});
 		$desc .= sprintf("stop_id:   %s\n", $stop->{stop_id});
@@ -725,72 +778,73 @@ sub add_kml_stops {
 						$stop->{stop_lat}));
 	}
 }
-sub add_kml_routes {
-	my ($self) = @_;
-	my ($doc, $root, $Document) = @$self{qw(kml_doc kml_root kml_Document)};
 
-	# {
-	# 	my $Style = $Document->addNewChild(undef, "Style"); 
-	# 	$Style->setAttribute("id", "transitRouteStyle");
-	# 	my $LineStyle = $Style->addNewChild(undef, "LineStyle");
-	# 	$LineStyle->appendTextChild("color", "99ff5533");
-	# 	$LineStyle->appendTextChild("width", 4);
-	# 	my $PolyStyle = $Style->addNewChild(undef, "PolyStyle");
-	# 	$PolyStyle->appendTextChild("color", "66ff5533");
-	# }
+sub add_kml_route {
+	my ($self, $route, $Parent) = @_;
+	my $doc = $Parent->ownerDocument();
+	my $tagName = $Parent->tagName();
+	
+	my $name = $route->{route_short_name};
+	$name .= " - " . $route->{route_long_name}
+		if defined $route->{route_long_name}
+			and $route->{route_long_name} ne "";
 
-	my $Folder = $doc->createElement("Folder");
-	$Document->appendChild($Folder);
-	$Folder->appendTextChild("name", "Routes");
-	$Folder->appendTextChild("description", "Transit routes");
-	my @routes = $self->select_all_routes();
-	foreach my $route (@routes) {
-		my $name = $route->{route_short_name};
-		$name .= " - " . $route->{route_long_name}
-			if defined $route->{route_long_name}
-				and $route->{route_long_name} ne "";
-		my $Placemark = $Folder->addNewChild(undef, "Placemark");
-		$Placemark->appendTextChild("name", $name);
-		$Placemark->appendTextChild("visibility", 1);
-		# $self->add_node_with_cdata($Placemark, "description", Dump($route));
+	my $Placemark = $Parent->addNewChild(undef, "Placemark");
+	$Placemark->appendTextChild("name", $name);
+	$Placemark->appendTextChild("visibility", 1);
 
-		my $Style = $Placemark->addNewChild(undef, "Style");
-		my $LineStyle = $Style->addNewChild(undef, "LineStyle");
-		$LineStyle->appendTextChild("width", 4);
-		$LineStyle->appendTextChild("color", "ff" . lc($route->{route_color}));
+	my $Style = $Placemark->addNewChild(undef, "Style");
+	my $LineStyle = $Style->addNewChild(undef, "LineStyle");
+	$LineStyle->appendTextChild("width", 4);
+	$LineStyle->appendTextChild("color", "ff" . lc($route->{route_color}));
 
-		my $MultiGeometry = $Placemark->addNewChild(undef, "MultiGeometry");
-		my @shape_ids = $self->select_route_shape_ids($route->{route_id});
-		foreach my $shape_id (@shape_ids) {
-			my $LineString = $MultiGeometry->addNewChild(undef, "LineString");
-			$LineString->appendTextChild("tessellate", 1);
-			my @points = $self->select_shape_points($shape_id);
-			$LineString->appendTextChild("description", "shape_id: $shape_id");
-			my $coordinates = "";
-			foreach my $point (@points) {
-				$coordinates .= 
-					sprintf("%f,%f,0\n",
-						$point->{shape_pt_lon},
-						$point->{shape_pt_lat});
-			}
-			{
-				$coordinates = "\n" . $coordinates;
-				$coordinates =~ s{^}{" " x 14}gem;
-				$coordinates .= " " x 12;
-			}
-			$LineString->appendTextChild("coordinates", $coordinates);
+	my $MultiGeometry = $Placemark->addNewChild(undef, "MultiGeometry");
+	my @shape_ids = $self->select_route_shape_ids($route->{route_id});
+	foreach my $shape_id (@shape_ids) {
+		my $LineString = $MultiGeometry->addNewChild(undef, "LineString");
+		$LineString->appendTextChild("tessellate", 1);
+		my @points = $self->select_shape_points($shape_id);
+		$LineString->appendTextChild("description", "shape_id: $shape_id");
+		my $coordinates = "";
+		foreach my $point (@points) {
+			$coordinates .= 
+				sprintf("%f,%f,0\n",
+					$point->{shape_pt_lon},
+					$point->{shape_pt_lat});
 		}
+		{
+			$coordinates = "\n" . $coordinates;
+			$coordinates =~ s{^}{" " x 14}gem;
+			$coordinates .= " " x 12;
+		}
+		$LineString->appendTextChild("coordinates", $coordinates);
 	}
 }
+
+sub add_kml_routes {
+	my ($self, $Parent) = @_;
+
+	my $Folder = $Parent->ownerDocument()->createElement("Folder");
+	$Parent->appendChild($Folder);
+	$Folder->appendTextChild("name", "Routes");
+	$Folder->appendTextChild("description", "Transit routes");
+
+	my @routes = $self->select_all_routes();
+	foreach my $route (@routes) {
+		$self->add_kml_route($route, $Folder);
+	}
+}
+
 sub add_node_with_cdata {
 	my ($self, $parent, $name, $text) = @_;
-	my $doc = $self->{kml_doc};
+	my $doc = $parent->ownerDocument();
 	my $node = $doc->createElement($name);
 	my $cdata = $doc->createCDATASection($text);
 	$parent->appendChild($node);
 	$node->appendChild($cdata);
 	return $node;
 }
+
 sub select_all_agencies {
 	my ($self) = @_;
 	return $self->selectall("select * from agency", {});
