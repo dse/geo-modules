@@ -640,7 +640,7 @@ sub get_sqlite_filename {
 }
 
 sub kml_document {
-	my ($self) = @_;
+	my ($self, %args) = @_;
 
 	my @agencies = $self->select_all_agencies();
 	my $name = join("; ", map { $_->{agency_name} } @agencies);
@@ -657,9 +657,26 @@ sub kml_document {
 	my $Document = $self->new_kml_document(name        => $name,
 					       description => $description);
 
-	$self->add_kml_stops($Document);
-	$self->add_kml_routes($Document);
+	if ($args{stops_only}) {
+		$self->add_kml_stops($Document);
+	} elsif ($args{routes_only}) {
+		$self->add_kml_routes($Document);
+	} else {
+		$self->add_kml_stops($Document);
+		$self->add_kml_routes($Document);
+	}
+
 	return $Document->ownerDocument();
+}
+
+sub kml_document_stops_only {
+	my ($self, %args) = @_;
+	return $self->kml_document(%args, stops_only => 1);
+}
+
+sub kml_document_routes_only {
+	my ($self, %args) = @_;
+	return $self->kml_document(%args, routes_only => 1);
 }
 
 sub write_kml_file_set {
