@@ -145,7 +145,7 @@ sub cmd__stops_kml {
 	my ($self, $url_or_alias) = @_;
 	my $gtfs = $self->gtfs_object($url_or_alias);
 
-	my $doc = $gtfs->kml_document(stops_only = 1);
+	my $doc = $gtfs->kml_document(stops_only => 1);
 	print $doc->toString(1);
 }
 
