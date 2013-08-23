@@ -734,7 +734,8 @@ sub new_kml_document {
 <?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"></kml>
 END
 	my $Document = $doc->createElement("Document");
-	$doc->setDocumentElement($Document);
+	my $root = $doc->documentElement();
+	$root->appendChild($Document);
 
 	if (defined $args{name}) {
 		$Document->appendTextChild("name", $args{name});
