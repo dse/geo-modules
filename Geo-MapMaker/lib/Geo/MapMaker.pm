@@ -486,20 +486,38 @@ BEGIN {
 		}
 
 		if ($map_area->{is_main} && $self->{extend_to_full_page}) {
+
+			# recompute new values for all relevant variables and object properties
 			my $new_north_svg =                            $self->{paper_margin_px} + $self->{fudge_factor_px};
 			my $new_south_svg = $self->{paper_height_px} - $self->{paper_margin_px} - $self->{fudge_factor_px};
 			my $new_west_svg  =                            $self->{paper_margin_px} + $self->{fudge_factor_px};
 			my $new_east_svg  = $self->{paper_width_px}  - $self->{paper_margin_px} - $self->{fudge_factor_px};
+			my $new_north_er  = $self->y_px_to_lat_er($new_north_svg);
+			my $new_south_er  = $self->y_px_to_lat_er($new_south_svg);
+			my $new_west_er   = $self->x_px_to_lon_er($new_west_svg);
+			my $new_east_er   = $self->x_px_to_lon_er($new_east_svg);
+			my $new_width_er  = $new_east_er - $new_west_er;
+			my $new_height_er = $new_north_er - $new_south_er;
+			my $new_north_deg = $self->y_px_to_lat_deg($new_north_svg);
+			my $new_south_deg = $self->y_px_to_lat_deg($new_south_svg);
+			my $new_west_deg  = $self->x_px_to_lon_deg($new_west_svg);
+			my $new_east_deg  = $self->x_px_to_lon_deg($new_east_svg);
 
-			my $new_north_er  = ...; # north_er + ...
-			my $new_south_er  = ...; # south_er - ...
-			my $new_west_er   = ...; # west_er - ...
-			my $new_east_er   = ...; # east_er + ...
-
-			$self->{_north_svg} = $new_north_svg;
-			$self->{_south_svg} = $new_south_svg;
-			$self->{_east_svg}  = $new_east_svg;
-			$self->{_west_svg}  = $new_west_svg;
+			# then set them.
+			$self->{_north_svg}         = $new_north_svg;
+			$self->{_south_svg}         = $new_south_svg;
+			$self->{_east_svg}          = $new_east_svg;
+			$self->{_west_svg}          = $new_west_svg;
+			$width_er                   = $new_width_er;
+			$height_er                  = $new_height_er;
+			$self->{_west_er}  = $wx_er = $new_west_er;
+			$self->{_east_er}  = $ex_er = $new_east_er;
+			$self->{_north_er} = $ny_er = $new_north_er;
+			$self->{_south_er} = $sy_er = $new_south_er;
+			$self->{west_deg}  = $w_deg = $new_west_deg;
+			$self->{east_deg}  = $e_deg = $new_east_deg;
+			$self->{north_deg} = $n_deg = $new_north_deg;
+			$self->{south_deg} = $s_deg = $new_south_deg;
 		}
 		
 		$self->{_north_svg_outer} = $self->{_north_svg} - $self->{fudge_factor_px};
@@ -543,6 +561,8 @@ BEGIN {
 			}
 		}
 	}
+
+	# These need to NOT be object methods, for performance reasons.
 	sub _lon_deg_to_er {
 		my ($lon_deg) = @_;
 		return $lon_deg * D2R;
@@ -552,6 +572,23 @@ BEGIN {
 		my $latr = $lat_deg * D2R;
 		return log(abs((1 + sin($latr)) / cos($latr)));
 	}
+
+	sub lon_er_to_x_px {
+		my ($self, $lon_er) = @_;
+		return $self->{_west_svg} + $self->{_scale_px_per_er} * ($lon_er - $self->{_west_er});
+	}
+	sub lat_er_to_y_px {
+		my ($self, $lat_er) = @_;
+		return $self->{_north_svg} + $self->{_scale_px_per_er} * ($self->{_north_er} - $lat_er);
+	}
+	sub x_px_to_lon_er {
+		my ($self, $x_px) = @_;
+		return ($x_px - $self->{_west_svg}) / $self->{_scale_px_per_er} + $self->{_west_er};
+	}
+	sub y_px_to_lat_er {
+		my ($self, $y_px) = @_;
+		return $self->{_north_er} - ($y_px - $self->{_north_svg}) / $self->{_scale_px_per_er};
+	}
 	sub lon_deg_to_x_px {
 		my ($self, $lon_deg) = @_;
 		return $self->{_west_svg} + $self->{_scale_px_per_er} * (_lon_deg_to_er($lon_deg) - $self->{_west_er});
@@ -560,30 +597,16 @@ BEGIN {
 		my ($self, $lat_deg) = @_;
 		return $self->{_north_svg} + $self->{_scale_px_per_er} * ($self->{_north_er} - _lat_deg_to_er($lat_deg));
 	}
-
-	#                       y_svg = north_svg + scale * (north_er - y_er)
-	#           y_svg - north_svg = scale * (north_er - y_er)
-	# (y_svg - north_svg) / scale = north_er - y_er
-	# y_er = north_er - (y_svg - north_svg) / scale
-	# phi = 2 * atan(exp(-y_er)) - pi/2
-	# deg = phi * 180 / pi
-	#
-	#                       x_svg = west_svg + scale * (x_er - west_er)
-	#            x_svg - west_svg = scale * (x_er - west_er)
-	#  (x_svg - west_svg) / scale = x_er - west_er
-	# (x_svg - west_svg) / scale + west_er = x_er
-
-	sub y2lat {
+	sub y_px_to_lat_deg {
 		my ($self, $y_svg) = @_;
 		my $y_er = $self->{_north_er} - ($y_svg - $self->{_north_svg}) / $self->{_scale_px_per_er};
-		return 360 / pi * atan(exp(-$y_er)) - 90;
+		return 360 / pi * atan(exp($y_er)) - 90;
 	}
-	sub x2lon {
+	sub x_px_to_lon_deg {
 		my ($self, $x_svg) = @_;
 		my $x_er = $self->{_west_er}  + ($x_svg - $self->{_west_svg}) / $self->{_scale_px_per_er};
 		return $x_er / pi * 180;
 	}
-
 }
 
 sub clip_path_d {
