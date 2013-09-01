@@ -87,11 +87,13 @@ sub run {
 		@next = splice(@args, $semicolon);
 	}
 	my $command = shift(@args);
+	if (!defined $command) {
+		die("no command specified; type '$0 help' for help.\n");
+	}
 	if ($command =~ /\./) {	# is a filename
 		unshift(@args, $command);
 		$command = "map";
 	}
-	die("no command specified; type '$0 help' for help.\n") unless defined $command;
 	my $method = $self->find_method($command);
 	die("no such command: '$command'; type '$0 help' for help.\n") unless $method;
 	$self->$method(@args);
