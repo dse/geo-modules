@@ -1325,7 +1325,7 @@ use constant WGS84_EQUATORIAL_RADIUS_KILOMETERS => 6378.1370; # WGS84
 # returns the xxxxxx in 1:xxxxxx scale i.e. 1 inch on the map = this many inches in real life
 sub scale {
 	my ($self) = @_;
-	my $scale = $self->{_scale};    # this many pixels on the map = 1 unit of equatorial radius
+	my $scale = $self->{_scale_px_per_er}; # this many pixels on the map = 1 unit of equatorial radius
 	
 	$scale /= 90;		# inches
 	$scale *= 2.54;		# centimeters
