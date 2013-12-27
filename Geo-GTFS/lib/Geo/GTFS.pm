@@ -1,7 +1,6 @@
 package Geo::GTFS;
 use warnings;
 use strict;
-
 	
 =head1 NAME
 	
@@ -9,7 +8,7 @@ Geo::GTFS - Maintain a SQLite database of GTFS data
 	
 =head1 VERSION
 	
-Version 0.02
+Version 0.03
 	
 =cut
 	
@@ -39,7 +38,6 @@ the extraction/population of that data into it only happen once unless
 the repopulate (or force_repopulate) method is called.
 
 =cut
-
 
 use fields qw(url
 	      gtfs_dir
@@ -225,6 +223,10 @@ sub drop_tables {
 	my ($self) = @_;
 	my $dbh = $self->dbh();
 	print STDERR ("Dropping database tables ... ") if $self->{verbose};
+
+	$dbh->do("drop table if exists gtfs_feeds;");
+	$dbh->do("drop table if exists gtfs_feed_versions;");
+
 	$dbh->do("drop table if exists agency;");
 	$dbh->do("drop table if exists stops;");
 	$dbh->do("drop table if exists routes;");
@@ -239,6 +241,7 @@ sub drop_tables {
 	$dbh->do("drop table if exists transfers;");
 	$dbh->do("drop table if exists feed_info;");
 	$dbh->do("drop table if exists mtime;");
+
 	print STDERR ("done.\n") if $self->{verbose};
 }
 
@@ -246,6 +249,25 @@ sub _create_tables {
 	my ($self) = @_;
 	my $dbh = $self->dbh();
 	print STDERR ("Creating database tables ...") if $self->{verbose};
+	$dbh->do(<<"END");
+		create table if not exists gtfs_feeds (
+			gtfs_feed_id		integer		primary key autoincrement,
+			gtfs_feed_url		varchar(256)	unique not null,
+			gtfs_feed_short_name	varchar(64)	unique not null,
+			gtfs_feed_long_name	varchar(256)	unique not null
+		);
+END
+	$dbh->do(<<"END");
+		create table if not exists gtfs_feed_versions (
+			gtfs_feed_version_id	integer		primary key autoincrement,
+			gtfs_feed_id		integer		not null references gtfs_feeds(gtfs_feed_id),
+			gtfs_feed_version_mtime	integer		not null,						-- timestamp
+			gtfs_feed_version_url	varchar(256)	not null
+				-- can be different from gtfs_feeds(gtfs_feed_url) if downloading an old version
+				-- but usually the same as the gtfs_feed_url
+				-- can also be just a filename.
+		);
+END
 	$dbh->do(<<"END");
 create table if not exists mtime (
 	mtime             integer
@@ -499,12 +521,15 @@ sub _repopulate_tables {
 		die("Error reading $zip_filename\n");
 	}
 
+	# required
 	$self->_repopulate_data($zip, "agency", 1);
 	$self->_repopulate_data($zip, "stops", 1);
 	$self->_repopulate_data($zip, "routes", 1);
 	$self->_repopulate_data($zip, "trips", 1);
 	$self->_repopulate_data($zip, "stop_times", 1);
 	$self->_repopulate_data($zip, "calendar", 1);
+
+	# optional
 	$self->_repopulate_data($zip, "calendar_dates");
 	$self->_repopulate_data($zip, "fare_attributes");
 	$self->_repopulate_data($zip, "fare_rules");
