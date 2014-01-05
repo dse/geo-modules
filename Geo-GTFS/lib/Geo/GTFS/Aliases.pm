@@ -9,12 +9,14 @@ our $single_object = {};
 
 sub new {
 	my ($class, %args) = @_;
+	my $HOME = $ENV{HOME} // "/tmp";
 	%args = (
-		 filename  => "$ENV{HOME}/.geo-gtfs/aliases",
+		 gtfs_dir  => "$HOME/.geo-gtfs",
 		 url_regex => qr{^(https?|ftp)://},
 		 %args
 		);
-	my $filename = $args{filename};
+	
+	my $filename = $args{filename} //= ($args{gtfs_dir} . "/aliases");
 
 	return $single_object->{$filename}
 		if exists $single_object->{$filename};
