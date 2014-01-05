@@ -42,6 +42,7 @@ the repopulate (or force_repopulate) method is called.
 
 
 use fields qw(url
+	      gtfs_dir
 	      data
 	      verbose
 	      debug
@@ -79,11 +80,12 @@ anonymous hash:
 sub new {
 	my $class = shift();
 	my $url_or_alias = shift();
+	my $HOME = $ENV{HOME} // "/tmp";
 	my %args = (
-		    aliases          => Geo::GTFS::Aliases->new(),
 		    verbose          => 0,
 		    debug            => {},
 		    data             => {},
+		    gtfs_dir         => "$HOME/.geo-gtfs",
 		   );
 	if (scalar(@_) == 1 && ref($_[0]) eq "HASH") {
 		%args = (%args, %{$_[0]});
@@ -94,6 +96,7 @@ sub new {
 	while (my ($k, $v) = each(%args)) {
 		$self->{$k} = $v;
 	}
+	$self->{aliases} = Geo::GTFS::Aliases->new(gtfs_dir => $self->{gtfs_dir});
 	if (defined $url_or_alias) {
 		my $url = $self->{aliases}->resolve($url_or_alias);
 		$self->{url} = $url;
@@ -148,7 +151,8 @@ sub update {
 	my $zip_filename = $self->get_zip_filename();
 
 	mkpath(dirname($zip_filename));
-	print STDERR ("GET $url ... ") if $self->{verbose};
+	print STDERR ("GET $url") if $self->{verbose};
+	print STDERR ("    => $zip_filename ...\n") if $self->{verbose};
 	my $rc = mirror($url, $zip_filename);
 	print STDERR ("$rc\n") if $self->{verbose};
 
@@ -623,7 +627,7 @@ sub get_dir {
 		$path =~ s{^/|/$}{}g;
 		$path =~ s{/}{__}g;
 		$path =~ s{\.zip$}{}i;
-		sprintf("%s/.geo-gtfs/%s/%s", $ENV{HOME}, $host, $path);
+		sprintf("%s/%s/%s", $self->{gtfs_dir}, $host, $path);
 	};
 }
 
@@ -938,6 +942,67 @@ sub get_stop_by_stop_id {
 END
 	my ($record) = $self->selectall($sql, {}, $stop_id);
 	return $record;
+}
+
+sub get_route_by_route_id {
+	my ($self, $route_id) = @_;
+	my $sql = <<"END";
+		select	*
+		from	routes
+		where	route_id = ?
+END
+	my ($record) = $self->selectall($sql, {}, $route_id);
+	return $record;
+}
+
+our $cache = {};
+
+sub get_route_by_trip_id {
+	my ($self, $trip_id) = @_;
+	my $record = $cache->{route_by_trip_id}->{$trip_id};
+	return $record if $record;
+	my $sql = <<"END";
+		select	routes.*
+		from	trips
+			join routes on trips.route_id = routes.route_id
+		where	trips.trip_id = ?
+END
+	($record) = $self->selectall($sql, {}, $trip_id);
+	$cache->{route_by_trip_id}->{$trip_id} = $record;
+	return $record;
+}
+
+sub get_route_id_by_trip_id {
+	my ($self, $trip_id) = @_;
+	return $cache->{route_id_by_trip_id}->{$trip_id} if exists $cache->{route_id_by_trip_id}->{$trip_id};
+	my $sql = <<"END";
+		select	route_id
+		from	trips
+		where	trip_id = ?
+END
+	my ($record) = $self->selectall($sql, {}, $trip_id);
+	my $route_id;
+	return $cache->{route_id_by_trip_id}->{$trip_id} = $route_id = eval { $record->{route_id} };
+	return $route_id;
+}
+
+sub get_stop_time {
+	my ($self, $trip_id, $stop_id) = @_;
+	my $sql = <<"END";
+		select	routes.*
+		from	stop_times
+		join	routes on 
+		where	trip_id = ? and stop_id = ?
+END
+	my ($record) = $self->selectall($sql, {}, $trip_id, $stop_id);
+	return $record;
+}
+
+sub die_perhaps_out_of_date {
+	my ($self) = @_;
+	die("Have you updated your GTFS data?\n".
+	    "If you have not, use the following command to do so:\n\n".
+	    "\tgtfs update $self->{gtfs_provider}\n\n");
 }
 
 =head1 SEE ALSO
