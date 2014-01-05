@@ -60,7 +60,7 @@ sub init {
 	Google::ProtocolBuffers->parsefile($self->{proto_file});
 }
 
-sub get_vehicle_position_raw_pb_data {
+sub get_vehicle_positions_raw_pb_data {
 	my ($self) = @_;
 	if ($self->{vp_pb_data} &&
 	    $self->{vp_pb_data_time} >= (time() - CACHE_KEEP_SECONDS)) {
@@ -71,9 +71,9 @@ sub get_vehicle_position_raw_pb_data {
 	return $vp_pb_data;
 }
 
-sub get_vehicle_position_data {
+sub get_vehicle_positions_data {
 	my ($self) = @_;
-	my $pb = $self->get_vehicle_position_raw_pb_data();
+	my $pb = $self->get_vehicle_positions_raw_pb_data();
 	my $vp = $self->{vp_data} = TransitRealtime::FeedMessage->decode($pb);
 	return $vp;
 }
@@ -93,13 +93,48 @@ sub get_trip_updates_data {
 	my ($self) = @_;
 	my $pb = $self->get_trip_updates_raw_pb_data();
 	my $tu = $self->{tu_data} = TransitRealtime::FeedMessage->decode($pb);
+
+	foreach my $entity (@{$tu->{entity}}) {
+		my $trip_update = eval { $entity->{trip_update} };
+		if (!$trip_update) {
+			$entity->{x} = 1;
+			next;
+		}
+		my $trip_id = eval { $trip_update->{trip}->{trip_id} };
+		if (!defined $trip_id) {
+			$entity->{x} = 2;
+			next;
+		}
+		my $trip = $self->{gtfs}->get_trip_by_trip_id($trip_id);
+		if (!$trip) {
+			$entity->{x} = 3;
+			next;
+		}
+		my $trip_headsign = eval { $trip->{trip_headsign} };
+		if (!defined $trip_headsign) {
+			$entity->{x} = 4;
+			next;
+		}
+		$trip_update->{trip}->{trip_headsign} = $trip_headsign;
+	}
+	
 	return $tu;
+}
+
+sub get_all_data {
+	my ($self) = @_;
+	my $vp = $self->get_vehicle_positions_data();
+	my $tu = $self->get_trip_updates_data();
+	return {
+		vehicle_positions => $vp,
+		trip_updates      => $tu
+	       };
 }
 
 sub kml_doc {
 	my ($self) = @_;
 
-	$self->get_vehicle_position_data();
+	$self->get_vehicle_positions_data();
 	my $vehicle_positions = $self->{vp_data};
 
 	my $gtfs = $self->{gtfs};
