@@ -58,6 +58,10 @@ sub new {
 	return $self;
 }
 
+sub cmd__help {
+	goto &help;
+}
+
 sub help {
 	my ($self) = @_;
 	print(<<"END");
