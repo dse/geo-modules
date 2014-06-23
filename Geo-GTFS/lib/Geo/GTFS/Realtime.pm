@@ -11,6 +11,7 @@ use Geo::GTFS;
 use Time::ParseDate;
 
 use lib "/home/dse/git/geo-modules/Geo-GTFS/lib";
+use lib "/Users/dse/git/geo-modules/Geo-GTFS/lib";
 use Geo::GTFS;
 
 use constant CACHE_KEEP_SECONDS => 29;
@@ -34,8 +35,13 @@ sub init {
 	
 	if ($ENV{REQUEST_METHOD}) {
 		$self->{cache_dir}  = "/tmp/gtfsrt-cache-$>";
-		$self->{proto_file} = "/home/dse/.geo-gtfs/gtfs-realtime.proto";
-		$self->{gtfs_dir}   = "/home/dse/.geo-gtfs";
+		if (-d "/Users/dse") {
+			$self->{proto_file} = "/Users/dse/.geo-gtfs/gtfs-realtime.proto";
+			$self->{gtfs_dir}   = "/Users/dse/.geo-gtfs";
+		} elsif (-d "/home/dse") {
+			$self->{proto_file} = "/home/dse/.geo-gtfs/gtfs-realtime.proto";
+			$self->{gtfs_dir}   = "/home/dse/.geo-gtfs";
+		}
 		$self->{gtfs} = Geo::GTFS->new(
 					       "ridetarc.org", {
 								verbose => 1,
