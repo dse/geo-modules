@@ -2,15 +2,8 @@
 use warnings;
 use strict;
 
-BEGIN {
-	foreach my $devdir ("$ENV{HOME}/git/geo-modules/Geo-GTFS/lib") {
-		if (-d $devdir) {
-			$ENV{USE_INLINE_TEMP_CACHE} = 1;
-			require lib;
-			import lib $devdir;
-		}
-	}
-}
+use FindBin;
+use lib "$FindBin::Bin/../lib";
 
 use Geo::GTFS::Realtime;
 
