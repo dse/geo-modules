@@ -1,308 +1,267 @@
 package Geo::GTFS::Realtime;
+use warnings;
+use strict;
+
+use lib "$ENV{HOME}/git/HTTP-Cache-Transparent/lib";
 
 use LWP::Simple;
 use HTTP::Cache::Transparent;
 use Google::ProtocolBuffers;
 use File::Path qw(make_path);
-use XML::LibXML;
-use YAML;
 use POSIX qw(strftime);
-use Geo::GTFS;
-use Time::ParseDate;
+use File::Basename qw(dirname);
+use JSON qw(-convert_blessed_universally);
+use YAML::Syck;
+use Data::Dumper;
+use Errno qw(EEXIST);
+use File::Spec::Functions qw(abs2rel);
+use POSIX qw(uname);
 
-use lib "/home/dse/git/geo-modules/Geo-GTFS/lib";
-use lib "/Users/dse/git/geo-modules/Geo-GTFS/lib";
-use Geo::GTFS;
+BEGIN {
+    # in osx you may have to run: cpan Crypt::SSLeay and do other
+    # things
+    my ($uname) = uname();
+    if ($uname =~ m{^Darwin}) {
+	my $ca_file = "/usr/local/opt/curl-ca-bundle/share/ca-bundle.crt";
+	if (-e $ca_file) {
+	    $ENV{HTTPS_CA_FILE} = $ca_file;
+	} else {
+	    warn(<<"END");
 
-use constant CACHE_KEEP_SECONDS => 29;
+Looks like you are using a Mac.  You should run:
+    brew install curl-ca-bundle.
+You may also need to run:
+    sudo cpan Crypt::SSLeay
+
+END
+	    exit(1);
+	}
+    }
+}
 
 sub new {
-	my ($class) = @_;
-	my $self = bless({}, $class);
-	$self->init();
-	return $self;
+    my ($class) = @_;
+    my $self = bless({}, $class);
+    $self->init() if $self->can('init');
+    return $self;
+}
+
+sub cache_set {
+    my ($self, %args) = @_;
+    my $cache_options = $self->{cache_options} //=
+      { BasePath => "$ENV{HOME}/.http-cache-transparent",
+	Verbose => 1,
+	NoUpdate => 30,
+	NoUpdateUseMtime => 1 };
+    %$cache_options = (%$cache_options, %args);
+    HTTP::Cache::Transparent::init($cache_options);
 }
 
 sub init {
-	my ($self) = @_;
-	my $HOME = $ENV{HOME} // "/tmp";
-	$self->{gtfs_provider} = "ridetarc.org";
-	$self->{cache_dir} = "$HOME/.geo-gtfs/gtfsrt-cache";
-	$self->{proto_file} = "$HOME/.geo-gtfs/gtfs-realtime.proto";
+    my ($self) = @_;
 
-	$self->{vp_url} = "http://gtfsrealtime.ridetarc.org/vehicle/VehiclePositions.pb";
-	$self->{tu_url} = "http://gtfsrealtime.ridetarc.org/trip_update/TripUpdates.pb";
-	
-	if ($ENV{REQUEST_METHOD}) {
-		$self->{cache_dir}  = "/tmp/gtfsrt-cache-$>";
-		if (-d "/Users/dse") {
-			$self->{proto_file} = "/Users/dse/.geo-gtfs/gtfs-realtime.proto";
-			$self->{gtfs_dir}   = "/Users/dse/.geo-gtfs";
-		} elsif (-d "/home/dse") {
-			$self->{proto_file} = "/home/dse/.geo-gtfs/gtfs-realtime.proto";
-			$self->{gtfs_dir}   = "/home/dse/.geo-gtfs";
-		}
-		$self->{gtfs} = Geo::GTFS->new(
-					       "ridetarc.org", {
-								verbose => 1,
-								gtfs_dir => $self->{gtfs_dir},
-							       },
-					      );
-	} else {
-		$self->{gtfs} = Geo::GTFS->new(
-					       "ridetarc.org", {
-								verbose => 1,
-							       },
-					      );
+    $self->cache_set();
+    $self->{ua} = LWP::UserAgent->new();
+
+    $self->{gtfs_realtime_proto}   = "https://developers.google.com/transit/gtfs-realtime/gtfs-realtime.proto";
+    $self->pull_protocol();
+
+    $self->{my_cache}              = "$ENV{HOME}/.my-gtfs-realtime-data/cache";
+    make_path($self->{my_cache});
+
+    $self->{feed_types} = [ qw(alerts
+			       realtime_feed
+			       trip_updates
+			       vehicle_positions) ];
+    $self->{feed_urls}  = { qw(alerts             http://googletransit.ridetarc.org/realtime/alerts/Alerts.pb
+			       realtime_feed      http://googletransit.ridetarc.org/realtime/gtfs-realtime/TrapezeRealTimeFeed.pb
+			       trip_updates       http://googletransit.ridetarc.org/realtime/trip_update/TripUpdates.pb
+			       vehicle_positions  http://googletransit.ridetarc.org/realtime/vehicle/VehiclePositions.pb) };
+    $self->init_converters();
+}
+
+sub init_converters {
+    my ($self) = @_;
+    my $json = JSON->new()->allow_nonref()->pretty()->convert_blessed();
+    $self->{output_formats} = [ qw(json yaml dumper) ]; 
+    $self->{output_converters} = {
+	"json" => { 
+	    # "code" => sub { ... },
+	    "ext"  => "json"
+	},
+	"yaml" => {
+	    # "code" => sub { ... },
+	    "ext"  => "yaml"
+	},
+	"dumper" => {
+	    # "code" => sub { ... },
+	    "ext"  => "dumper"
+	},
+    };
+}
+
+sub pull_protocol {
+    my ($self) = @_;
+    $self->cache_set(NoUpdate => 86400, NoUpdateUseMtime => 0);
+    my $request = HTTP::Request->new("GET", $self->{gtfs_realtime_proto});
+    my $response = $self->{ua}->request($request);
+    if (!$response->is_success()) {
+	warn(sprintf("Failed to pull protocol: %s\n", $response->status_line()));
+	exit(1);
+    }
+    my $proto = $response->content();
+    if (!defined $proto) {
+	die("Failed to pull protocol: undefined content\n");
+    }
+    if (!$proto) {
+	die("Failed to pull protocol: no content\n");
+    }
+    Google::ProtocolBuffers->parse($proto);
+}
+
+sub test {
+    my ($self) = @_;
+    $self->cache_set(NoUpdate => 30, NoUpdateUseMtime => 1);
+    warn(sprintf("Current time: %d %s\n", time(), scalar(localtime())));
+    my $request = HTTP::Request->new("GET", $self->{feed_urls}->{vehicle_positions});
+    my $response = $self->{ua}->request($request);
+}
+
+sub pull {
+    my ($self) = @_;
+
+    my @feed_types = @{$self->{feed_types}};
+
+    my $make_hash_by_feed_type = sub {
+	my ($sub) = @_;
+	return map { ($_ => &$sub()) } @feed_types;
+    };
+    my %req = $make_hash_by_feed_type->(sub { HTTP::Request->new("GET", $self->{feed_urls}->{$_}) });
+    $self->cache_set(NoUpdate => 30, NoUpdateUseMtime => 1);
+    my %res = $make_hash_by_feed_type->(sub { $self->{ua}->request($req{$_}) });
+    my @failures = grep { !$_->is_success() } values %res;
+    if (scalar(@failures)) {
+	warn(sprintf("FAIL: %s => %s\n", $_->request()->uri(), $_->status_line())) foreach @failures;
+	exit(1);
+    }
+
+    my %pb = $make_hash_by_feed_type->(sub { $res{$_}->content() });
+    my %lm = $make_hash_by_feed_type->(sub { $res{$_}->last_modified() });
+    my %ts = $make_hash_by_feed_type->(sub { strftime("%Y/%m/%d/%H%M%SZ", gmtime($lm{$_})) });
+
+    warn("Decoding ...\n");
+    my %message_object = $make_hash_by_feed_type->(sub { TransitRealtime::FeedMessage->decode($pb{$_}) });
+
+    my %filename;
+    my %latest;
+
+    # write .pb files
+
+    $filename{pb}   = { $make_hash_by_feed_type->(sub { sprintf("%s/%s/pb/%s.pb",     $self->{my_cache}, $_, $ts{$_}) }) };
+    $latest{pb}     = { $make_hash_by_feed_type->(sub { sprintf("%s/%s/pb/latest.pb", $self->{my_cache}, $_         ) }) };
+
+    foreach my $feed_type (@feed_types) {
+	_file_put_contents($filename{pb}{$feed_type}, $pb{$feed_type});
+    }
+
+    # convert to other formats and write them
+
+    my @output_formats = @{$self->{output_formats}};
+    foreach my $output_format (@output_formats) {
+	my $converter = $self->{output_converters}->{$output_format};
+	$filename{$output_format} = { $make_hash_by_feed_type->(sub { sprintf("%s/%s/%s/%s.%s",     $self->{my_cache}, $_, $output_format, $ts{$_}, $converter->{ext}) }) };
+	$latest{$output_format}   = { $make_hash_by_feed_type->(sub { sprintf("%s/%s/%s/latest.%s", $self->{my_cache}, $_, $output_format,          $converter->{ext}) }) };
+    }
+
+    my $json = JSON->new()->allow_nonref()->pretty()->convert_blessed();
+
+    my $output_formats = _join_and(@output_formats);
+    warn("Encoding $output_formats ...\n");
+    my %encoded;
+    $encoded{json}   = { $make_hash_by_feed_type->(sub { $json->encode($message_object{$_}) }) };
+    $encoded{yaml}   = { $make_hash_by_feed_type->(sub { YAML::Syck::Dump($message_object{$_}) }) };
+    $encoded{dumper} = { $make_hash_by_feed_type->(sub { Data::Dumper::Dumper($message_object{$_}) }) };
+    foreach my $feed_type (@feed_types) {
+	foreach my $output_format (@output_formats) {
+	    _file_put_contents($filename{$output_format}{$feed_type}, $encoded{$output_format}{$feed_type});
 	}
+    }
 
-	HTTP::Cache::Transparent::init({ BasePath => $self->{cache_dir},
-					 MaxAge => CACHE_KEEP_SECONDS / 3600,
-					 NoUpdate => CACHE_KEEP_SECONDS,
-					 ApproveContent => sub {
-						 return $_[0]->is_success();
-					 },
-				       });
-	Google::ProtocolBuffers->parsefile($self->{proto_file});
-}
+    # create symlinks
 
-sub get_vehicle_positions_raw_pb_data {
-	my ($self) = @_;
-	if ($self->{vp_pb_data} &&
-	    $self->{vp_pb_data_time} >= (time() - CACHE_KEEP_SECONDS)) {
-		return $self->{vp_pb_data};
+    warn("Creating symbolic links ...\n");
+    foreach my $output_format (@output_formats, "pb") {
+	foreach my $feed_type (@feed_types) {
+	    my ($source, $dest) = ($filename{$output_format}{$feed_type}, $latest{$output_format}{$feed_type});
+	    _symlink($source, $dest);
 	}
-	my $vp_pb_data = $self->{vp_pb_data} = get($self->{vp_url});
-	die("failure") if !defined $vp_pb_data;
-	return $vp_pb_data;
+    }
+
+    # /home/dembry/.my-gtfs-realtime-data/cache/FEED_TYPE/OUTPUT_FORMAT/YYYY/MM/DD/HHMMSSZ.EXT
+
+    # warn("Wildcards:\n");
+    # foreach my $output_format (@output_formats, "pb") {
+    # 	my $converter = $self->{output_converters}->{$output_format};
+    # 	warn(sprintf("  %s/%s/%s/%s.%s\n", $self->{my_cache}, "*",        $output_format, "*/*/*/*", $converter->{ext}));
+    # }
+    # foreach my $feed_type (@feed_types) {
+    # 	warn(sprintf("  %s/%s/%s/%s.%s\n", $self->{my_cache}, $feed_type, "*",            "*/*/*/*", "*"));
+    # }
 }
 
-sub get_vehicle_positions_data {
-	my ($self) = @_;
-	my $pb = $self->get_vehicle_positions_raw_pb_data();
-	my $vp = $self->{vp_data} = TransitRealtime::FeedMessage->decode($pb);
-	return $vp;
-}
-
-sub get_trip_updates_raw_pb_data {
-	my ($self) = @_;
-	if ($self->{tu_pb_data} &&
-	    $self->{tu_pb_data_time} >= (time() - CACHE_KEEP_SECONDS)) {
-		return $self->{tu_pb_data};
+sub _symlink {
+    my ($source, $dest) = @_;
+    if (!-e $source) {
+	warn("  not creating link $dest: $source does not exist\n");
+	return;
+    }
+    if (!symlink($source, $dest)) {
+	if ($!{EEXIST}) {
+	    if (!unlink($dest)) {
+		warn("  cannot unlink $dest: $!\n");
+		return;
+	    }
+	    if (!symlink($source, $dest)) {
+		warn("  cannot symlink $source as $dest: $!\n");
+		return;
+	    }
 	}
-	my $tu_pb_data = $self->{tu_pb_data} = get($self->{tu_url});
-	die("failure") if !defined $tu_pb_data;
-	return $tu_pb_data;
+    }
+    my $rel_source = abs2rel($source, dirname($dest));
+    warn(sprintf("  Created symlink to %-27s: %s\n", $rel_source, $dest)); # assuming max 8 chars. extension
 }
 
-sub get_trip_updates_data {
-	my ($self) = @_;
-	my $pb = $self->get_trip_updates_raw_pb_data();
-	my $tu = $self->{tu_data} = TransitRealtime::FeedMessage->decode($pb);
-
-	foreach my $entity (@{$tu->{entity}}) {
-		my $trip_update = eval { $entity->{trip_update} };
-		if (!$trip_update) {
-			$entity->{x} = 1;
-			next;
-		}
-		my $trip_id = eval { $trip_update->{trip}->{trip_id} };
-		if (!defined $trip_id) {
-			$entity->{x} = 2;
-			next;
-		}
-		my $trip = $self->{gtfs}->get_trip_by_trip_id($trip_id);
-		if (!$trip) {
-			$entity->{x} = 3;
-			next;
-		}
-		my $trip_headsign = eval { $trip->{trip_headsign} };
-		if (!defined $trip_headsign) {
-			$entity->{x} = 4;
-			next;
-		}
-		$trip_update->{trip}->{trip_headsign} = $trip_headsign;
-	}
-	
-	return $tu;
+BEGIN {
+    my $h = select(STDERR);
+    $| = 1;
+    select($h);
 }
 
-sub get_all_data {
-	my ($self) = @_;
-	my $vp = $self->get_vehicle_positions_data();
-	my $tu = $self->get_trip_updates_data();
-	return {
-		vehicle_positions => $vp,
-		trip_updates      => $tu
-	       };
+sub _file_put_contents {
+    my ($filename, $data, $mode) = @_;
+    make_path(dirname($filename));
+    open(my $fh, ">", $filename) or do {
+	warn("  cannot write $filename: $!\n");
+	return;
+    };
+    printf STDERR ("  Writing %s (%d bytes) ... ", $filename, length($data));
+    if (defined $mode && $mode eq "b") {
+	binmode($fh);
+    }
+    print $fh $data;
+    print STDERR ("Done.\n");
 }
 
-sub kml_doc {
-	my ($self) = @_;
-
-	$self->get_vehicle_positions_data();
-	my $vehicle_positions = $self->{vp_data};
-
-	my $gtfs = $self->{gtfs};
-	
-	my $parser = XML::LibXML->new();
-	$parser->set_options({ no_blanks => 1 });
-	my $docstr = xml_trim(<<"END");
-<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2">
-</kml>
-END
-	my $doc = $parser->parse_string($docstr);
-	my $root = $doc->documentElement();
-	my $Document = $doc->createElement("Document");
-	$root->appendChild($Document);
-
-	my $TIME_FORMAT = "%Y-%m-%d/%H:%M:%S%z";
-	my $TIME_FORMAT_SHORT = "%m/%d %H:%M:%S";
-
-	my $header = $vehicle_positions->{header};
-	my $version = $header->{gtfs_realtime_version};
-	my $h_timestamp = $header->{timestamp};
-	my $h_timestamp_fmt   = strftime($TIME_FORMAT,       localtime($h_timestamp));
-	my $h_timestamp_short = strftime($TIME_FORMAT_SHORT, localtime($h_timestamp));
-
-	$Document->appendTextChild("name", "Vehicle Positions ${h_timestamp_short}");
-	my $description = <<"END";
-URL: ${vp_url}
-Timestamp: ${h_timestamp_fmt}
-GTFS Realtime version: ${version}
-END
-	appendCDATA($Document, "description", $description);
-
-	my $Folder = $Document->addNewChild(undef, "Folder");
-	$Folder->appendTextChild("open", 0);
-	$Folder->appendTextChild("visibility", 0);
-	$Folder->appendTextChild("name", "Where The TARC Buses Are");
-	$Folder->appendTextChild("description", "Where The TARC Buses Are");
-
-	foreach my $entity (@{$vehicle_positions->{entity}}) {
-		my $id = eval { $entity->{id}; };
-
-		my $vehicle               = eval { $entity->{vehicle}; };
-		if (!$vehicle) {
-			warn(sprintf("No vehicle data (id = $id).\n"));
-		}
-
-		my $lat                   = eval { $vehicle->{position}->{latitude}; };
-		my $lon                   = eval { $vehicle->{position}->{longitude}; };
-		my $current_stop_sequence = eval { $vehicle->{current_stop_sequence}; };
-		my $current_status        = eval { $vehicle->{current_status}; };
-		my $congestion_level      = eval { $vehicle->{congestion_level}; };
-
-		my $timestamp             = eval { $vehicle->{timestamp} };
-		my $vehicle_label         = eval { $vehicle->{vehicle}->{label}; };
-
-		my $trip_id               = eval { $vehicle->{trip}->{trip_id}; };
-		my $route_id              = eval { $vehicle->{trip}->{route_id}; };
-		my $start_time            = eval { $vehicle->{trip}->{start_time}; };
-		my $start_date            = eval { $vehicle->{trip}->{start_date}; };
-		my $schedule_relationship = eval { $vehicle->{trip}->{schedule_relationship}; };
-
-		my $age;
-		$age = $h_timestamp - $timestamp if defined $h_timestamp && defined $timestamp;
-
-		next if defined $age && $age > 3600; # really old data :-(
-
-		my $trip = $gtfs->get_trip_by_trip_id($trip_id);
-		if (!$trip) {
-			warn(sprintf("Bogus trip ID: %s (vehicle %s at %f %f)\n",
-				     $trip_id, $id, $lat, $lon));
-			warn(Dump($entity));
-		}
-
-		my $trip_route_id = ($trip && $trip->{route_id})      // "??";
-		my $trip_headsign = ($trip && $trip->{trip_headsign}) // "????????";
-
-		my $timestamp_fmt   = eval { strftime($TIME_FORMAT,       localtime($timestamp)) };
-		my $timestamp_short = eval { strftime($TIME_FORMAT_SHORT, localtime($timestamp)) };
-
-		my $Placemark = $Folder->addNewChild(undef, "Placemark");
-		$Placemark->appendTextChild("name", "$trip_route_id $trip_headsign");
-		$Placemark->appendTextChild("title", "$trip_route_id $trip_headsign");
-		$Placemark->appendTextChild("visibility", 0);
-
-		my %red = qw(94 1 95 1);
-		my $red = $red{$trip_route_id};
-
-		my $express = (($trip_headsign =~ m{\bexpress\b}i) ? 1 : 0);
-
-		my $etran = 0;
-		if ($id =~ m{^\d+$} && $id >= 1350 && $id <= 1370) {
-			$etran = 1;
-		} elsif ($vehicle_label =~m{^\d+$} && $vehicle_label >= 1350 && $vehicle_label <= 1370) {
-			$etran = 1;
-		}
-
-		my $description = "";
-		$description .= sprintf("<p>Vehicle: %s</p>\n", $vehicle_label) if defined $vehicle_label;
-		$description .= sprintf("<p>Trip ID: %s</p>\n", $trip_id);
-		$description .= sprintf("<p>(As of %d seconds ago)</p>\n", $age) if defined $age;
-		$description .= sprintf("<p><b>THIS BUS IS FANCY</b></p>\n") if $etran;
-
-		appendCDATA($Placemark, "description", $description);
-
-		my $Point = $Placemark->addNewChild(undef, "Point");
-		$Point->appendTextChild("coordinates", sprintf("%f,%f", $lon, $lat));
-
-		my $icon_style;
-		if ($etran) {
-			$icon_style = $express ? "blue-on-white" : "white-on-blue";
-		} else {
-			$icon_style = $express ? "black-on-yellow" : $red ? "white-on-red" : "white-on-black";
-		}
-		my $icon_style_kml = kml_icon_style($trip_route_id, icon_style => $icon_style);
-		warn($icon_style_kml);
-		my $fragment = $parser->parse_balanced_chunk($icon_style_kml);
-		$Placemark->appendChild($fragment);
-	}
-	$doc->toString(1);
-
-	return $doc;
-}
-
-sub kml_string {
-	my ($self) = @_;
-	my $kml_doc = $self->kml_doc();
-	return $kml_doc->toString();
-}
-
-sub kml_icon_style {
-	my ($route, %args) = @_;
-	my $route_number = $route // "00";
-	my $icon_style   = $args{icon_style} // "white-on-black";
-	my $xml = xml_trim(<<"END");
-<Style>
-  <IconStyle>
-    <Icon>
-      <href>http://webonastick.com/route-icons/target/route-icons/png/${icon_style}/${route_number}.png</href>
-    </Icon>
-    <hotSpot x="0.5" y="0.5" xunits="fraction" yunits="fraction" />
-  </IconStyle>
-</Style>
-END
-	return $xml;
-}
-
-sub appendCDATA {
-	my ($parent, $name, $text) = @_;
-	my $doc = $parent->ownerDocument();
-	my $cdata = $doc->createCDATASection($text);
-	my $element = $doc->createElement($name);
-	$element->appendChild($cdata);
-	$parent->appendChild($element);
-}
-
-sub xml_trim {
-	my ($s) = @_;
-	$s =~ s{^\s*<}{<}gsm;
-	$s =~ s{>\s*$}{>}gsm;
-	$s =~ s{>\s*<}{><}gsm;
-	return $s;
+sub _join_and {
+    my @items = @_;
+    if (scalar(@items) == 2) {
+	return join(" and ", @items);
+    } elsif (scalar(@items) > 2) {
+	my $last = pop(@items);
+	return join(", ", @items) . ", and " . $last;
+    } else {
+	return join(" ", @items);
+    }
 }
 
 1;
