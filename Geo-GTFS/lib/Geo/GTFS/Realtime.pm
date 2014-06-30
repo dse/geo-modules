@@ -3,6 +3,7 @@ use warnings;
 use strict;
 
 use lib "$ENV{HOME}/git/HTTP-Cache-Transparent/lib";
+# my development version adds a special feature.
 
 use LWP::Simple;
 use HTTP::Cache::Transparent;
@@ -52,7 +53,7 @@ sub cache_set {
       { BasePath => "$ENV{HOME}/.http-cache-transparent",
 	Verbose => 1,
 	NoUpdate => 30,
-	NoUpdateUseMtime => 1 };
+	NoUpdateImpatient => 1 };
     %$cache_options = (%$cache_options, %args);
     HTTP::Cache::Transparent::init($cache_options);
 }
@@ -102,7 +103,7 @@ sub init_converters {
 
 sub pull_protocol {
     my ($self) = @_;
-    $self->cache_set(NoUpdate => 86400, NoUpdateUseMtime => 0);
+    $self->cache_set(NoUpdate => 86400, NoUpdateImpatient => 0);
     my $request = HTTP::Request->new("GET", $self->{gtfs_realtime_proto});
     my $response = $self->{ua}->request($request);
     if (!$response->is_success()) {
@@ -121,7 +122,7 @@ sub pull_protocol {
 
 sub test {
     my ($self) = @_;
-    $self->cache_set(NoUpdate => 30, NoUpdateUseMtime => 1);
+    $self->cache_set(NoUpdate => 30, NoUpdateImpatient => 1);
     warn(sprintf("Current time: %d %s\n", time(), scalar(localtime())));
     my $request = HTTP::Request->new("GET", $self->{feed_urls}->{vehicle_positions});
     my $response = $self->{ua}->request($request);
@@ -137,7 +138,7 @@ sub pull {
 	return map { ($_ => &$sub()) } @feed_types;
     };
     my %req = $make_hash_by_feed_type->(sub { HTTP::Request->new("GET", $self->{feed_urls}->{$_}) });
-    $self->cache_set(NoUpdate => 30, NoUpdateUseMtime => 1);
+    $self->cache_set(NoUpdate => 30, NoUpdateImpatient => 1);
     my %res = $make_hash_by_feed_type->(sub { $self->{ua}->request($req{$_}) });
     my @failures = grep { !$_->is_success() } values %res;
     if (scalar(@failures)) {
