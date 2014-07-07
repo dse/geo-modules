@@ -3,7 +3,7 @@ use warnings;
 use strict;
 
 use lib "$ENV{HOME}/git/HTTP-Cache-Transparent/lib";
-# my development version adds a special feature.
+# my fork adds a special feature called NoUpdateImpatient.
 
 use LWP::Simple;
 use HTTP::Cache::Transparent;
