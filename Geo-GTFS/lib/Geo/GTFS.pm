@@ -1011,18 +1011,6 @@ END
 	return $route_id;
 }
 
-sub get_stop_time {
-	my ($self, $trip_id, $stop_id) = @_;
-	my $sql = <<"END";
-		select	routes.*
-		from	stop_times
-		join	routes on 
-		where	trip_id = ? and stop_id = ?
-END
-	my ($record) = $self->selectall($sql, {}, $trip_id, $stop_id);
-	return $record;
-}
-
 sub die_perhaps_out_of_date {
 	my ($self) = @_;
 	die("Have you updated your GTFS data?\n".
