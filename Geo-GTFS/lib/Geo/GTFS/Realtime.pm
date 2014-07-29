@@ -417,7 +417,7 @@ sub list_trip_updates {
 		"D/A",
 		"Stop",
 		"Timestmp",
-		"Del");
+		"Dly");
 
     $t->setCols(@head);
     $t2->head(@head);
