@@ -5,8 +5,47 @@ use strict;
 use FindBin;
 use lib "$FindBin::Bin/../lib";
 
+use lib "$ENV{HOME}/git/geo-modules/Geo-GTFS/lib";
+use lib "$ENV{HOME}/git/perl-app-thingy/lib";
+
+my $s = Geo::GTFS::Realtime::Shell->new();
+$s->run(@ARGV);
+
+package Geo::GTFS::Realtime::Shell;
+use warnings;
+use strict;
+
+use base "App::Thingy";
+
 use Geo::GTFS::Realtime;
 
-my $rt = Geo::GTFS::Realtime->new();
-$rt->pull();
-
+sub __init {
+    my ($self) = @_;
+}
+sub rt {
+    my ($self) = @_;
+    return $self->{rt} //= Geo::GTFS::Realtime->new();
+}
+sub cmd__show_trip_updates {
+    my ($self, @args) = @_;
+    $self->rt()->list_trip_updates();
+}
+sub cmd__show {
+    goto &cmd__show_trip_updates;
+}
+sub cmd_default {
+    my ($self) = @_;
+    $self->cmd__show_trip_updates();
+}
+sub cmd__show_trip {
+    my ($self, $trip_id) = @_;
+    $self->rt()->show_trip($trip_id);
+}
+sub cmd__list_dates {
+    my ($self) = @_;
+    $self->rt()->output_list_of_dates();
+}
+sub cmd__list_times {
+    my ($self) = @_;
+    $self->rt()->output_list_of_times();
+}
