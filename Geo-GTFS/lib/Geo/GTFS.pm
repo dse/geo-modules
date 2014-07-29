@@ -1018,6 +1018,17 @@ sub die_perhaps_out_of_date {
 	    "\tgtfs update $self->{gtfs_provider}\n\n");
 }
 
+sub get_stops_by_trip_id {
+    my ($self, $trip_id) = @_;
+    my $sql = <<"END";
+        select stop_times.*, stops.*
+        from stop_times join stops on stop_times.stop_id = stops.stop_id
+        where trip_id = ?
+	order by stop_sequence asc
+END
+    return $self->selectall($sql, {}, $trip_id);
+}
+
 =head1 SEE ALSO
 
 =over 4
