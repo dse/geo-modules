@@ -1,10 +1,12 @@
-package Geo::GTFS::Realtime;
+package Geo::GTFS::Realtime;	# -*- cperl -*-
 use warnings;
 use strict;
 
 use lib "$ENV{HOME}/git/HTTP-Cache-Transparent/lib";
 # my fork adds a special feature called NoUpdateImpatient.
 
+# use Carp::Always;
+use Geo::GTFS;
 use LWP::Simple;
 use HTTP::Cache::Transparent;
 use Google::ProtocolBuffers;
@@ -17,6 +19,7 @@ use Data::Dumper;
 use Errno qw(EEXIST);
 use File::Spec::Functions qw(abs2rel);
 use Time::Local qw(timegm);
+use open IO => ":locale";
 
 BEGIN {
     # in osx you may have to run: cpan Crypt::SSLeay and do other
@@ -41,69 +44,124 @@ END
 }
 
 sub new {
-    my ($class) = @_;
+    my ($class, @args) = @_;
     my $self = bless({}, $class);
-    $self->init() if $self->can('init');
+    $self->init(@args) if $self->can('init');
+    $self->{gtfs} = Geo::GTFS->new($self->{gtfs_name});
     return $self;
 }
 
-sub cache_set {
+sub set_cache_options {
     my ($self, %args) = @_;
-    my $cache_options = $self->{cache_options} //=
-      { BasePath => "$ENV{HOME}/.http-cache-transparent",
-	Verbose => 1,
-	NoUpdate => 30,
-	NoUpdateImpatient => 1 };
+    my $cache_options = $self->{cache_options} //= { BasePath => "$ENV{HOME}/.http-cache-transparent",
+						     Verbose => 0,
+						     NoUpdate => 30,
+						     NoUpdateImpatient => 1 };
     %$cache_options = (%$cache_options, %args);
     HTTP::Cache::Transparent::init($cache_options);
 }
 
-sub init {
+sub init_transit_agency_specific_data {
     my ($self) = @_;
+    $self->{gtfs_name} = "ridetarc.org";
+    $self->{feed_urls}  = { qw(alerts             http://googletransit.ridetarc.org/realtime/alerts/Alerts.pb
+			       realtime_feed      http://googletransit.ridetarc.org/realtime/gtfs-realtime/TrapezeRealTimeFeed.pb
+			       trip_updates       http://googletransit.ridetarc.org/realtime/trip_update/TripUpdates.pb
+			       vehicle_positions  http://googletransit.ridetarc.org/realtime/vehicle/VehiclePositions.pb) };
 
-    $self->cache_set();
+    my $symbol_1 = ".";
+    my $symbol_2 = ":";
+    my $symbol_3 = "\N{DAGGER}";
+    my $symbol_4 = "\N{DAGGER}";
+
+    $self->{vehicle_notes} = [ { from => 1350, to => 1370, legend => $symbol_2, note => "FANCY BRT BUS WITH WIFI"          },
+			       { from => 901,  to => 954,  legend => $symbol_1, note => "GET YOUR LAST RIDES ON THE 900'S" },
+			       { from => 960,  to => 979,  legend => $symbol_1, note => "GET YOUR LAST RIDES ON THE 900'S" },
+			       { from => 983,  to => 999,  legend => $symbol_1, note => "GET YOUR LAST RIDES ON THE 900'S" },
+			       { from => 2001, to => 2012 },
+			       { from => 2050, to => 2057 },
+			       { from => 2101, to => 2111 },
+			       { from => 2250, to => 2266 },
+			       { from => 1110, to => 1121 },
+			       { from => 2301, to => 2320 },
+			       { from => 2401, to => 2405 },
+			       { from => 2501, to => 2516 },
+			       { from => 2701, to => 2704 },
+			       { from => 2801, to => 2806 },
+			       { from => 2901, to => 2903 },
+			       { from => 2910, to => 2926 },
+			       { from => 1001, to => 1009 },
+			       { from => 1301, to => 1316 },
+			       { from => 1320, to => 1330 },
+			       { legend => $symbol_4, note => "UNEXPECTED FLEET NUMBER" }];
+}
+
+sub init_geonames_account_specific_data {
+    my ($self) = @_;
+    $self->{geonames} = { username => "dsembry",
+			  password => "geo2014names",
+			  email => "dse\@webonastick.com" };
+}
+
+sub init {
+    my ($self, %args) = @_;
+
+    $self->set_cache_options();
     $self->{ua} = LWP::UserAgent->new();
 
-    $self->{gtfs_realtime_proto}   = "https://developers.google.com/transit/gtfs-realtime/gtfs-realtime.proto";
-    $self->pull_protocol();
-
-    $self->{my_cache}              = "$ENV{HOME}/.my-gtfs-realtime-data/cache";
-    make_path($self->{my_cache});
+    $self->{gtfs_realtime_proto} = "https://developers.google.com/transit/gtfs-realtime/gtfs-realtime.proto";
+    $self->{my_cache} = "$ENV{HOME}/.my-gtfs-realtime-data/cache";
 
     $self->{feed_types} = [ qw(alerts
 			       realtime_feed
 			       trip_updates
 			       vehicle_positions) ];
-    $self->{feed_urls}  = { qw(alerts             http://googletransit.ridetarc.org/realtime/alerts/Alerts.pb
-			       realtime_feed      http://googletransit.ridetarc.org/realtime/gtfs-realtime/TrapezeRealTimeFeed.pb
-			       trip_updates       http://googletransit.ridetarc.org/realtime/trip_update/TripUpdates.pb
-			       vehicle_positions  http://googletransit.ridetarc.org/realtime/vehicle/VehiclePositions.pb) };
-    $self->init_converters();
+
+    $self->init_transit_agency_specific_data();
+    $self->init_geonames_account_specific_data();
+
+    make_path($self->{my_cache});
+    $self->pull_protocol();
+
+    while (my ($k, $v) = each(%args)) {
+	$self->{$k} = $v;
+    }
 }
 
-sub init_converters {
-    my ($self) = @_;
-    my $json = JSON->new()->allow_nonref()->pretty()->convert_blessed();
-    $self->{output_formats} = [ qw(json yaml dumper) ]; 
-    $self->{output_converters} = {
-	"json" => { 
-	    # "code" => sub { ... },
-	    "ext"  => "json"
-	},
-	"yaml" => {
-	    # "code" => sub { ... },
-	    "ext"  => "yaml"
-	},
-	"dumper" => {
-	    # "code" => sub { ... },
-	    "ext"  => "dumper"
-	},
-    };
+###############################################################################
+
+sub get_vehicle_note {
+    my ($self, $vehicle) = @_;
+    foreach my $note (@{$self->{vehicle_notes}}) {
+	if (defined $note->{from} && defined $note->{to}) {
+	    if ($vehicle >= $note->{from} && $vehicle <= $note->{to}) {
+		my %note = %$note;
+		delete $note{from};
+		delete $note{to};
+		if (scalar(keys(%note))) {
+		    return \%note;
+		} else {
+		    return undef;
+		}
+	    }
+	} else {
+	    return $note;
+	}
+    }
 }
+
+=head2 pull_protocol
+
+    $gtfsrt->pull_protocol();
+
+This method is called when a Geo::GTFS::Realtime object is created, so
+you probably don't need to call this method yourself.
+
+=cut
 
 sub pull_protocol {
     my ($self) = @_;
-    $self->cache_set(NoUpdate => 86400, NoUpdateImpatient => 0);
+    $self->set_cache_options(NoUpdate => 86400, NoUpdateImpatient => 0);
     my $request = HTTP::Request->new("GET", $self->{gtfs_realtime_proto});
     my $response = $self->{ua}->request($request);
     if (!$response->is_success()) {
@@ -122,191 +180,250 @@ sub pull_protocol {
 
 sub test {
     my ($self) = @_;
-    $self->cache_set(NoUpdate => 30, NoUpdateImpatient => 1);
-    warn(sprintf("Current time: %d %s\n", time(), scalar(localtime())));
+    $self->set_cache_options(NoUpdate => 30, NoUpdateImpatient => 1);
+    if ($self->{verbose}) {
+	warn(sprintf("Current time: %d %s\n", time(), scalar(localtime())));
+    }
     my $request = HTTP::Request->new("GET", $self->{feed_urls}->{vehicle_positions});
     my $response = $self->{ua}->request($request);
 }
 
-sub pull {
+sub json_A {
     my ($self) = @_;
-
-    my @feed_types = @{$self->{feed_types}};
-
-    my $make_hash_by_feed_type = sub {
-	my ($sub) = @_;
-	return map { ($_ => &$sub()) } @feed_types;
-    };
-    my %req = $make_hash_by_feed_type->(sub { HTTP::Request->new("GET", $self->{feed_urls}->{$_}) });
-    $self->cache_set(NoUpdate => 30, NoUpdateImpatient => 1);
-    my %res = $make_hash_by_feed_type->(sub { $self->{ua}->request($req{$_}) });
-    my @failures = grep { !$_->is_success() } values %res;
-    if (scalar(@failures)) {
-	warn(sprintf("FAIL: %s => %s\n", $_->request()->uri(), $_->status_line())) foreach @failures;
-	exit(1);
-    }
-
-    my %pb = $make_hash_by_feed_type->(sub { $res{$_}->content() });
-    my %lm = $make_hash_by_feed_type->(sub { $res{$_}->last_modified() });
-    my %ts = $make_hash_by_feed_type->(sub { strftime("%Y/%m/%d/%H%M%SZ", gmtime($lm{$_})) });
-
-    warn("Decoding ...\n");
-    my %message_object = $make_hash_by_feed_type->(sub { TransitRealtime::FeedMessage->decode($pb{$_}) });
-
-    my %filename;
-    my %latest;
-
-    # write .pb files
-
-    $filename{pb}   = { $make_hash_by_feed_type->(sub { sprintf("%s/%s/pb/%s.pb",     $self->{my_cache}, $_, $ts{$_}) }) };
-    $latest{pb}     = { $make_hash_by_feed_type->(sub { sprintf("%s/%s/pb/latest.pb", $self->{my_cache}, $_         ) }) };
-
-    foreach my $feed_type (@feed_types) {
-	_file_put_contents($filename{pb}{$feed_type}, $pb{$feed_type}, "b");
-    }
-
-    # convert to other formats and write them
-
-    my @output_formats = @{$self->{output_formats}};
-    foreach my $output_format (@output_formats) {
-	my $converter = $self->{output_converters}->{$output_format};
-	$filename{$output_format} = { $make_hash_by_feed_type->(sub { sprintf("%s/%s/%s/%s.%s",     $self->{my_cache}, $_, $output_format, $ts{$_}, $converter->{ext}) }) };
-	$latest{$output_format}   = { $make_hash_by_feed_type->(sub { sprintf("%s/%s/%s/latest.%s", $self->{my_cache}, $_, $output_format,          $converter->{ext}) }) };
-    }
-
-    my $json = JSON->new()->allow_nonref()->pretty()->convert_blessed();
-
-    my $output_formats = _join_and(@output_formats);
-    warn("Encoding $output_formats ...\n");
-    my %encoded;
-    $encoded{json}   = { $make_hash_by_feed_type->(sub { $json->encode($message_object{$_}) }) };
-    $encoded{yaml}   = { $make_hash_by_feed_type->(sub { YAML::Syck::Dump($message_object{$_}) }) };
-    $encoded{dumper} = { $make_hash_by_feed_type->(sub { Data::Dumper::Dumper($message_object{$_}) }) };
-    foreach my $feed_type (@feed_types) {
-	foreach my $output_format (@output_formats) {
-	    _file_put_contents($filename{$output_format}{$feed_type}, $encoded{$output_format}{$feed_type});
-	}
-    }
-
-    # create symlinks
-
-    warn("Creating symbolic links ...\n");
-    foreach my $output_format (@output_formats, "pb") {
-	foreach my $feed_type (@feed_types) {
-	    my ($source, $dest) = ($filename{$output_format}{$feed_type}, $latest{$output_format}{$feed_type});
-	    _symlink($source, $dest);
-	}
-    }
-
-    # /home/dembry/.my-gtfs-realtime-data/cache/FEED_TYPE/OUTPUT_FORMAT/YYYY/MM/DD/HHMMSSZ.EXT
-
-    # warn("Wildcards:\n");
-    # foreach my $output_format (@output_formats, "pb") {
-    # 	my $converter = $self->{output_converters}->{$output_format};
-    # 	warn(sprintf("  %s/%s/%s/%s.%s\n", $self->{my_cache}, "*",        $output_format, "*/*/*/*", $converter->{ext}));
-    # }
-    # foreach my $feed_type (@feed_types) {
-    # 	warn(sprintf("  %s/%s/%s/%s.%s\n", $self->{my_cache}, $feed_type, "*",            "*/*/*/*", "*"));
-    # }
+    return $self->{json_A} //= JSON->new()->allow_nonref()->pretty()->convert_blessed();
 }
 
-sub get_all_versions {
+sub fetch_latest_data {
     my ($self) = @_;
-    return if $self->{versions};
+    $self->{latest_data} = {};
+    $self->set_cache_options(NoUpdate => 30, NoUpdateImpatient => 1);
+    my $json = $self->json_A();
+    foreach my $feed_type (@{$self->{feed_types}}) {
+	my $feed_url = $self->{feed_urls}->{$feed_type};
+	my $req = HTTP::Request->new("GET", $feed_url);
+	my $res = $self->{ua}->request($req);
+	if (!$res->is_success()) {
+	    die(sprintf("FAIL: %s => %s\n", $res->request()->uri(), $res->status_line()));
+	}
+	my $pb = $res->content();
+	my $last_modified = $res->last_modified();
+	if (!defined $last_modified) {
+	    print($res->headers->as_string);
+	    exit(1);
+	}
+	my $gm_timestamp = strftime("%Y/%m/%d/%H%M%SZ", gmtime($last_modified));
+	my $pb_object = TransitRealtime::FeedMessage->decode($pb);
+	my $pb_filename   = sprintf("%s/%s/pb/%s.pb",         $self->{my_cache}, $feed_type, $gm_timestamp);
+	my $json_filename = sprintf("%s/%s/json/%s.json",     $self->{my_cache}, $feed_type, $gm_timestamp);
+	my $pb_latest     = sprintf("%s/%s/pb/latest.pb",     $self->{my_cache}, $feed_type);
+	my $json_latest   = sprintf("%s/%s/json/latest.json", $self->{my_cache}, $feed_type);
+	$self->_file_put_contents($pb_filename, $pb_filename, "b");
+	my $as_json = $json->encode($pb_object);
+	$self->_file_put_contents($json_filename, $as_json);
+	$self->_symlink($pb_filename, $pb_latest);
+	$self->_symlink($json_filename, $json_latest);
+	$self->{latest_data}->{$feed_type} = $pb_object;
+    }
+}
 
-    my $v = $self->{versions} = {};
+sub get_latest_data_fetched {
+    my ($self) = @_;
+    $self->{latest_data} = {};
+    my $json = $self->json_A();
+    foreach my $feed_type (@{$self->{feed_types}}) {
+	my $pb_latest = sprintf("%s/%s/pb/latest.pb", $self->{my_cache}, $feed_type);
+	my $pb = $self->_file_get_contents($pb_latest);
+	if (!$pb) {
+	    die("We've never fetched any $feed_type data.\n");
+	}
+	my $pb_object = TransitRealtime::FeedMessage->decode($pb);
+	$self->{latest_data}->{$feed_type} = $pb_object;
+    }
+}
 
+sub get_version_list {
+    my ($self) = @_;
     my $dir = $self->{my_cache};
-    my @pb = glob("$dir/*/pb/????/??/??/??????Z.pb");
-    my %time_t;
-    my %date;
-    foreach my $pb (@pb) {
-	my $rel = abs2rel($pb, $dir);
+    my @pb_filename = glob("$dir/*/pb/????/??/??/??????Z.pb");
+
+    my %feed_info_by_version;
+    my $process = sub {
+	my ($time_t, $date, $feed_type, $pb_filename) = @_;
+	my $rec = { time        => $time_t,
+		    date        => $date,
+		    feed_type   => $feed_type,
+		    pb_filename => $pb_filename };
+	$feed_info_by_version{$time_t}{$feed_type} = $rec;
+    };
+
+    foreach my $pb_filename (@pb_filename) {
+	my $rel = abs2rel($pb_filename, $dir);
 	if ($rel =~ m{(?:^|/)([^/]+)/pb/(\d+)/(\d+)/(\d+)/(\d\d)(\d\d)(\d\d)Z\.}) {
 	    my ($feed_type, $yyyy, $mm, $dd, $hh, $mi, $ss) = ($1, $2, $3, $4, $5, $6, $7);
 	    foreach ($yyyy, $mm, $dd, $hh, $mi, $ss) {
-		$_ =~ s{^0+}{};	# avoid octal parsing
-		$_ = $_ + 0;	# force to number
+		if (defined $_) {
+		    $_ =~ s{^0+}{};	  # avoid octal parsing
+		    $_ = "0" if $_ eq ""; # want "0" not ""
+		    $_ = $_ + 0;	  # force to number
+		}
 	    }
 	    my $time_t = timegm($ss, $mi, $hh, $dd, $mm - 1, $yyyy);
 	    my $date = strftime("%Y-%m-%d", localtime($time_t));
-	    my $feed_type_rec = {
-		time_t => $time_t,
-		date => $date,
-		pb => $pb,
-	    };
-	    my $rec = {
-		time_t => $time_t,
-		date => $date,
-	    };
-	    $v->{$feed_type}->{date}->{$date}->{$time_t} = $feed_type_rec;
-	    $v->{$feed_type}->{time_t}->{$time_t} = $feed_type_rec;
-	    $v->{date}->{$date}->{$time_t} = $rec;
-	    $v->{time_t}->{$time_t} = $rec;
+	    $process->($time_t, $date, $feed_type, $pb_filename);
 	}
     }
+
+    my %version_list;
+    my %date_list;
+
+    # postprocess
+    my @all_feed_types = sort { $a cmp $b } @{$self->{feed_types}};
+    my $all_feed_types = join(",", @all_feed_types);
+    foreach my $time_t (sort { $a <=> $b } keys(%feed_info_by_version)) {
+	my $gm_timestamp = strftime("%a %Y-%m-%d %H:%M:%S %Z", localtime($time_t));
+	my $date = strftime("%Y-%m-%d", localtime($time_t));
+	my @feed_types_for_this_time = sort { $a cmp $b } keys %{$feed_info_by_version{$time_t}};
+	my $feed_types_for_this_time = join(",", @feed_types_for_this_time);
+	if ($feed_types_for_this_time ne $all_feed_types) {
+	    if ($self->{verbose}) {
+		warn("WARNING: not all data available for $gm_timestamp.\n");
+	    }
+	} else {
+	    $version_list{$time_t} = 1;
+	    $date_list{$date} = 1;
+	}
+    }
+
+    $self->{version_list} = [ sort { $a <=> $b } keys(%version_list) ];
+    $self->{date_list}    = [ sort { $a cmp $b } keys(%date_list)    ];
 }
 
-sub list_dates {
+sub output_list_of_dates {
     my ($self) = @_;
-    $self->get_all_versions();
-
-    my @date = reverse sort keys %{$self->{versions}->{date}};
-    if (scalar(@date) > 20) {
-	splice(@date, 20);
+    $self->get_version_list();
+    my @date_list = reverse @{$self->{date_list}};
+    if (scalar(@date_list) > 20) {
+	splice(@date_list, 20);
     }
-    return @date;
+    foreach my $date (@date_list) {
+	printf("%s\n", $date);
+    }
 }
 
-sub list_versions_by_date {
+sub output_list_of_times {
+    my ($self) = @_;
+    $self->get_version_list();
+    my @time_list = reverse @{$self->{version_list}};
+    if (scalar(@time_list) > 20) {
+	splice(@time_list, 20);
+    }
+    print("Version Num.  Date/Time\n");
+    print("------------  ------------------------------------\n");
+    foreach my $time_t (@time_list) {
+	my $ts = strftime("%a %Y-%m-%d %H:%M:%S %Z", localtime($time_t));
+	printf("%12d  %s\n", $time_t, $ts);
+    }
+}
+
+sub output_list_of_versions_by_date {
     my ($self, $date) = @_;
-    $self->get_all_versions();
-
-    my @time_t = reverse sort { $a <=> $b } keys %{$self->{versions}->{date}->{$date}};
-    if (scalar(@time_t) > 20) {
-	splice(@time_t, 20);
-    }
-    printf("  %12d => %s\n", $_, scalar(localtime($_))) foreach @time_t;
-    return @time_t;
+    $self->get_version_list();
 }
+
+sub _special_cmp {
+    my ($stringA, $stringB) = @_;
+    if ($stringA =~ m{\d+}) {
+	my ($prefixA, $numberA, $suffixA) = ($`, $&, $');
+	if ($stringB =~ m{\d+}) {
+	    my ($prefixB, $numberB, $suffixB) = ($`, $&, $');
+	    if ($prefixA eq $prefixB) {
+		return ($numberA <=> $numberB) || _special_cmp($suffixA, $suffixB);
+	    }
+	}
+    }
+    return $stringA cmp $stringB;
+}
+
+use Term::Size;
+use vars qw($COLUMNS $ROWS);
+BEGIN {
+    ($COLUMNS, $ROWS) = Term::Size::chars *STDOUT{IO};
+}
+use Text::ASCIITable;
+use Text::FormatTable;
+# There are also:
+#   Text::Table
+#   Text::SimpleTable
+
+=head2 list_trip_updates
+
+=cut
 
 sub list_trip_updates {
-    my ($self, $version) = @_;
-    $self->get_all_versions();
+    my ($self) = @_;
 
-    my $vp_pb_filename = $self->{versions}->{vehicle_positions}->{time_t}->{$version}->{pb};
-    my $vp_pb_encoded = _file_get_contents($vp_pb_filename, "b");
-    my $vp_pb = TransitRealtime::FeedMessage->decode($vp_pb_encoded);
+    if (!$self->{latest_data}) {
+	$self->fetch_latest_data();
+    }
+
+    my $vp_pb = $self->{latest_data}->{vehicle_positions};
+    my $tu_pb = $self->{latest_data}->{trip_updates};
+
     my $vp_header_timestamp = $vp_pb->{header}->{timestamp};
-
-    my $tu_pb_filename = $self->{versions}->{trip_updates}->{time_t}->{$version}->{pb};
-    my $tu_pb_encoded = _file_get_contents($tu_pb_filename, "b");
-    my $tu_pb = TransitRealtime::FeedMessage->decode($tu_pb_encoded);
     my $tu_header_timestamp = $tu_pb->{header}->{timestamp};
 
     my $vp_header_time = strftime("%m/%d %H:%M:%S", localtime($vp_header_timestamp));
     my $tu_header_time = strftime("%m/%d %H:%M:%S", localtime($tu_header_timestamp));
 
     print("Trip updates      as of $tu_header_time\n");
-    print("Vehicle positions as of $tu_header_time\n");
+    print("Vehicle positions as of $vp_header_time\n");
 
     my %vehicle;
 
     foreach my $entity (@{$vp_pb->{entity}}) {
-	my $label     = eval { $entity->{vehicle}->{vehicle}->{label} } //
-	  eval { $entity->{id} };
-	my $timestamp = eval { $entity->{vehicle}->{timestamp} };
-	my $trip_id   = eval { $entity->{vehicle}->{trip}->{trip_id} };
+	my $rec = eval { $entity->{vehicle} };
+	next if !$rec;
+
+	my $label     = eval { $rec->{vehicle}->{label} } // eval { $entity->{id} };
 	next if !defined $label;
-	my $rec = {
-	    label => $label,
-	    ((defined $timestamp) ? (timestamp => $timestamp) : ()),
-	    ((defined $trip_id)   ? (trip_id   => $trip_id  ) : ()),
-	};
+
+	my $trip_id = eval { $rec->{trip}->{trip_id} };
+	$rec->{trip_id} = $trip_id if defined $trip_id;
+
 	$vehicle{$label} = $rec;
     }
 
-    foreach my $entity (@{$tu_pb->{entity}}) {
+    my @entity = @{$tu_pb->{entity}};
+
+    @entity = (map { $_->[0] }
+		 sort { _special_cmp($a->[1], $b->[1]) }
+		   map { [$_, eval { $_->{trip_update}->{trip}->{route_id} } // ""] }
+		     @entity);
+
+    my $t = Text::ASCIITable->new({
+	# headingText => "Trip Updates",
+	allowANSI   => 1,
+	utf8 => 0
+       });
+    my $t2 = Text::FormatTable->new("l|l|l|l|l|l|l|l|l|l|r");
+
+    my @head = ("Veh.",
+		"*",
+		"Location",
+		"Trip",
+		"Rt.",
+		"Headsign",
+		"Dep.Time",
+		"D/A",
+		"Stop",
+		"Timestmp",
+		"Del");
+
+    $t->setCols(@head);
+    $t2->head(@head);
+    $t2->rule("=");
+
+    foreach my $entity (@entity) {
 	my $tu       = eval { $entity->{trip_update} };
 	next if !defined $tu;
 
@@ -319,28 +436,109 @@ sub list_trip_updates {
 	my $start_date = eval { $tu->{trip}->{start_date} };
 	my $delay = eval { $tu->{stop_time_update}->[0]->{departure}->{delay} };
 	$delay /= 60 if defined $delay;
-	my $dep_arr_time = eval { $tu->{stop_time_update}->[0]->{departure}->{time} } // eval { $tu->{stop_time_update}->[0]->{arrival}->{time} };
-	my $dep_arr_time_fmt = defined $dep_arr_time && eval { strftime("%m/%d %H:%M:%S", localtime($dep_arr_time)) };
+
+	my $dep_time     = eval { $tu->{stop_time_update}->[0]->{departure}->{time} };
+	my $arr_time     = eval { $tu->{stop_time_update}->[0]->{arrival}->{time} };
+	my $dep_arr_time = $dep_time // $arr_time;
+	my $at_stop_id   = eval { $tu->{stop_time_update}->[0]->{stop_id} };
+
+	next if !defined $at_stop_id || $at_stop_id eq "UN";
+
+	my $dep_or_arr   = defined($dep_time) ? "DEP" : defined($arr_time) ? "ARR" : "---";
+	my $at_stop      = eval { $self->{gtfs}->get_stop_by_stop_id($at_stop_id) };
+	my $at_stop_name = eval { $at_stop->{stop_name} };
+
+	my $dep_arr_time_fmt = defined $dep_arr_time && eval { strftime("%H:%M:%S", localtime($dep_arr_time)) };
 
 	my $vehicle = $vehicle{$label};
 	my $timestamp = eval { $vehicle->{timestamp} };
-	my $timestamp_fmt = defined $timestamp && eval { strftime("%m/%d %H:%M:%S", localtime($timestamp)) };
-	
+	my $timestamp_fmt = defined $timestamp && eval { strftime("%H:%M:%S", localtime($timestamp)) };
+	my $vehicle_note = $self->get_vehicle_note($label);
+
 	next if !defined $timestamp;
 	next if $tu_header_timestamp - $timestamp >= 1800;
 
-	printf("    veh %-8s  trip_id %-8s  route %-8s  deptime %-14s  timestamp %-14s  delay %d\n",
-	       $label // "-",
-	       $trip_id // "-", 
-	       $route_id // "-",
-	       $dep_arr_time_fmt // "-",
-	       $timestamp_fmt // "-",
-	       floor(($delay // 0) + 0.5));
+	my $trip = $self->{gtfs}->get_trip_by_trip_id($trip_id);
+	my $headsign = $trip->{trip_headsign};
+
+	my %vehicle_notes;
+	if ($vehicle_note) {
+	    $vehicle_notes{$vehicle_note->{legend}} = $vehicle_note->{note};
+	}
+
+	my $lat = eval { $vehicle->{position}->{latitude} };
+	my $lng = eval { $vehicle->{position}->{longitude} };
+	my $location;
+
+	if (0) {
+	    my $gn_result = defined $lat && defined $lng && $self->reverse_geocode_via_geonames_nearest_intersection($lat, $lng);
+	    $location = $gn_result && sprintf("%s @ %s",
+					      $gn_result->{intersection}->{street1},
+					      $gn_result->{intersection}->{street2});
+	}
+	if (1) {
+	    $location = sprintf("%10.6f,%10.6f", $lat, $lng);
+	}
+
+	my @row = ($label,
+		   $vehicle_note && $vehicle_note->{legend},
+		   $location,
+		   $trip_id,
+		   $route_id,
+		   $headsign,
+		   $dep_arr_time_fmt,
+		   $dep_or_arr,
+		   $at_stop_name,
+		   $timestamp_fmt,
+		   floor(($delay // 0) + 0.5));
+
+	$t->addRow(@row);
+	$t2->row(@row);
+    }
+
+    if (0) {
+	my $UPPER_LEFT   = "\N{BOX DRAWINGS DOUBLE DOWN AND RIGHT}";
+	my $UPPER_RIGHT  = "\N{BOX DRAWINGS DOUBLE DOWN AND LEFT}";
+	my $LOWER_LEFT   = "\N{BOX DRAWINGS DOUBLE UP AND RIGHT}";
+	my $LOWER_RIGHT  = "\N{BOX DRAWINGS DOUBLE UP AND LEFT}";
+	my $UPPER        = "\N{BOX DRAWINGS DOUBLE HORIZONTAL}";
+	my $LOWER        = "\N{BOX DRAWINGS DOUBLE HORIZONTAL}";
+	my $UPPER_SEP    = "\N{BOX DRAWINGS DOWN SINGLE AND HORIZONTAL DOUBLE}";
+	my $LOWER_SEP    = "\N{BOX DRAWINGS UP SINGLE AND HORIZONTAL DOUBLE}";
+	my $LINE1_LEFT   = "\N{BOX DRAWINGS DOUBLE VERTICAL AND RIGHT}";
+	my $LINE1_RIGHT  = "\N{BOX DRAWINGS DOUBLE VERTICAL AND LEFT}";
+	my $LINE1        = "\N{BOX DRAWINGS DOUBLE HORIZONTAL}";
+	my $LINE1_SEP    = "\N{BOX DRAWINGS VERTICAL SINGLE AND HORIZONTAL DOUBLE}";
+	my $ROW_LEFT     = "\N{BOX DRAWINGS DOUBLE VERTICAL}";
+	my $ROW_RIGHT    = "\N{BOX DRAWINGS DOUBLE VERTICAL}";
+	my $ROW_SEP      = "\N{BOX DRAWINGS LIGHT VERTICAL}";
+	my $table = $t->draw([$UPPER_LEFT, $UPPER_RIGHT, $UPPER, $UPPER_SEP],
+			     [$ROW_LEFT, $ROW_RIGHT, $ROW_SEP],
+			     [$LINE1_LEFT, $LINE1_RIGHT, $LINE1, $LINE1_SEP],
+			     [$ROW_LEFT, $ROW_RIGHT, $ROW_SEP],
+			     [$LOWER_LEFT, $LOWER_RIGHT, $LOWER, $LOWER_SEP]);
+	$table =~ s{$ROW_LEFT }{$ROW_LEFT}g;
+	$table =~ s{ $ROW_RIGHT}{$ROW_RIGHT}g;
+	$table =~ s{ $ROW_SEP }{$ROW_SEP}g;
+	$table =~ s{.$UPPER_SEP.}{$UPPER_SEP}g;
+	$table =~ s{.$LOWER_SEP.}{$LOWER_SEP}g;
+	$table =~ s{$UPPER_LEFT.}{$UPPER_LEFT}g;
+	$table =~ s{$LOWER_LEFT.}{$LOWER_LEFT}g;
+	$table =~ s{.$UPPER_RIGHT}{$UPPER_RIGHT}g;
+	$table =~ s{.$LOWER_RIGHT}{$LOWER_RIGHT}g;
+	$table =~ s{$LINE1_LEFT.}{$LINE1_LEFT}g;
+	$table =~ s{.$LINE1_RIGHT}{$LINE1_RIGHT}g;
+	$table =~ s{.$LINE1_SEP.}{$LINE1_SEP}g;
+	print $table;
+    }
+
+    if (1) {
+	print $t2->render($COLUMNS);
     }
 }
 
 sub _symlink {
-    my ($source, $dest) = @_;
+    my ($self, $source, $dest) = @_;
     if (!-e $source) {
 	warn("  not creating link $dest: $source does not exist\n");
 	return;
@@ -358,7 +556,9 @@ sub _symlink {
 	}
     }
     my $rel_source = abs2rel($source, dirname($dest));
-    warn(sprintf("  Created symlink to %-27s: %s\n", $rel_source, $dest)); # assuming max 8 chars. extension
+    if ($self->{verbose}) {
+	warn(sprintf("  Created symlink to %-27s: %s\n", $rel_source, $dest)); # assuming max 8 chars. extension
+    }
 }
 
 BEGIN {
@@ -368,22 +568,26 @@ BEGIN {
 }
 
 sub _file_put_contents {
-    my ($filename, $data, $mode) = @_;
+    my ($self, $filename, $data, $mode) = @_;
     make_path(dirname($filename));
     open(my $fh, ">", $filename) or do {
 	warn("  cannot write $filename: $!\n");
 	return;
     };
-    printf STDERR ("  Writing %s (%d bytes) ... ", $filename, length($data));
+    if ($self->{verbose}) {
+	printf STDERR ("  Writing %s (%d bytes) ... ", $filename, length($data));
+    }
     if (defined $mode && $mode eq "b") {
 	binmode($fh);
     }
     print $fh $data;
-    print STDERR ("Done.\n");
+    if ($self->{verbose}) {
+	print STDERR ("Done.\n");
+    }
 }
 
 sub _file_get_contents {
-    my ($filename, $mode) = @_;
+    my ($self, $filename, $mode) = @_;
     open(my $fh, "<", $filename) or do {
 	warn("  cannot read $filename: $!\n");
 	return;
@@ -410,6 +614,177 @@ sub _join_and {
 	return join(", ", @items) . ", and " . $last;
     } else {
 	return join(" ", @items);
+    }
+}
+
+use URI::Escape;
+use JSON;
+sub reverse_geocode_via_geonames {
+    my ($self, $service, $lat, $lng) = @_;
+    my $username = eval { $self->{geonames}->{username} };
+    return unless defined $username;
+    my $url = sprintf("http://api.geonames.org/%s?lat=%s&lng=%s&username=%s",
+		      $service,
+		      uri_escape($lat),
+		      uri_escape($lng),
+		      uri_escape($username));
+    $self->set_cache_options(NoUpdate => 86400, NoUpdateImpatient => 0);
+    my $request = HTTP::Request->new("GET", $url);
+    my $response = $self->{ua}->request($request);
+    return unless $response->is_success();
+    my $json = $self->{json_C} //= JSON->new();
+    my $result = $json->decode($response->content());
+    return $result;
+}
+sub reverse_geocode_via_geonames_nearest_intersection {
+    my ($self, $lat, $lng) = @_;
+    return $self->reverse_geocode_via_geonames("findNearestIntersectionJSON", $lat, $lng);
+}
+sub reverse_geocode_via_geonames_nearest_address {
+    my ($self, $lat, $lng) = @_;
+    return $self->reverse_geocode_via_geonames("findNearestAddressJSON", $lat, $lng);
+}
+sub reverse_geocode_via_geonames_nearest_intersection_osm {
+    my ($self, $lat, $lng) = @_;
+    return $self->reverse_geocode_via_geonames("findNearestIntersectionOSMJSON", $lat, $lng);
+}
+sub reverse_geocode_via_geonames_nearby_streets_json {
+    my ($self, $lat, $lng) = @_;
+    return $self->reverse_geocode_via_geonames("findNearbyStreetsOSM", $lat, $lng);
+}
+
+=head2 show_trip
+
+    $gtfsrt->show_trip(TRIP_ID);
+
+Displays a list of stops on the specified trip.
+
+=cut
+
+sub show_trip {
+    my ($self, $trip_id) = @_;
+    my $gtfs = $self->{gtfs};
+
+    if (!$self->{latest_data}) {
+	$self->fetch_latest_data();
+    }
+
+    my $vp_pb = $self->{latest_data}->{vehicle_positions};
+    my $tu_pb = $self->{latest_data}->{trip_updates};
+    my $vp_header_timestamp = $vp_pb->{header}->{timestamp};
+    my $tu_header_timestamp = $tu_pb->{header}->{timestamp};
+    my $vp_header_time = strftime("%m/%d %H:%M:%S", localtime($vp_header_timestamp));
+    my $tu_header_time = strftime("%m/%d %H:%M:%S", localtime($tu_header_timestamp));
+    print("Trip updates      as of $tu_header_time\n");
+    print("Vehicle positions as of $vp_header_time\n");
+
+    my @vp_entity = grep { eval { $_->{vehicle}->{trip}->{trip_id} eq $trip_id } } @{$vp_pb->{entity}};
+    foreach my $vp_entity (@vp_entity) {
+	print("-------------------------------------------------------------------------------\n");
+	print($self->json_A->encode($vp_entity));
+	print("-------------------------------------------------------------------------------\n");
+	print($self->encode_compact($vp_entity));
+    }
+
+    my @tu_entity = grep { eval { $_->{trip_update}->{trip}->{trip_id} eq $trip_id } } @{$tu_pb->{entity}};
+    foreach my $tu_entity (@tu_entity) {
+	print("-------------------------------------------------------------------------------\n");
+	print($self->json_A->encode($tu_entity));
+	print("-------------------------------------------------------------------------------\n");
+	print($self->encode_compact($tu_entity));
+    }
+
+    print("-------------------------------------------------------------------------------\n");
+
+    my $trip  = $gtfs->get_trip_by_trip_id($trip_id);
+    my $route = $gtfs->get_route_by_trip_id($trip_id);
+    my @stops = $gtfs->get_stops_by_trip_id($trip_id);
+
+    printf("Trip %s on route %s -- [%s %s]\n",
+	   $trip->{trip_id},
+	   $trip->{route_id},
+	   $trip->{route_id},
+	   $trip->{trip_headsign});
+
+    my @head = ("Arr.", "Dep.", "Location", "StopID", "StopName", "StopDesc");
+    my $t2   = Text::FormatTable->new("l|l|l|l|l|l");
+
+    $t2->head(@head);
+    $t2->rule("=");
+
+    foreach my $stop (@stops) {
+	my $location = sprintf("%10.6f,%10.6f", $stop->{stop_lat}, $stop->{stop_lon});
+	$t2->row($stop->{arrival_time},
+		 $stop->{departure_time},
+		 $location,
+		 $stop->{stop_id},
+		 $stop->{stop_name},
+		 $stop->{stop_desc});
+    }
+    print $t2->render($COLUMNS);
+
+}
+
+###############################################################################
+
+sub encode_compact {
+    my ($self, $data) = @_;
+    if (ref($data)) {
+	$data = $self->json_A->encode($data);
+	$data = $self->json_A->decode($data);
+    }
+    my $lines = [];
+    my $encoded = "";
+    $self->_encode_compact($lines, \$encoded, $data);
+    return $encoded . "\n";
+}
+
+sub _encode_compact {
+    my ($self, $lines, $encoded_ref, $data, $indent) = @_;
+    $indent //= 0;
+    my $ref = ref($data);
+    if (!$ref) {
+	my $enc = $self->json_A->encode($data);
+	chomp($enc);
+	$$encoded_ref .= $enc;
+    } elsif ($ref eq "ARRAY") {
+	if (scalar(@$data) == 0) {
+	    $$encoded_ref .= "[]";
+	} else {
+	    $$encoded_ref .= "[ ";
+	    for (my $i = 0; $i <= scalar(@$data); $i += 1) {
+		if ($i) {
+		    $$encoded_ref .= ",\n" . (" " x $indent);
+		}
+		$self->_encode_compact($lines, $encoded_ref, $data->[$i], $indent + 2);
+	    }
+	    $$encoded_ref .= " ]";
+	}
+    } elsif ($ref eq "HASH") {
+	my @keys = keys(%$data);
+	if (scalar(@keys) == 0) {
+	    $$encoded_ref .= "{}";
+	} else {
+	    $$encoded_ref .= "{ ";
+	    $indent += 2;
+	    for (my $i = 0; $i < scalar(@keys); $i += 1) {
+		my $key = $keys[$i];
+		my $value = $data->{$key};
+		if ($i) {
+		    $$encoded_ref .= ",\n" . (" " x $indent);
+		}
+		my $key_enc = $self->json_A->encode($key);
+		chomp($key_enc);
+		$$encoded_ref .= $key_enc;
+		$$encoded_ref .= ": ";
+		$self->_encode_compact($lines, $encoded_ref, $value, $indent + length($key_enc) + 2);
+	    }
+	    $$encoded_ref .= " }";
+	}
+    } else {
+	my $enc = $self->json_A->encode("$data");
+	chomp($enc);
+	$$encoded_ref .= $enc;
     }
 }
 
