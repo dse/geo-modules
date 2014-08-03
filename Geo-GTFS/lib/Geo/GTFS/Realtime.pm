@@ -48,6 +48,7 @@ sub new {
     my $self = bless({}, $class);
     $self->init(@args) if $self->can('init');
     $self->{gtfs} = Geo::GTFS->new($self->{gtfs_name});
+    $self->{no_fetch} = 0;
     return $self;
 }
 
@@ -126,6 +127,20 @@ sub init {
     while (my ($k, $v) = each(%args)) {
 	$self->{$k} = $v;
     }
+
+    my $timestamp_to_time = sub {
+	my ($time_t) = @_;
+	if ($time_t =~ m{^\d+$}) {
+	    return strftime("%m/%d %H:%M:%S", localtime($time_t));
+	} else {
+	    return $time_t;
+	}
+    };
+
+    $self->{compact} //= My::JSON::Encoder::Compact->new(compactness   => 2,
+							 extra_compact => { "stop_time_update[]" => 1 },
+							 convert_key   => { "time"      => $timestamp_to_time,
+									    "timestamp" => $timestamp_to_time });
 }
 
 ###############################################################################
@@ -195,6 +210,9 @@ sub json_A {
 
 sub fetch_latest_data {
     my ($self) = @_;
+    if ($self->{no_fetch}) {
+	return $self->get_latest_data_fetched();
+    }
     $self->{latest_data} = {};
     $self->set_cache_options(NoUpdate => 30, NoUpdateImpatient => 1);
     my $json = $self->json_A();
@@ -217,7 +235,7 @@ sub fetch_latest_data {
 	my $json_filename = sprintf("%s/%s/json/%s.json",     $self->{my_cache}, $feed_type, $gm_timestamp);
 	my $pb_latest     = sprintf("%s/%s/pb/latest.pb",     $self->{my_cache}, $feed_type);
 	my $json_latest   = sprintf("%s/%s/json/latest.json", $self->{my_cache}, $feed_type);
-	$self->_file_put_contents($pb_filename, $pb_filename, "b");
+	$self->_file_put_contents($pb_filename, $pb, "b");
 	my $as_json = $json->encode($pb_object);
 	$self->_file_put_contents($json_filename, $as_json);
 	$self->_symlink($pb_filename, $pb_latest);
@@ -232,7 +250,7 @@ sub get_latest_data_fetched {
     my $json = $self->json_A();
     foreach my $feed_type (@{$self->{feed_types}}) {
 	my $pb_latest = sprintf("%s/%s/pb/latest.pb", $self->{my_cache}, $feed_type);
-	my $pb = $self->_file_get_contents($pb_latest);
+	my $pb = $self->_file_get_contents($pb_latest, "b");
 	if (!$pb) {
 	    die("We've never fetched any $feed_type data.\n");
 	}
@@ -380,12 +398,20 @@ sub list_trip_updates {
 
     my %vehicle;
 
+    my @vp_extras_1;
+
     foreach my $entity (@{$vp_pb->{entity}}) {
 	my $rec = eval { $entity->{vehicle} };
-	next if !$rec;
+	if (!$rec) {
+	    push(@vp_extras_1, $entity);
+	    next;
+	}
 
-	my $label     = eval { $rec->{vehicle}->{label} } // eval { $entity->{id} };
-	next if !defined $label;
+	my $label = eval { $rec->{vehicle}->{label} } // eval { $entity->{id} };
+	if (!defined $label) {
+	    push(@vp_extras_1, $entity);
+	    next;
+	}
 
 	my $trip_id = eval { $rec->{trip}->{trip_id} };
 	$rec->{trip_id} = $trip_id if defined $trip_id;
@@ -400,41 +426,31 @@ sub list_trip_updates {
 		   map { [$_, eval { $_->{trip_update}->{trip}->{route_id} } // ""] }
 		     @entity);
 
-    my $t = Text::ASCIITable->new({
-	# headingText => "Trip Updates",
-	allowANSI   => 1,
-	utf8 => 0
-       });
-    my $t2 = Text::FormatTable->new("l|l|l|l|l|l|l|l|l|l|r");
+    $self->trip_updates_table_start();
 
-    my @head = ("Veh.",
-		"*",
-		"Location",
-		"Trip",
-		"Rt.",
-		"Headsign",
-		"Dep.Time",
-		"D/A",
-		"Stop",
-		"Timestmp",
-		"Dly");
-
-    $t->setCols(@head);
-    $t2->head(@head);
-    $t2->rule("=");
+    my @vp_extras_2;
 
     foreach my $entity (@entity) {
 	my $tu       = eval { $entity->{trip_update} };
-	next if !defined $tu;
+	if (!defined $tu) {
+	    push(@vp_extras_2, $entity);
+	    next;
+	}
 
 	my $trip_id  = eval { $tu->{trip}->{trip_id} } // eval { $tu->{id} };
 	my $route_id = eval { $tu->{trip}->{route_id} };
 	my $label    = eval { $tu->{vehicle}->{label} };
-	next if !defined $label;
+	if (!defined $label) {
+	    push(@vp_extras_2, $entity);
+	    next;
+	}
 
 	my $start_time = eval { $tu->{trip}->{start_time} };
 	my $start_date = eval { $tu->{trip}->{start_date} };
-	my $delay = eval { $tu->{stop_time_update}->[0]->{departure}->{delay} };
+
+	my $dep_delay = eval { $tu->{stop_time_update}->[0]->{departure}->{delay} };
+	my $arr_delay = eval { $tu->{stop_time_update}->[0]->{arrival}->{delay} };
+	my $delay = $dep_delay // $arr_delay;
 	$delay /= 60 if defined $delay;
 
 	my $dep_time     = eval { $tu->{stop_time_update}->[0]->{departure}->{time} };
@@ -442,7 +458,10 @@ sub list_trip_updates {
 	my $dep_arr_time = $dep_time // $arr_time;
 	my $at_stop_id   = eval { $tu->{stop_time_update}->[0]->{stop_id} };
 
-	next if !defined $at_stop_id || $at_stop_id eq "UN";
+	if (!defined $at_stop_id || $at_stop_id eq "UN") {
+	    push(@vp_extras_2, $entity);
+	    next;
+	}
 
 	my $dep_or_arr   = defined($dep_time) ? "DEP" : defined($arr_time) ? "ARR" : "---";
 	my $at_stop      = eval { $self->{gtfs}->get_stop_by_stop_id($at_stop_id) };
@@ -455,8 +474,14 @@ sub list_trip_updates {
 	my $timestamp_fmt = defined $timestamp && eval { strftime("%H:%M:%S", localtime($timestamp)) };
 	my $vehicle_note = $self->get_vehicle_note($label);
 
-	next if !defined $timestamp;
-	next if $tu_header_timestamp - $timestamp >= 1800;
+	if (!defined $timestamp) {
+	    push(@vp_extras_2, $entity);
+	    next;
+	}
+	if ($tu_header_timestamp - $timestamp >= 1800) {
+	    push(@vp_extras_2, $entity);
+	    next;
+	}
 
 	my $trip = $self->{gtfs}->get_trip_by_trip_id($trip_id);
 	my $headsign = $trip->{trip_headsign};
@@ -467,17 +492,17 @@ sub list_trip_updates {
 	}
 
 	my $lat = eval { $vehicle->{position}->{latitude} };
-	my $lng = eval { $vehicle->{position}->{longitude} };
+	my $lon = eval { $vehicle->{position}->{longitude} };
 	my $location;
 
 	if (0) {
-	    my $gn_result = defined $lat && defined $lng && $self->reverse_geocode_via_geonames_nearest_intersection($lat, $lng);
+	    my $gn_result = defined $lat && defined $lon && $self->reverse_geocode_via_geonames_nearest_intersection($lat, $lon);
 	    $location = $gn_result && sprintf("%s @ %s",
 					      $gn_result->{intersection}->{street1},
 					      $gn_result->{intersection}->{street2});
 	}
 	if (1) {
-	    $location = sprintf("%10.6f,%10.6f", $lat, $lng);
+	    $location = sprintf("%10.6f,%10.6f", $lat, $lon);
 	}
 
 	my @row = ($label,
@@ -492,11 +517,11 @@ sub list_trip_updates {
 		   $timestamp_fmt,
 		   floor(($delay // 0) + 0.5));
 
-	$t->addRow(@row);
-	$t2->row(@row);
+	$self->trip_updates_table_add_row(@row);
     }
 
     if (0) {
+	my $t;
 	my $UPPER_LEFT   = "\N{BOX DRAWINGS DOUBLE DOWN AND RIGHT}";
 	my $UPPER_RIGHT  = "\N{BOX DRAWINGS DOUBLE DOWN AND LEFT}";
 	my $LOWER_LEFT   = "\N{BOX DRAWINGS DOUBLE UP AND RIGHT}";
@@ -533,7 +558,63 @@ sub list_trip_updates {
     }
 
     if (1) {
-	print $t2->render($COLUMNS);
+	$self->trip_updates_table_end();
+    }
+
+    if ($self->{extras}) {
+	if (scalar(@vp_extras_1)) {
+	    print("-------------------------------------------------------------------------------\n");
+	    print($self->{compact}->encode(\@vp_extras_1));
+	}
+	if (scalar(@vp_extras_2)) {
+	    print("-------------------------------------------------------------------------------\n");
+	    print($self->{compact}->encode(\@vp_extras_2));
+	}
+    }
+}
+
+sub trip_updates_table_start {
+    my ($self) = @_;
+    $self->trip_updates_table__tft__start();
+}
+sub trip_updates_table_add_row {
+    my ($self, @row) = @_;
+    $self->trip_updates_table__tft__add_row(@row);
+}
+sub trip_updates_table_end {
+    my ($self) = @_;
+    $self->trip_updates_table__tft__end();
+}
+
+sub trip_updates_table__tft__start {
+    my ($self) = @_;
+    my $tft = $self->{tft} = Text::FormatTable->new("l|l|l|l|l|l|l|l|l|l|r");
+    my @head = ("Veh.",
+		"*",
+		"Location",
+		"Trip",
+		"Rt.",
+		"Headsign",
+		"Dep.Time",
+		"D/A",
+		"Stop",
+		"Timestmp",
+		"Dly");
+    $tft->head(@head);
+    $tft->rule("=");
+}
+sub trip_updates_table__tft__add_row {
+    my ($self, @row) = @_;
+    my $tft = $self->{tft};
+    $tft->row(@row);
+}
+sub trip_updates_table__tft__end {
+    my ($self) = @_;
+    my $tft = $self->{tft};
+    if ($self->{width}) {
+	print $tft->render($self->{width});
+    } else {
+	print $tft->render($COLUMNS);
     }
 }
 
@@ -678,23 +759,38 @@ sub show_trip {
     print("Trip updates      as of $tu_header_time\n");
     print("Vehicle positions as of $vp_header_time\n");
 
+
     my @vp_entity = grep { eval { $_->{vehicle}->{trip}->{trip_id} eq $trip_id } } @{$vp_pb->{entity}};
-    foreach my $vp_entity (@vp_entity) {
+    if (scalar(@vp_entity) < 1) {
+	warn("Unexpected transit data: more than one vehicle update record with trip id = $trip_id\n");
+    } elsif (scalar(@vp_entity) > 1) {
+	warn("Unexpected transit data: no vehicle update record with trip id = $trip_id\n");
+    }
+    my $vp_entity = $vp_entity[0];
+
+    if ($self->{verbose}) {
 	print("-------------------------------------------------------------------------------\n");
-	print($self->json_A->encode($vp_entity));
-	print("-------------------------------------------------------------------------------\n");
-	print($self->encode_compact($vp_entity));
+	print($self->{compact}->encode($vp_entity));
     }
 
     my @tu_entity = grep { eval { $_->{trip_update}->{trip}->{trip_id} eq $trip_id } } @{$tu_pb->{entity}};
-    foreach my $tu_entity (@tu_entity) {
-	print("-------------------------------------------------------------------------------\n");
-	print($self->json_A->encode($tu_entity));
-	print("-------------------------------------------------------------------------------\n");
-	print($self->encode_compact($tu_entity));
+    if (scalar(@tu_entity) < 1) {
+	warn("Unexpected transit data: more than one trip entity with trip id = $trip_id\n");
+    } elsif (scalar(@tu_entity) > 1) {
+	warn("Unexpected transit data: no trip entity with trip id = $trip_id\n");
+    }
+    my $tu_entity = $tu_entity[0];
+    my %su_by_stop_sequence;
+    my %su_by_stop_id;
+    foreach my $su (@{$tu_entity->{trip_update}->{stop_time_update}}) {
+	$su_by_stop_sequence{$su->{stop_sequence}} = $su;
+	$su_by_stop_id{$su->{stop_id}} = $su;
     }
 
-    print("-------------------------------------------------------------------------------\n");
+    if ($self->{verbose}) {
+	print($self->{compact}->encode($tu_entity));
+	print("-------------------------------------------------------------------------------\n");
+    }
 
     my $trip  = $gtfs->get_trip_by_trip_id($trip_id);
     my $route = $gtfs->get_route_by_trip_id($trip_id);
@@ -706,85 +802,202 @@ sub show_trip {
 	   $trip->{route_id},
 	   $trip->{trip_headsign});
 
-    my @head = ("Arr.", "Dep.", "Location", "StopID", "StopName", "StopDesc");
-    my $t2   = Text::FormatTable->new("l|l|l|l|l|l");
+    my @head = ("Sch.Arr.", "Sch.Dep.", "Est.Time", "Dly.", "Location", "StopID", "StopName", "StopDesc");
+    my $tft   = Text::FormatTable->new("l|l|l|r|l|l|l|l");
+    $tft->head(@head);
+    $tft->rule("=");
+    my $gotit = 0;
 
-    $t2->head(@head);
-    $t2->rule("=");
-
+    my ($prev_lat, $prev_lon);
+    
     foreach my $stop (@stops) {
-	my $location = sprintf("%10.6f,%10.6f", $stop->{stop_lat}, $stop->{stop_lon});
-	$t2->row($stop->{arrival_time},
-		 $stop->{departure_time},
-		 $location,
-		 $stop->{stop_id},
-		 $stop->{stop_name},
-		 $stop->{stop_desc});
-    }
-    print $t2->render($COLUMNS);
+	my $su = $su_by_stop_id{$stop->{stop_id}};
 
+	my $est_time = eval { $su->{departure}->{time} }  // eval { $su->{arrival}->{time} };
+	my $delay   = eval { $su->{departure}->{delay} } // eval { $su->{arrival}->{delay} };
+
+	$est_time = $est_time && strftime("%H:%M:%S", localtime($est_time));
+
+	my $lat = $stop->{stop_lat};
+	my $lon = $stop->{stop_lon};
+
+	if (!$gotit && defined $est_time && $vp_entity) {
+	    my $go = 0;
+
+	    my $ts = eval { $vp_entity->{vehicle}->{timestamp} };
+	    $ts = defined($ts) && strftime("%H:%M:%S", localtime($ts));
+
+	    if (defined $ts) {
+		if ($ts le $est_time) {
+		    $go = 1;
+		}
+	    } else {
+		$go = 1;
+	    }
+
+	    if ($go) {
+		$gotit = 1;
+		my $lat = eval { $vp_entity->{vehicle}->{position}->{latitude} };
+		my $lon = eval { $vp_entity->{vehicle}->{position}->{longitude} };
+		my $location = defined($lat) && defined($lon) && sprintf("%10.6f,%10.6f", $lat, $lon);
+		$tft->rule("-");
+		$tft->row("", "", $ts // "-", "", $location // "-", "", "", "");
+		$tft->rule("-");
+	    }
+	}
+
+	my $location = sprintf("%10.6f,%10.6f", $lat, $lon);
+	$tft->row($stop->{arrival_time}   // "-",
+		  $stop->{departure_time} // "-",
+		  $est_time                // "-",
+		  $delay                  // "-",
+		  $location               // "-",
+		  $stop->{stop_id}        // "-",
+		  $stop->{stop_name}      // "-",
+		  $stop->{stop_desc}      // "-");
+
+	$prev_lat = $lat if defined $lat;
+	$prev_lon = $lon if defined $lon;
+    }
+    if ($self->{width}) {
+	print $tft->render($self->{width});
+    } else {
+	print $tft->render($COLUMNS);
+    }
+}
+
+use constant D2R => atan2(1, 1) / 45;
+sub _dist_A_B {
+    my ($lat1, $lng1, $lat2, $lng2) = @_;
+    $lat1 *= D2R;
+    $lng1 *= D2R;
+    $lat2 *= D2R;
+    $lng2 *= D2R;
+    my $y1 = log(abs((1 + sin($lat1)) / cos($lat1)));
+    my $y2 = log(abs((1 + sin($lat2)) / cos($lat2)));
+    my $x1 = $lng1;
+    my $x2 = $lng2;
+    my $xx = $x1 - $x2;
+    my $yy = $y1 - $y2;
+    return sqrt($xx * $xx + $yy * $yy);
 }
 
 ###############################################################################
 
-sub encode_compact {
+package My::JSON::Encoder::Compact;
+use JSON qw(-convert_blessed_universally);
+sub new {
+    my ($class, %args) = @_;
+    my $self = bless({ json => JSON->new()->allow_nonref()->pretty()->convert_blessed(),
+		       compactness => 1,
+		       %args }, $class);
+    return $self;
+}
+sub encode {
     my ($self, $data) = @_;
     if (ref($data)) {
-	$data = $self->json_A->encode($data);
-	$data = $self->json_A->decode($data);
+	$data = $self->{json}->encode($data);
+	$data = $self->{json}->decode($data);
     }
-    my $lines = [];
     my $encoded = "";
-    $self->_encode_compact($lines, \$encoded, $data);
+    $self->__encode(stringref => \$encoded, data => $data);
     return $encoded . "\n";
 }
+sub __encode {
+    my ($self, %args) = @_;
 
-sub _encode_compact {
-    my ($self, $lines, $encoded_ref, $data, $indent) = @_;
-    $indent //= 0;
+    my $stringref     = $args{stringref};
+    my $data          = $args{data};
+    my $indent        = $args{indent}        // 0;
+    my $extra_compact = $args{extra_compact} // 0;
+    my $stack         = $args{stack}         // [];
+
     my $ref = ref($data);
     if (!$ref) {
-	my $enc = $self->json_A->encode($data);
+	my $enc = $self->{json}->encode($data);
 	chomp($enc);
-	$$encoded_ref .= $enc;
+	$$stringref .= $enc;
     } elsif ($ref eq "ARRAY") {
 	if (scalar(@$data) == 0) {
-	    $$encoded_ref .= "[]";
+	    $$stringref .= "[]";
 	} else {
-	    $$encoded_ref .= "[ ";
+	    my $newlines = 1;
+	    if ($extra_compact) {
+		$newlines = 0;
+	    } elsif ($self->{compactness} >= 2) {
+		if (!grep { ref($_) } @$data) {
+		    $newlines = 0;
+		}
+	    }
+	    $$stringref .= "[ ";
+	    $indent += 2;
+
+	    my $extra_compact = $extra_compact || eval { $self->{extra_compact}->{$stack->[-1] . "[]"} };
+
 	    for (my $i = 0; $i <= scalar(@$data); $i += 1) {
 		if ($i) {
-		    $$encoded_ref .= ",\n" . (" " x $indent);
+		    if ($newlines) {
+			$$stringref .= ",\n" . (" " x $indent);
+		    } else {
+			$$stringref .= ", ";
+		    }
 		}
-		$self->_encode_compact($lines, $encoded_ref, $data->[$i], $indent + 2);
+		$self->__encode(stringref => $stringref,
+				data => $data->[$i],
+				indent => $indent,
+				extra_compact => $extra_compact,
+				stack => [@$stack, "[]"]);
 	    }
-	    $$encoded_ref .= " ]";
+	    $$stringref .= " ]";
 	}
     } elsif ($ref eq "HASH") {
 	my @keys = keys(%$data);
 	if (scalar(@keys) == 0) {
-	    $$encoded_ref .= "{}";
+	    $$stringref .= "{}";
 	} else {
-	    $$encoded_ref .= "{ ";
+	    my $newlines = 1;
+	    if ($extra_compact) {
+		$newlines = 0;
+	    } elsif ($self->{compactness} >= 2) {
+		if (!grep { ref($_) } values(%$data)) {
+		    $newlines = 0;
+		}
+	    }
+	    $$stringref .= "{ ";
 	    $indent += 2;
 	    for (my $i = 0; $i < scalar(@keys); $i += 1) {
 		my $key = $keys[$i];
+		my $extra_compact = $extra_compact || eval { $self->{extra_compact}->{$key} };
 		my $value = $data->{$key};
-		if ($i) {
-		    $$encoded_ref .= ",\n" . (" " x $indent);
+		my $sub = eval { $self->{convert_key}->{$key} };
+		if ($sub && ref($sub) eq "CODE") {
+		    my $new_value = $sub->($value);
+		    next if !defined $new_value;
+		    $value = $new_value;
 		}
-		my $key_enc = $self->json_A->encode($key);
+		if ($i) {
+		    if ($newlines) {
+			$$stringref .= ",\n" . (" " x $indent);
+		    } else {
+			$$stringref .= ", ";
+		    }
+		}
+		my $key_enc = $self->{json}->encode($key);
 		chomp($key_enc);
-		$$encoded_ref .= $key_enc;
-		$$encoded_ref .= ": ";
-		$self->_encode_compact($lines, $encoded_ref, $value, $indent + length($key_enc) + 2);
+		$$stringref .= $key_enc;
+		$$stringref .= ": ";
+		$self->__encode(stringref => $stringref,
+				data => $value,
+				indent => $indent + length($key_enc) + 2,
+				extra_compact => $extra_compact,
+				stack => [@$stack, $key]);
 	    }
-	    $$encoded_ref .= " }";
+	    $$stringref .= " }";
 	}
     } else {
-	my $enc = $self->json_A->encode("$data");
+	my $enc = $self->{json}->encode("$data");
 	chomp($enc);
-	$$encoded_ref .= $enc;
+	$$stringref .= $enc;
     }
 }
 
