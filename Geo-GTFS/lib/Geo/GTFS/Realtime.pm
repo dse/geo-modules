@@ -3,12 +3,11 @@ use warnings;
 use strict;
 
 BEGIN {
-    require lib;
     if (defined $ENV{REQUEST_METHOD}) {
-	import lib "/home/dse/git/HTTP-Cache-Transparent/lib";
+	unshift(@INC, "/home/dse/git/HTTP-Cache-Transparent/lib");
 	# my fork adds a special feature called NoUpdateImpatient.
     } else {
-	import lib "$ENV{HOME}/git/HTTP-Cache-Transparent/lib";
+	unshift(@INC, "$ENV{HOME}/git/HTTP-Cache-Transparent/lib");
 	# my fork adds a special feature called NoUpdateImpatient.
     }
 }
