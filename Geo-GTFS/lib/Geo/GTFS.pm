@@ -1,4 +1,4 @@
-package Geo::GTFS;
+package Geo::GTFS; # -*- cperl -*-
 use warnings;
 use strict;
 	
@@ -49,8 +49,7 @@ use fields qw(url
 	      _zip_filename
 	      _sqlite_filename
 	      aliases
-	      aliases_filename
-	    );
+	      aliases_filename);
 
 =head1 CONSTRUCTOR
 
