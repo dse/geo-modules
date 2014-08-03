@@ -2,8 +2,16 @@ package Geo::GTFS::Realtime;	# -*- cperl -*-
 use warnings;
 use strict;
 
-use lib "$ENV{HOME}/git/HTTP-Cache-Transparent/lib";
-# my fork adds a special feature called NoUpdateImpatient.
+BEGIN {
+    require lib;
+    if (defined $ENV{REQUEST_METHOD}) {
+	import lib "/home/dse/git/HTTP-Cache-Transparent/lib";
+	# my fork adds a special feature called NoUpdateImpatient.
+    } else {
+	import lib "$ENV{HOME}/git/HTTP-Cache-Transparent/lib";
+	# my fork adds a special feature called NoUpdateImpatient.
+    }
+}
 
 # use Carp::Always;
 use Geo::GTFS;
@@ -221,9 +229,12 @@ sub json_A {
 }
 
 sub fetch_latest_data {
-    my ($self) = @_;
+    my ($self, @feed_types) = @_;
+    if (!@feed_types) {
+	@feed_types = @{$self->{feed_types}};
+    }
     if ($self->{no_fetch}) {
-	return $self->get_latest_data_fetched();
+	return $self->get_latest_data_fetched(@feed_types);
     }
     $self->{latest_data} = {};
     $self->set_cache_options(NoUpdate => 30, NoUpdateImpatient => 1);
@@ -254,13 +265,19 @@ sub fetch_latest_data {
 	$self->_symlink($json_filename, $json_latest);
 	$self->{latest_data}->{$feed_type} = $pb_object;
     }
+    if (scalar(@feed_type) == 1) {
+	return $self->{latest_data}->{$feed_type[0]};
+    }
 }
 
 sub get_latest_data_fetched {
-    my ($self) = @_;
+    my ($self, @feed_types) = @_;
+    if (!@feed_types) {
+	@feed_types = @{$self->{feed_types}};
+    }
     $self->{latest_data} = {};
     my $json = $self->json_A();
-    foreach my $feed_type (@{$self->{feed_types}}) {
+    foreach my $feed_type (@feed_types) {
 	my $pb_latest = sprintf("%s/%s/pb/latest.pb", $self->{my_cache}, $feed_type);
 	my $pb = $self->_file_get_contents($pb_latest, "b");
 	if (!$pb) {
@@ -268,6 +285,9 @@ sub get_latest_data_fetched {
 	}
 	my $pb_object = TransitRealtime::FeedMessage->decode($pb);
 	$self->{latest_data}->{$feed_type} = $pb_object;
+    }
+    if (scalar(@feed_type) == 1) {
+	return $self->{latest_data}->{$feed_type[0]};
     }
 }
 
