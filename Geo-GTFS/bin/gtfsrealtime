@@ -1,6 +1,13 @@
-#!/usr/bin/env perl
+#!/bin/sh
+#! -*- cperl -*-
+eval 'exec perl -x -wS $0 ${1+"$@"}'
+  if 0;
+
 use warnings;
 use strict;
+
+use Getopt::Long;
+#use Carp::Always;
 
 use FindBin;
 use lib "$FindBin::Bin/../lib";
@@ -9,7 +16,24 @@ use lib "$ENV{HOME}/git/geo-modules/Geo-GTFS/lib";
 use lib "$ENV{HOME}/git/perl-app-thingy/lib";
 
 my $s = Geo::GTFS::Realtime::Shell->new();
+Getopt::Long::Configure("bundling", "gnu_compat");
+Getopt::Long::GetOptions(
+    "v|verbose"  => sub { $s->{rt_options}->{verbose} += 1;     },
+    "F|no-fetch" => sub { $s->{rt_options}->{no_fetch} = 1;     },
+    "f|fetch"    => sub { $s->{rt_options}->{no_fetch} = 0;     },
+    "w|wide"     => sub { $s->{rt_options}->{width}    = 65535; },
+    "W|width=i"  => sub { $s->{rt_options}->{width}    = $_[1]; },
+    "e|extras"   => sub { $s->{rt_options}->{extras}   = 1;     },
+    "h|help"     => sub { usage(); $s->run("help"); exit(0); })
+  or die("Type '$0 --help' for help.");
 $s->run(@ARGV);
+
+sub usage { print(<<"END"); }
+usage: $0 [OPTION ...] [COMMAND [ARG ...]]
+  -h, --help      Display this message.
+  -F, --no-fetch  Don't fetch realtime data; use latest fetched data.
+  -f, --fetch     Fetch realtime data (default)
+END
 
 package Geo::GTFS::Realtime::Shell;
 use warnings;
@@ -21,10 +45,17 @@ use Geo::GTFS::Realtime;
 
 sub __init {
     my ($self) = @_;
+    $self->{rt_options} = {};
 }
 sub rt {
     my ($self) = @_;
-    return $self->{rt} //= Geo::GTFS::Realtime->new();
+    ## return $self->{rt} if $self->{rt};
+    $self->{rt} //= Geo::GTFS::Realtime->new();
+    while (my ($k, $v) = each(%{$self->{rt_options}})) {
+	$self->{rt}->{$k} = $v;
+    }
+    $self->{rt_options} = {};
+    return $self->{rt};
 }
 sub cmd__show_trip_updates {
     my ($self, @args) = @_;
