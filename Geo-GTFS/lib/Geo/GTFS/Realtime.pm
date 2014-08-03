@@ -264,8 +264,8 @@ sub fetch_latest_data {
 	$self->_symlink($json_filename, $json_latest);
 	$self->{latest_data}->{$feed_type} = $pb_object;
     }
-    if (scalar(@feed_type) == 1) {
-	return $self->{latest_data}->{$feed_type[0]};
+    if (scalar(@feed_types) == 1) {
+	return $self->{latest_data}->{$feed_types[0]};
     }
 }
 
@@ -285,8 +285,8 @@ sub get_latest_data_fetched {
 	my $pb_object = TransitRealtime::FeedMessage->decode($pb);
 	$self->{latest_data}->{$feed_type} = $pb_object;
     }
-    if (scalar(@feed_type) == 1) {
-	return $self->{latest_data}->{$feed_type[0]};
+    if (scalar(@feed_types) == 1) {
+	return $self->{latest_data}->{$feed_types[0]};
     }
 }
 
