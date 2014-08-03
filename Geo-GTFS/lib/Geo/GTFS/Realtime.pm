@@ -54,7 +54,14 @@ sub new {
 
 sub set_cache_options {
     my ($self, %args) = @_;
-    my $cache_options = $self->{cache_options} //= { BasePath => "$ENV{HOME}/.http-cache-transparent",
+
+    if (defined $ENV{REQUEST_METHOD}) {
+	$self->{cache_path} = "/tmp/gtfs-realtime-data-$>/http-cache";
+    } else {
+	$self->{cache_path} = "$ENV{HOME}/.http-cache-transparent";
+    }
+
+    my $cache_options = $self->{cache_options} //= { BasePath => $self->{cache_path},
 						     Verbose => 0,
 						     NoUpdate => 30,
 						     NoUpdateImpatient => 1 };
@@ -111,7 +118,12 @@ sub init {
     $self->{ua} = LWP::UserAgent->new();
 
     $self->{gtfs_realtime_proto} = "https://developers.google.com/transit/gtfs-realtime/gtfs-realtime.proto";
-    $self->{my_cache} = "$ENV{HOME}/.my-gtfs-realtime-data/cache";
+
+    if (defined $ENV{REQUEST_METHOD}) {
+	$self->{my_cache} = "/tmp/gtfs-realtime-data-$>/gtfsrt-cache";
+    } else {
+	$self->{my_cache} = "$ENV{HOME}/.my-gtfs-realtime-data/cache";
+    }
 
     $self->{feed_types} = [ qw(alerts
 			       realtime_feed
