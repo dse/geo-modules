@@ -27,6 +27,7 @@ use Errno qw(EEXIST);
 use File::Spec::Functions qw(abs2rel);
 use Time::Local qw(timegm);
 use open IO => ":locale";
+use charnames ":full";
 
 BEGIN {
     # in osx you may have to run: cpan Crypt::SSLeay and do other
@@ -62,7 +63,9 @@ sub new {
 sub set_cache_options {
     my ($self, %args) = @_;
 
-    if (defined $ENV{REQUEST_METHOD}) {
+    my $username = getpwuid($>);
+
+    if (defined $ENV{REQUEST_METHOD} || $username eq "www-data") {
 	$self->{cache_path} = "/tmp/gtfs-realtime-data-$>/http-cache";
     } else {
 	$self->{cache_path} = "$ENV{HOME}/.http-cache-transparent";
@@ -73,7 +76,10 @@ sub set_cache_options {
 						     NoUpdate => 30,
 						     NoUpdateImpatient => 1 };
     %$cache_options = (%$cache_options, %args);
-    HTTP::Cache::Transparent::init($cache_options);
+    eval {
+	# in case it's not loaded...
+	HTTP::Cache::Transparent::init($cache_options);
+    };
 }
 
 sub init_transit_agency_specific_data {
@@ -396,7 +402,12 @@ sub _special_cmp {
 use Term::Size;
 use vars qw($COLUMNS $ROWS);
 BEGIN {
-    ($COLUMNS, $ROWS) = Term::Size::chars *STDOUT{IO};
+    if (-t 1) {
+	($COLUMNS, $ROWS) = Term::Size::chars *STDOUT{IO};
+    } else {
+	$COLUMNS = 80;
+	$ROWS = 24;
+    }
 }
 use Text::ASCIITable;
 use Text::FormatTable;
