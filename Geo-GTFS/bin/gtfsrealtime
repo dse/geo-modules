@@ -13,6 +13,7 @@ use FindBin;
 use lib "$FindBin::Bin/../lib";
 
 use lib "$ENV{HOME}/git/geo-modules/Geo-GTFS/lib";
+use lib "$ENV{HOME}/git/geo-modules--known-working/Geo-GTFS/lib";
 use lib "$ENV{HOME}/git/perl-app-thingy/lib";
 
 my $s = Geo::GTFS::Realtime::Shell->new();
