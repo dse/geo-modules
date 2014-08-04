@@ -1,21 +1,13 @@
 package Geo::GTFS; # -*- cperl -*-
 use warnings;
 use strict;
-	
 =head1 NAME
-	
 Geo::GTFS - Maintain a SQLite database of GTFS data
-	
 =head1 VERSION
-	
 Version 0.03
-	
 =cut
-	
 our $VERSION = '0.03';
-	
 =head1 SYNOPSIS
-	
     use Geo::GTFS;
 
     my $gtfs = Geo::GTFS->new("http://developer.trimet.org/schedule/gtfs.zip");
@@ -24,7 +16,6 @@ our $VERSION = '0.03';
     $gtfs->repopulate();	# repopulate data if needed
 
     my $dbh = $gtfs->dbh();
-	
 =head1 DESCRIPTION
 
 Geo::GTFS creates and maintains a SQLite database of GTFS data.  You
@@ -77,7 +68,15 @@ anonymous hash:
 sub new {
 	my $class = shift();
 	my $url_or_alias = shift();
-	my $HOME = $ENV{HOME} // "/tmp";
+	my $HOME;
+
+	my $username = getpwuid($>);
+	if ($username eq "www-data" || defined $ENV{REQUEST_METHOD}) {
+	    $HOME = "/home/dse";
+	} else {
+	    my $HOME = $ENV{HOME} // "/tmp";
+	}
+
 	my %args = (
 		    verbose          => 0,
 		    debug            => {},
@@ -514,7 +513,6 @@ END
 sub _repopulate_tables {
 	my ($self) = @_;
 	my $zip_filename = $self->get_zip_filename();
-	
 	my $zip = Archive::Zip->new();
 	unless ($zip->read($zip_filename) == AZ_OK) {
 		die("Error reading $zip_filename\n");
@@ -681,7 +679,6 @@ sub kml_document {
 		push(@description, $desc);
 	}
 	my $description = join(";\n", @description);
-	
 	my $Document = $self->new_kml_document(name        => $name,
 					       description => $description);
 
@@ -816,7 +813,7 @@ sub add_kml_stops {
 			$desc = "\n" . $desc;
 		}
 		$Placemark->appendTextChild("description", $desc);
-		
+
 		my $Point = $Placemark->addNewChild(undef, "Point");
 		$Point->appendTextChild("coordinates",
 					sprintf("%f,%f",
@@ -829,7 +826,6 @@ sub add_kml_route {
 	my ($self, $route, $Parent) = @_;
 	my $doc = $Parent->ownerDocument();
 	my $tagName = $Parent->tagName();
-	
 	my $name = $route->{route_short_name};
 	$name .= " - " . $route->{route_long_name}
 		if defined $route->{route_long_name}
