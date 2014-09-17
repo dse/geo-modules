@@ -42,6 +42,7 @@ $shell->run(@ARGV);
 
 package Geo::GTFS::MapMaker::Config;
 use YAML::Syck qw(LoadFile);
+
 sub new {
     my ($class, %args) = @_;
     my $self = bless(\%args, $class);
@@ -49,11 +50,41 @@ sub new {
     $self->init();
     return $self;
 }
+
 sub init {
     my ($self) = @_;
     $self->{data} = LoadFile($self->{file});
     if (!$self->{data}) {
 	die("No config to speak of at $self->{file}.\n");
+    }
+    $self->find_process_includes();
+}
+
+sub find_process_includes {
+    my ($self, $data) = @_;
+    $data //= $self->{data};
+    if (ref($data) eq "ARRAY") {
+	foreach my $item (@$data) {
+	    $self->find_process_includes($item);
+	}
+    }
+    elsif (ref($data) eq "HASH") {
+	while (my ($k, $v) = each(%$data)) {
+	    if ($k eq "include") {
+		$self->include($data, $v);
+	    } else {
+		$self->find_process_includes($v);
+	    }
+	}
+    }
+}
+
+sub include {
+    my ($self, $hash, $from) = @_;
+    if (ref($from) eq "HASH") {
+	while (my ($k, $v) = each(%$from)) {
+	    $hash->{$k} = $v;
+	}
     }
 }
 
@@ -65,6 +96,7 @@ sub new {
 	my $self = bless({}, $class);
 	return $self;
 }
+
 sub cmd__help {
 	my ($self) = @_;
 	print(<<"END");
@@ -94,6 +126,7 @@ where COMMAND is one of:
 	list-layers
 END
 }
+
 sub run {
 	my ($self, @args) = @_;
 	my @next;
@@ -118,6 +151,7 @@ sub run {
 		$self->run(@next);
 	}
 }
+
 sub find_method {
 	my ($self, $command, $prefix) = @_;
 	$command =~ s{-}{_}g;
@@ -128,26 +162,28 @@ sub find_method {
 	return $self->can($method_name);
 }
 
-sub load_map_info {
+sub load_map_config {
 	my ($self) = @_;
 	return if $self->{maps};
 	$self->{config} = Geo::GTFS::MapMaker::Config->new();
 	$self->{maps} = $self->{config}->{data};
 }
+
 sub cmd__list_maps {
 	my ($self) = @_;
-	$self->load_map_info();
+	$self->load_map_config();
 	foreach (sort { $a cmp $b } keys(%{$self->{maps}})) {
 		print("$_\n");
 	}
 }
+
 sub cmd__map {
 	my ($self, $mapname, $subcommand, @args) = @_;
 	die("no map name specified\n") unless defined $mapname;
 	die("no subcommand specified\n") unless defined $subcommand;
 	my $method = $self->find_method($subcommand);
 	die("no such command: '$subcommand'\n") unless $method;
-	$self->load_map_info();
+	$self->load_map_config();
 	my $mapinfo = $self->{maps}->{$mapname};
 	if (!$mapinfo) {
 		die("no such map: '$mapname'\n");
@@ -155,9 +191,11 @@ sub cmd__map {
 	my $mapmaker = Geo::MapMaker->new(filename => $mapname, %$mapinfo);
 	$mapmaker->{verbose} = $self->{verbose};
 	$mapmaker->{debug}   = $self->{debug};
+	# $mapmaker->{config}  = $self->{config};
 	$self->{mapmaker} = $mapmaker;
 	$self->$method(@args);
 }
+
 sub cmd__gtfs_update {
 	my ($self) = @_;
 	my $mm = $self->{mapmaker};
@@ -172,6 +210,7 @@ sub cmd__gtfs_update {
 		$gtfs->repopulate();
 	}
 }
+
 sub cmd__force_gtfs_update {
 	my ($self) = @_;
 	my $mm = $self->{mapmaker};
@@ -190,15 +229,18 @@ sub cmd__force_gtfs_update {
 sub cmd__osm_update {
 	goto *cmd__openstreetmap_update;
 }
+
 sub cmd__openstreetmap_update {
 	my ($self) = @_;
 	my $mm = $self->{mapmaker};
 	die("map MAPNAME must be specified.\n") unless $mm;
 	$mm->update_openstreetmap();
 }
+
 sub cmd__force_osm_update {
 	goto *cmd__force_openstreetmap_update;
 }
+
 sub cmd__force_openstreetmap_update {
 	my ($self) = @_;
 	my $mm = $self->{mapmaker};
@@ -218,6 +260,7 @@ sub cmd__gtfs_repopulate_database {
 		$gtfs->repopulate();
 	}
 }
+
 sub cmd__force_gtfs_repopulate_database {
 	my ($self) = @_;
 	my $mm = $self->{mapmaker};
