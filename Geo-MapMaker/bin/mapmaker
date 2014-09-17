@@ -85,6 +85,18 @@ sub include {
 	while (my ($k, $v) = each(%$from)) {
 	    $hash->{$k} = $v;
 	}
+    } elsif (ref($from) eq "") {
+	my $load = LoadFile($from);
+	if (!$load) {
+	    die("File $from not found.\n");
+	}
+	if (ref($load) eq "HASH") {
+	    while (my ($k, $v) = each(%$load)) {
+		$hash->{$k} = $v;
+	    }
+	} else {
+	    die("YAML file $from is not a hash.\n");
+	}
     }
 }
 
