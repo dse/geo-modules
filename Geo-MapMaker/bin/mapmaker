@@ -40,9 +40,25 @@ $shell->{verbose} = $verbose;
 $shell->{debug} = $debug;
 $shell->run(@ARGV);
 
+package Geo::GTFS::MapMaker::Config;
+use YAML::Syck qw(LoadFile);
+sub new {
+    my ($class, %args) = @_;
+    my $self = bless(\%args, $class);
+    $self->{file} //= "maps.yaml";
+    $self->init();
+    return $self;
+}
+sub init {
+    my ($self) = @_;
+    $self->{data} = LoadFile($self->{file});
+    if (!$self->{data}) {
+	die("No config to speak of at $self->{file}.\n");
+    }
+}
+
 package My::Shell;
 use List::MoreUtils qw(firstidx);
-use YAML::Syck qw(LoadFile);
 
 sub new {
 	my $class = shift();
@@ -115,11 +131,8 @@ sub find_method {
 sub load_map_info {
 	my ($self) = @_;
 	return if $self->{maps};
-	my $maps = LoadFile("maps.yaml");
-	if (!$maps) {
-		die("No maps.yaml data.\n");
-	}
-	$self->{maps} = $maps;
+	$self->{config} = Geo::GTFS::MapMaker::Config->new();
+	$self->{maps} = $self->{config}->{data};
 }
 sub cmd__list_maps {
 	my ($self) = @_;
