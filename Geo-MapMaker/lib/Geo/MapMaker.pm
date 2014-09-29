@@ -202,10 +202,10 @@ sub update_openstreetmap {
 sub _update_openstreetmap {
     my ($self, $force, $west_deg, $south_deg, $east_deg, $north_deg) = @_;
     
-    $west_deg  //= ($self->{map_data_west_deg}  // $self->{west_deg});
-    $south_deg //= ($self->{map_data_south_deg} // $self->{south_deg});
-    $east_deg  //= ($self->{map_data_east_deg}  // $self->{east_deg});
-    $north_deg //= ($self->{map_data_north_deg} // $self->{north_deg});
+    $west_deg  //= $self->west_map_data_boundary_deg();
+    $south_deg //= $self->south_map_data_boundary_deg();
+    $east_deg  //= $self->east_map_data_boundary_deg();
+    $north_deg //= $self->north_map_data_boundary_deg();
     
     my $center_lat = ($north_deg + $south_deg) / 2;
     my $center_lon = ($west_deg + $east_deg) / 2;
@@ -2859,6 +2859,51 @@ sub disable_layers {
 	}
     }
 }
+
+###############################################################################
+
+sub west_map_data_boundary_deg {
+    my ($self) = @_;
+    my $o = $self->{orientation};
+    if ($o) {
+	# FIXME
+	die("non-zero orientation not supported yet");
+    } else {
+	return ($self->{map_data_west_deg}  // $self->{west_deg});
+    }
+}
+sub east_map_data_boundary_deg {
+    my ($self) = @_;
+    my $o = $self->{orientation};
+    if ($o) {
+	# FIXME
+	die("non-zero orientation not supported yet");
+    } else {
+	return ($self->{map_data_east_deg}  // $self->{east_deg});
+    }
+}
+sub north_map_data_boundary_deg {
+    my ($self) = @_;
+    my $o = $self->{orientation};
+    if ($o) {
+	# FIXME
+	die("non-zero orientation not supported yet");
+    } else {
+	return ($self->{map_data_north_deg} // $self->{north_deg});
+    }
+}
+sub south_map_data_boundary_deg {
+    my ($self) = @_;
+    my $o = $self->{orientation};
+    if ($o) {
+	# FIXME
+	die("non-zero orientation not supported yet");
+    } else {
+	return ($self->{map_data_south_deg} // $self->{south_deg});
+    }
+}
+
+###############################################################################
 
 sub diag {
     my ($self, @args) = @_;
