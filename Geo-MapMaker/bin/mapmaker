@@ -41,7 +41,7 @@ $shell->{debug} = $debug;
 $shell->run(@ARGV);
 
 package Geo::GTFS::MapMaker::Config;
-use YAML::Syck qw(LoadFile);
+use YAML::Syck qw(LoadFile Dump);
 
 sub new {
     my ($class, %args) = @_;
@@ -58,6 +58,7 @@ sub init {
 	die("No config to speak of at $self->{file}.\n");
     }
     $self->find_process_includes();
+    print(Dump($self->{data}));
 }
 
 sub find_process_includes {
@@ -72,6 +73,7 @@ sub find_process_includes {
 	while (my ($k, $v) = each(%$data)) {
 	    if ($k eq "include") {
 		$self->include($data, $v);
+		delete $data->{include};
 	    } else {
 		$self->find_process_includes($v);
 	    }
@@ -79,24 +81,47 @@ sub find_process_includes {
     }
 }
 
+use Data::Dumper qw(Dumper);
+
 sub include {
     my ($self, $hash, $from) = @_;
     if (ref($from) eq "HASH") {
 	while (my ($k, $v) = each(%$from)) {
-	    $hash->{$k} = $v;
+	    if ($k eq "include") {
+		$self->include($hash, $v);
+		delete $from->{include};
+	    } else {
+		$hash->{$k} = $v;
+		$self->find_process_includes($v);
+	    }
 	}
-    } elsif (ref($from) eq "") {
+    } elsif (ref($from) eq "") { # string
 	my $load = LoadFile($from);
 	if (!$load) {
 	    die("File $from not found.\n");
 	}
 	if (ref($load) eq "HASH") {
 	    while (my ($k, $v) = each(%$load)) {
-		$hash->{$k} = $v;
+		if ($k eq "include") {
+		    $self->include($hash, $v);
+		    delete $load->{include};
+		} else {
+		    $hash->{$k} = $v;
+		    $self->find_process_includes($v);
+		}
 	    }
 	} else {
 	    die("YAML file $from is not a hash.\n");
 	}
+    } elsif (ref($from) eq "ARRAY") {
+	foreach my $value (@$from) {
+	    $self->include($hash, $value);
+	}
+    } elsif ($from->isa("YAML::Syck::BadAlias")) {
+	print(Dumper($from));
+	die();
+    } else {
+	die("include: $from (neither hash nor array nor string) specified.\n");
     }
 }
 
