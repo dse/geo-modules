@@ -63,6 +63,40 @@ BEGIN {
     @_FIELDS = qw(filename
 		  _read_filename
 
+		  classes
+		  layers
+		  route_colors
+		  route_overrides
+		  grid
+		  crop_lines
+		  crop_marks
+		  osm_layers
+		  inset_maps
+		  _map_areas
+		  _gtfs_list
+		  _parser
+		  _svg_doc
+		  _svg_doc_elt
+		  _xpc
+		  _map_xml_filenames
+		  _nodes
+		  _ways
+
+		  _cache
+		  include
+		  transit_route_overrides
+		  transit_route_defaults
+		  transit_route_groups
+		  transit_orig_route_color_mapping
+		  transit_trip_exceptions
+		  transit_route_fix_overlaps
+		  _dirty_
+		  debug
+		  verbose
+
+
+		  _scale_px_per_er
+
 		  north_deg
 		  south_deg
 		  east_deg
@@ -82,26 +116,6 @@ BEGIN {
 
 		  vertical_align
 		  horizontal_align
-
-		  classes
-		  layers
-		  route_colors
-		  route_overrides
-		  grid
-		  crop_lines
-		  crop_marks
-		  osm_layers
-		  inset_maps
-		  _map_areas
-		  _gtfs_list
-		  _parser
-		  _svg_doc
-		  _svg_doc_elt
-		  _xpc
-		  _map_xml_filenames
-		  _nodes
-		  _ways
-		  _scale_px_per_er
 
 		  _west_er
 		  _east_er
@@ -125,17 +139,6 @@ BEGIN {
 
 		  orientation
 
-		  _cache
-		  include
-		  transit_route_overrides
-		  transit_route_defaults
-		  transit_route_groups
-		  transit_orig_route_color_mapping
-		  transit_trip_exceptions
-		  transit_route_fix_overlaps
-		  _dirty_
-		  debug
-		  verbose
 		);
 }
 use fields @_FIELDS;
