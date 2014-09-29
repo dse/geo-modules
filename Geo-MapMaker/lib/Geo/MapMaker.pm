@@ -1144,21 +1144,6 @@ sub draw_transit_stops {
     }
 }
 
-use constant WGS84_EQUATORIAL_RADIUS_KILOMETERS => 6378.1370; # WGS84
-
-# returns the xxxxxx in 1:xxxxxx scale i.e. 1 inch on the map = this many inches in real life
-sub scale {
-    my ($self) = @_;
-    my $scale = $self->{_scale_px_per_er}; # this many pixels on the map = 1 unit of equatorial radius
-
-    $scale /= 90;		# inches
-    $scale *= 2.54;		# centimeters
-    $scale /= 100;		# meters
-    $scale /= 1000;		# kilometers;
-    $scale /= WGS84_EQUATORIAL_RADIUS_KILOMETERS;
-    return 1 / $scale;
-}
-
 sub draw_transit_routes {
     my ($self, @routes) = @_;
 	
@@ -2935,6 +2920,21 @@ BEGIN {
 	  my $x_er = $self->{_west_er}  + ($x_svg - $self->{_west_svg}) / $self->{_scale_px_per_er};
 	return $x_er / pi * 180;
     }
+}
+
+use constant WGS84_EQUATORIAL_RADIUS_KILOMETERS => 6378.1370; # WGS84
+
+# returns the xxxxxx in 1:xxxxxx scale i.e. 1 inch on the map = this many inches in real life
+sub scale {
+    my ($self) = @_;
+    my $scale = $self->{_scale_px_per_er}; # this many pixels on the map = 1 unit of equatorial radius
+
+    $scale /= 90;		# inches
+    $scale *= 2.54;		# centimeters
+    $scale /= 100;		# meters
+    $scale /= 1000;		# kilometers;
+    $scale /= WGS84_EQUATORIAL_RADIUS_KILOMETERS;
+    return 1 / $scale;
 }
 
 ###############################################################################
