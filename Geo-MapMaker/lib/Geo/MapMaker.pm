@@ -433,179 +433,6 @@ sub add_indexes_to_array {
     }
 }
 
-use Math::Trig;
-use constant D2R => atan2(1, 1) / 45;
-BEGIN {
-    sub update_scale {
-	my ($self, $map_area) = @_;
-	my $w_deg = $self->{west_deg};
-	my $e_deg = $self->{east_deg};
-	my $n_deg = $self->{north_deg};
-	my $s_deg = $self->{south_deg};
-	# specifically, an 'er' is 6378.1370 km equatorial radius, WGS-84 ellipsoid ***
-	my $wx_er = $self->{_west_er}  = _lon_deg_to_er($w_deg);
-	my $ex_er = $self->{_east_er}  = _lon_deg_to_er($e_deg);
-	my $ny_er = $self->{_north_er} = _lat_deg_to_er($n_deg);
-	my $sy_er = $self->{_south_er} = _lat_deg_to_er($s_deg);
-	my $width_er  = $ex_er - $wx_er;
-	my $height_er = $ny_er - $sy_er;
-	my $pww_px = $self->{paper_width_px}  - 2 * $self->{paper_margin_px} - 2 * $self->{fudge_factor_px}; # in px
-	my $phh_px = $self->{paper_height_px} - 2 * $self->{paper_margin_px} - 2 * $self->{fudge_factor_px}; # in px
-	if ($width_er / $height_er <= $pww_px / $phh_px) {
-	    $self->{_scale_px_per_er} = $phh_px / $height_er; # px/unit
-	} else {
-	    $self->{_scale_px_per_er} = $pww_px / $width_er; # px/unit
-	}
-	
-	# assuming top left
-	$self->{_north_svg} = $self->{paper_margin_px} + $self->{fudge_factor_px}; # so lat_deg_to_y_px works
-	$self->{_south_svg} = $self->lat_deg_to_y_px($self->{south_deg});
-	$self->{_west_svg}  = $self->{paper_margin_px} + $self->{fudge_factor_px}; # so lon_deg_to_x_px works
-	$self->{_east_svg}  = $self->lon_deg_to_x_px($self->{east_deg});
-	
-	# one of these will be zero.  maybe both.
-	my $extra_horizontal_room = $self->{paper_width_px}  - $self->{paper_margin_px} - $self->{_east_svg};
-	my $extra_vertical_room   = $self->{paper_height_px} - $self->{paper_margin_px} - $self->{_south_svg};
-	
-	if ($self->{vertical_align} eq "bottom") {
-	    $self->{_north_svg} += $extra_vertical_room;
-	    $self->{_south_svg} += $extra_vertical_room;
-	} elsif ($self->{vertical_align} eq "center") {
-	    $self->{_north_svg} += $extra_vertical_room / 2;
-	    $self->{_south_svg} += $extra_vertical_room / 2;
-	}
-	if ($self->{horizontal_align} eq "right") {
-	    $self->{_east_svg} += $extra_horizontal_room;
-	    $self->{_west_svg} += $extra_horizontal_room;
-	} elsif ($self->{horizontal_align} eq "center") {
-	    $self->{_east_svg} += $extra_horizontal_room / 2;
-	    $self->{_west_svg} += $extra_horizontal_room / 2;
-	}
-	
-	if ($map_area->{is_main} && $self->{extend_to_full_page}) {
-	    
-	    # recompute new values for all relevant variables and object properties
-	    my $new_north_svg =                            $self->{paper_margin_px} + $self->{fudge_factor_px};
-	    my $new_south_svg = $self->{paper_height_px} - $self->{paper_margin_px} - $self->{fudge_factor_px};
-	    my $new_west_svg  =                            $self->{paper_margin_px} + $self->{fudge_factor_px};
-	    my $new_east_svg  = $self->{paper_width_px}  - $self->{paper_margin_px} - $self->{fudge_factor_px};
-	    my $new_north_er  = $self->y_px_to_lat_er($new_north_svg);
-	    my $new_south_er  = $self->y_px_to_lat_er($new_south_svg);
-	    my $new_west_er   = $self->x_px_to_lon_er($new_west_svg);
-	    my $new_east_er   = $self->x_px_to_lon_er($new_east_svg);
-	    my $new_width_er  = $new_east_er - $new_west_er;
-	    my $new_height_er = $new_north_er - $new_south_er;
-	    my $new_north_deg = $self->y_px_to_lat_deg($new_north_svg);
-	    my $new_south_deg = $self->y_px_to_lat_deg($new_south_svg);
-	    my $new_west_deg  = $self->x_px_to_lon_deg($new_west_svg);
-	    my $new_east_deg  = $self->x_px_to_lon_deg($new_east_svg);
-	    
-	    # then set them.
-	    $self->{_north_svg}         = $new_north_svg;
-	    $self->{_south_svg}         = $new_south_svg;
-	    $self->{_east_svg}          = $new_east_svg;
-	    $self->{_west_svg}          = $new_west_svg;
-	    $width_er                   = $new_width_er;
-	    $height_er                  = $new_height_er;
-	    $self->{_west_er}  = $wx_er = $new_west_er;
-	    $self->{_east_er}  = $ex_er = $new_east_er;
-	    $self->{_north_er} = $ny_er = $new_north_er;
-	    $self->{_south_er} = $sy_er = $new_south_er;
-	    $self->{west_deg}  = $w_deg = $new_west_deg;
-	    $self->{east_deg}  = $e_deg = $new_east_deg;
-	    $self->{north_deg} = $n_deg = $new_north_deg;
-	    $self->{south_deg} = $s_deg = $new_south_deg;
-	}
-	
-	$self->{_north_svg_outer} = $self->{_north_svg} - $self->{fudge_factor_px};
-	$self->{_south_svg_outer} = $self->{_south_svg} + $self->{fudge_factor_px};
-	$self->{_west_svg_outer}  = $self->{_west_svg}  - $self->{fudge_factor_px};
-	$self->{_east_svg_outer}  = $self->{_east_svg}  + $self->{fudge_factor_px};
-	
-	$self->{_west_er_outer}    = $self->{_west_er}    - $self->{fudge_factor_px} / $self->{_scale_px_per_er};
-	$self->{_east_er_outer}    = $self->{_east_er}    + $self->{fudge_factor_px} / $self->{_scale_px_per_er};
-	$self->{_north_er_outer}   = $self->{_north_er}   - $self->{fudge_factor_px} / $self->{_scale_px_per_er};
-	$self->{_south_er_outer}   = $self->{_south_er}   + $self->{fudge_factor_px} / $self->{_scale_px_per_er};
-	
-	if (!($map_area->{is_main})) {
-	    # recalculate
-	    $w_deg = $map_area->{west_deg};
-	    $e_deg = $map_area->{east_deg};
-	    $n_deg = $map_area->{north_deg};
-	    $s_deg = $map_area->{south_deg};
-	    $wx_er = $self->{_west_er}  = _lon_deg_to_er($w_deg); # units
-	    $ex_er = $self->{_east_er}  = _lon_deg_to_er($e_deg); # units
-	    $ny_er = $self->{_north_er} = _lat_deg_to_er($n_deg); # units
-	    $sy_er = $self->{_south_er} = _lat_deg_to_er($s_deg); # units
-	    $width_er  = $ex_er - $wx_er;	      # units
-	    $height_er = $ny_er - $sy_er;	      # units
-	    if (exists $map_area->{zoom}) {
-		$self->{_scale_px_per_er} *= $map_area->{zoom};
-	    }
-	    if (exists $map_area->{left}) {
-		$self->{_west_svg} += $map_area->{left};
-		$self->{_east_svg} = $self->{_west_svg} + $self->{_scale_px_per_er} * $width_er;
-	    } elsif (exists $map_area->{right}) {
-		$self->{_east_svg} -= $map_area->{right};
-		$self->{_west_svg} = $self->{_east_svg} - $self->{_scale_px_per_er} * $width_er;
-	    }
-	    if (exists $map_area->{top}) {
-		$self->{_north_svg} += $map_area->{top};
-		$self->{_south_svg} = $self->{_north_svg} + $self->{_scale_px_per_er} * $height_er;
-	    } elsif (exists $map_area->{bottom}) {
-		$self->{_south_svg} -= $map_area->{bottom};
-		$self->{_north_svg} = $self->{_south_svg} - $self->{_scale_px_per_er} * $height_er;
-	    }
-	}
-    }
-    
-    # These need to NOT be object methods, for performance reasons.
-    sub _lon_deg_to_er {
-	my ($lon_deg) = @_;
-	return $lon_deg * D2R;
-    }
-    sub _lat_deg_to_er {
-	my ($lat_deg) = @_;
-	my $latr = $lat_deg * D2R;
-	return log(abs((1 + sin($latr)) / cos($latr)));
-    }
-
-    sub lon_er_to_x_px {
-	my ($self, $lon_er) = @_;
-	return $self->{_west_svg} + $self->{_scale_px_per_er} * ($lon_er - $self->{_west_er});
-    }
-    sub lat_er_to_y_px {
-	my ($self, $lat_er) = @_;
-	return $self->{_north_svg} + $self->{_scale_px_per_er} * ($self->{_north_er} - $lat_er);
-    }
-    sub x_px_to_lon_er {
-	my ($self, $x_px) = @_;
-	return ($x_px - $self->{_west_svg}) / $self->{_scale_px_per_er} + $self->{_west_er};
-    }
-    sub y_px_to_lat_er {
-	my ($self, $y_px) = @_;
-	return $self->{_north_er} - ($y_px - $self->{_north_svg}) / $self->{_scale_px_per_er};
-    }
-    sub lon_deg_to_x_px {
-	my ($self, $lon_deg) = @_;
-	  return $self->{_west_svg} + $self->{_scale_px_per_er} * (_lon_deg_to_er($lon_deg) - $self->{_west_er});
-    }
-    sub lat_deg_to_y_px {
-	my ($self, $lat_deg) = @_;
-	return $self->{_north_svg} + $self->{_scale_px_per_er} * ($self->{_north_er} - _lat_deg_to_er($lat_deg));
-    }
-    sub y_px_to_lat_deg {
-	my ($self, $y_svg) = @_;
-	my $y_er = $self->{_north_er} - ($y_svg - $self->{_north_svg}) / $self->{_scale_px_per_er};
-	return 360 / pi * atan(exp($y_er)) - 90;
-    }
-    sub x_px_to_lon_deg {
-	my ($self, $x_svg) = @_;
-	  my $x_er = $self->{_west_er}  + ($x_svg - $self->{_west_svg}) / $self->{_scale_px_per_er};
-	return $x_er / pi * 180;
-    }
-}
-
 sub clip_path_d {
     my ($self) = @_;
     my $left   = $self->west_outer_map_boundary_svg();
@@ -2935,6 +2762,179 @@ sub north_map_boundary_svg {
 sub south_map_boundary_svg {
     my ($self) = @_;
     return $self->{_south_svg_outer};
+}
+
+use Math::Trig;
+use constant D2R => atan2(1, 1) / 45;
+BEGIN {
+    sub update_scale {
+	my ($self, $map_area) = @_;
+	my $w_deg = $self->{west_deg};
+	my $e_deg = $self->{east_deg};
+	my $n_deg = $self->{north_deg};
+	my $s_deg = $self->{south_deg};
+	# specifically, an 'er' is 6378.1370 km equatorial radius, WGS-84 ellipsoid ***
+	my $wx_er = $self->{_west_er}  = _lon_deg_to_er($w_deg);
+	my $ex_er = $self->{_east_er}  = _lon_deg_to_er($e_deg);
+	my $ny_er = $self->{_north_er} = _lat_deg_to_er($n_deg);
+	my $sy_er = $self->{_south_er} = _lat_deg_to_er($s_deg);
+	my $width_er  = $ex_er - $wx_er;
+	my $height_er = $ny_er - $sy_er;
+	my $pww_px = $self->{paper_width_px}  - 2 * $self->{paper_margin_px} - 2 * $self->{fudge_factor_px}; # in px
+	my $phh_px = $self->{paper_height_px} - 2 * $self->{paper_margin_px} - 2 * $self->{fudge_factor_px}; # in px
+	if ($width_er / $height_er <= $pww_px / $phh_px) {
+	    $self->{_scale_px_per_er} = $phh_px / $height_er; # px/unit
+	} else {
+	    $self->{_scale_px_per_er} = $pww_px / $width_er; # px/unit
+	}
+	
+	# assuming top left
+	$self->{_north_svg} = $self->{paper_margin_px} + $self->{fudge_factor_px}; # so lat_deg_to_y_px works
+	$self->{_south_svg} = $self->lat_deg_to_y_px($self->{south_deg});
+	$self->{_west_svg}  = $self->{paper_margin_px} + $self->{fudge_factor_px}; # so lon_deg_to_x_px works
+	$self->{_east_svg}  = $self->lon_deg_to_x_px($self->{east_deg});
+	
+	# one of these will be zero.  maybe both.
+	my $extra_horizontal_room = $self->{paper_width_px}  - $self->{paper_margin_px} - $self->{_east_svg};
+	my $extra_vertical_room   = $self->{paper_height_px} - $self->{paper_margin_px} - $self->{_south_svg};
+	
+	if ($self->{vertical_align} eq "bottom") {
+	    $self->{_north_svg} += $extra_vertical_room;
+	    $self->{_south_svg} += $extra_vertical_room;
+	} elsif ($self->{vertical_align} eq "center") {
+	    $self->{_north_svg} += $extra_vertical_room / 2;
+	    $self->{_south_svg} += $extra_vertical_room / 2;
+	}
+	if ($self->{horizontal_align} eq "right") {
+	    $self->{_east_svg} += $extra_horizontal_room;
+	    $self->{_west_svg} += $extra_horizontal_room;
+	} elsif ($self->{horizontal_align} eq "center") {
+	    $self->{_east_svg} += $extra_horizontal_room / 2;
+	    $self->{_west_svg} += $extra_horizontal_room / 2;
+	}
+	
+	if ($map_area->{is_main} && $self->{extend_to_full_page}) {
+	    
+	    # recompute new values for all relevant variables and object properties
+	    my $new_north_svg =                            $self->{paper_margin_px} + $self->{fudge_factor_px};
+	    my $new_south_svg = $self->{paper_height_px} - $self->{paper_margin_px} - $self->{fudge_factor_px};
+	    my $new_west_svg  =                            $self->{paper_margin_px} + $self->{fudge_factor_px};
+	    my $new_east_svg  = $self->{paper_width_px}  - $self->{paper_margin_px} - $self->{fudge_factor_px};
+	    my $new_north_er  = $self->y_px_to_lat_er($new_north_svg);
+	    my $new_south_er  = $self->y_px_to_lat_er($new_south_svg);
+	    my $new_west_er   = $self->x_px_to_lon_er($new_west_svg);
+	    my $new_east_er   = $self->x_px_to_lon_er($new_east_svg);
+	    my $new_width_er  = $new_east_er - $new_west_er;
+	    my $new_height_er = $new_north_er - $new_south_er;
+	    my $new_north_deg = $self->y_px_to_lat_deg($new_north_svg);
+	    my $new_south_deg = $self->y_px_to_lat_deg($new_south_svg);
+	    my $new_west_deg  = $self->x_px_to_lon_deg($new_west_svg);
+	    my $new_east_deg  = $self->x_px_to_lon_deg($new_east_svg);
+	    
+	    # then set them.
+	    $self->{_north_svg}         = $new_north_svg;
+	    $self->{_south_svg}         = $new_south_svg;
+	    $self->{_east_svg}          = $new_east_svg;
+	    $self->{_west_svg}          = $new_west_svg;
+	    $width_er                   = $new_width_er;
+	    $height_er                  = $new_height_er;
+	    $self->{_west_er}  = $wx_er = $new_west_er;
+	    $self->{_east_er}  = $ex_er = $new_east_er;
+	    $self->{_north_er} = $ny_er = $new_north_er;
+	    $self->{_south_er} = $sy_er = $new_south_er;
+	    $self->{west_deg}  = $w_deg = $new_west_deg;
+	    $self->{east_deg}  = $e_deg = $new_east_deg;
+	    $self->{north_deg} = $n_deg = $new_north_deg;
+	    $self->{south_deg} = $s_deg = $new_south_deg;
+	}
+	
+	$self->{_north_svg_outer} = $self->{_north_svg} - $self->{fudge_factor_px};
+	$self->{_south_svg_outer} = $self->{_south_svg} + $self->{fudge_factor_px};
+	$self->{_west_svg_outer}  = $self->{_west_svg}  - $self->{fudge_factor_px};
+	$self->{_east_svg_outer}  = $self->{_east_svg}  + $self->{fudge_factor_px};
+	
+	$self->{_west_er_outer}    = $self->{_west_er}    - $self->{fudge_factor_px} / $self->{_scale_px_per_er};
+	$self->{_east_er_outer}    = $self->{_east_er}    + $self->{fudge_factor_px} / $self->{_scale_px_per_er};
+	$self->{_north_er_outer}   = $self->{_north_er}   - $self->{fudge_factor_px} / $self->{_scale_px_per_er};
+	$self->{_south_er_outer}   = $self->{_south_er}   + $self->{fudge_factor_px} / $self->{_scale_px_per_er};
+	
+	if (!($map_area->{is_main})) {
+	    # recalculate
+	    $w_deg = $map_area->{west_deg};
+	    $e_deg = $map_area->{east_deg};
+	    $n_deg = $map_area->{north_deg};
+	    $s_deg = $map_area->{south_deg};
+	    $wx_er = $self->{_west_er}  = _lon_deg_to_er($w_deg); # units
+	    $ex_er = $self->{_east_er}  = _lon_deg_to_er($e_deg); # units
+	    $ny_er = $self->{_north_er} = _lat_deg_to_er($n_deg); # units
+	    $sy_er = $self->{_south_er} = _lat_deg_to_er($s_deg); # units
+	    $width_er  = $ex_er - $wx_er;	      # units
+	    $height_er = $ny_er - $sy_er;	      # units
+	    if (exists $map_area->{zoom}) {
+		$self->{_scale_px_per_er} *= $map_area->{zoom};
+	    }
+	    if (exists $map_area->{left}) {
+		$self->{_west_svg} += $map_area->{left};
+		$self->{_east_svg} = $self->{_west_svg} + $self->{_scale_px_per_er} * $width_er;
+	    } elsif (exists $map_area->{right}) {
+		$self->{_east_svg} -= $map_area->{right};
+		$self->{_west_svg} = $self->{_east_svg} - $self->{_scale_px_per_er} * $width_er;
+	    }
+	    if (exists $map_area->{top}) {
+		$self->{_north_svg} += $map_area->{top};
+		$self->{_south_svg} = $self->{_north_svg} + $self->{_scale_px_per_er} * $height_er;
+	    } elsif (exists $map_area->{bottom}) {
+		$self->{_south_svg} -= $map_area->{bottom};
+		$self->{_north_svg} = $self->{_south_svg} - $self->{_scale_px_per_er} * $height_er;
+	    }
+	}
+    }
+    
+    # These need to NOT be object methods, for performance reasons.
+    sub _lon_deg_to_er {
+	my ($lon_deg) = @_;
+	return $lon_deg * D2R;
+    }
+    sub _lat_deg_to_er {
+	my ($lat_deg) = @_;
+	my $latr = $lat_deg * D2R;
+	return log(abs((1 + sin($latr)) / cos($latr)));
+    }
+
+    sub lon_er_to_x_px {
+	my ($self, $lon_er) = @_;
+	return $self->{_west_svg} + $self->{_scale_px_per_er} * ($lon_er - $self->{_west_er});
+    }
+    sub lat_er_to_y_px {
+	my ($self, $lat_er) = @_;
+	return $self->{_north_svg} + $self->{_scale_px_per_er} * ($self->{_north_er} - $lat_er);
+    }
+    sub x_px_to_lon_er {
+	my ($self, $x_px) = @_;
+	return ($x_px - $self->{_west_svg}) / $self->{_scale_px_per_er} + $self->{_west_er};
+    }
+    sub y_px_to_lat_er {
+	my ($self, $y_px) = @_;
+	return $self->{_north_er} - ($y_px - $self->{_north_svg}) / $self->{_scale_px_per_er};
+    }
+    sub lon_deg_to_x_px {
+	my ($self, $lon_deg) = @_;
+	  return $self->{_west_svg} + $self->{_scale_px_per_er} * (_lon_deg_to_er($lon_deg) - $self->{_west_er});
+    }
+    sub lat_deg_to_y_px {
+	my ($self, $lat_deg) = @_;
+	return $self->{_north_svg} + $self->{_scale_px_per_er} * ($self->{_north_er} - _lat_deg_to_er($lat_deg));
+    }
+    sub y_px_to_lat_deg {
+	my ($self, $y_svg) = @_;
+	my $y_er = $self->{_north_er} - ($y_svg - $self->{_north_svg}) / $self->{_scale_px_per_er};
+	return 360 / pi * atan(exp($y_er)) - 90;
+    }
+    sub x_px_to_lon_deg {
+	my ($self, $x_svg) = @_;
+	  my $x_er = $self->{_west_er}  + ($x_svg - $self->{_west_svg}) / $self->{_scale_px_per_er};
+	return $x_er / pi * 180;
+    }
 }
 
 ###############################################################################
