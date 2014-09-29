@@ -122,7 +122,9 @@ BEGIN {
 		  _east_svg_outer
 		  _north_svg_outer
 		  _south_svg_outer
-		  
+
+		  orientation
+
 		  _cache
 		  include
 		  transit_route_overrides
