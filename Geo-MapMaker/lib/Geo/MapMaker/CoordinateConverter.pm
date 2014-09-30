@@ -49,6 +49,11 @@ use fields qw(
 		 bottom_y_px
 
 		 scale_px_per_er
+
+		 west_lon_deg
+		 east_lon_deg
+		 north_lat_deg
+		 south_lat_deg
 	    );
 
 use constant DEFAULTS => (
@@ -155,6 +160,8 @@ sub set_center_lon_lat_deg {
     $self->{right_x_px}  = $self->{paper_width_px} - $self->{paper_margin_x_px};
     $self->{top_y_px}    = $self->{paper_margin_y_px};
     $self->{bottom_y_px} = $self->{paper_height_px} - $self->{paper_margin_y_px};
+
+    $self->set_real_lat_lon_boundaries();
 }
 
 # B
@@ -261,12 +268,12 @@ sub set_lon_lat_boundaries {
     $self->{right_x_px}  = $self->{paper_width_px} - $self->{paper_margin_x_px};
     if (!$self->{horizontal_fill}) {
 	if ($self->{horizontal_alignment} eq "left") {
-	    $self->{right_x_px} = $self->{center_x_px} + $self->{map_width_px} / 2;
+	    $self->{right_x_px} = $self->{left_x_px} + $self->{map_width_px};
 	} elsif ($self->{horizontal_alignment} eq "right") {
-	    $self->{left_x_px} = $self->{center_x_px} - $self->{map_width_px} / 2;
+	    $self->{left_x_px} = $self->{right_x_px} - $self->{map_width_px};
 	} else {
-	    $self->{right_x_px} = $self->{center_x_px} + $self->{map_width_px} / 4;
-	    $self->{left_x_px} = $self->{center_x_px} - $self->{map_width_px} / 4;
+	    $self->{right_x_px} = $self->{center_x_px} + $self->{map_width_px} / 2;
+	    $self->{left_x_px} = $self->{center_x_px} - $self->{map_width_px} / 2;
 	}
     }
 
@@ -274,16 +281,29 @@ sub set_lon_lat_boundaries {
     $self->{bottom_y_px} = $self->{paper_height_px} - $self->{paper_margin_y_px};
     if (!$self->{vertical_fill}) {
 	if ($self->{vertical_alignment} eq "top") {
-	    $self->{bottom_y_px} = $self->{center_y_px} + $self->{map_height_px} / 2;
+	    $self->{bottom_y_px} = $self->{top_y_px} + $self->{map_height_px};
 	} elsif ($self->{vertical_alignment} eq "bottom") {
-	    $self->{top_y_px} = $self->{center_y_px} - $self->{map_height_px} / 2;
+	    $self->{top_y_px} = $self->{bottom_y_px} - $self->{map_height_px};
 	} else {
-	    $self->{bottom_y_px} = $self->{center_y_px} + $self->{map_height_px} / 4;
-	    $self->{top_y_px} = $self->{center_y_px} - $self->{map_height_px} / 4;
+	    $self->{bottom_y_px} = $self->{center_y_px} + $self->{map_height_px} / 2;
+	    $self->{top_y_px} = $self->{center_y_px} - $self->{map_height_px} / 2;
 	}
     }
 
+    $self->set_real_lat_lon_boundaries();
 }
+
+#------------------------------------------------------------------------------
+
+sub set_real_lat_lon_boundaries {
+    my ($self) = @_;
+    $self->{west_lon_deg}  = $self->x_px_to_lon_deg($self->{left_x_px});
+    $self->{east_lon_deg}  = $self->x_px_to_lon_deg($self->{right_x_px});
+    $self->{north_lat_deg} = $self->y_px_to_lat_deg($self->{top_y_px});
+    $self->{south_lat_deg} = $self->y_px_to_lat_deg($self->{bottom_y_px});
+}
+
+#------------------------------------------------------------------------------
 
 sub lon_deg_to_er {
     my ($self, $lon_deg) = @_;
