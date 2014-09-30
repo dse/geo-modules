@@ -3,6 +3,7 @@ use warnings;
 use strict;
 
 use Math::Trig;
+use Math::Trig qw(:pi);
 use constant D2R => atan2(1, 1) / 45;
 use constant WGS84_EQUATORIAL_RADIUS_KILOMETERS => 6378.1370; # WGS84
 use constant KM_PER_ER => WGS84_EQUATORIAL_RADIUS_KILOMETERS;
@@ -30,6 +31,7 @@ use constant FIELDS => qw(
 
 			     center_lon_deg
 			     center_lat_deg
+
 			     center_lon_er
 			     center_lat_er
 
@@ -45,6 +47,11 @@ use constant FIELDS => qw(
 			     right_x_px
 			     top_y_px
 			     bottom_y_px
+
+			     west_lon_deg
+			     east_lon_deg
+			     north_lat_deg
+			     south_lat_deg
 
 			     west_lon_er
 			     east_lon_er
@@ -190,8 +197,8 @@ sub set_lon_lat_boundaries {
 
     $self->{west_lon_deg} = $west_lon_deg;
     $self->{east_lon_deg} = $east_lon_deg;
-    $self->{north_lon_deg} = $north_lon_deg;
-    $self->{south_lon_deg} = $south_lon_deg;
+    $self->{north_lon_deg} = $north_lat_deg;
+    $self->{south_lon_deg} = $south_lat_deg;
 
     my $west_lon_er  = $self->{west_lon_er}  = $self->lon_deg_to_er($west_lon_deg);
     my $east_lon_er  = $self->{east_lon_er}  = $self->lon_deg_to_er($east_lon_deg);
@@ -199,7 +206,7 @@ sub set_lon_lat_boundaries {
     my $south_lat_er = $self->{south_lat_er} = $self->lat_deg_to_er($south_lat_deg);
 
     my $center_lon_er = $self->{center_lon_er} = ($west_lon_er + $east_lon_er) / 2;
-    my $center_lat_er = $self->{center_lat_er} = ($north_lat_er + $east_lat_er) / 2;
+    my $center_lat_er = $self->{center_lat_er} = ($north_lat_er + $south_lat_er) / 2;
     my $center_lon_deg = $self->lon_er_to_deg($center_lon_er);
     my $center_lat_deg = $self->lat_er_to_deg($center_lat_er);
 
