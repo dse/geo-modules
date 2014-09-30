@@ -88,12 +88,14 @@ sub set_paper_size_px {
 
 sub set_paper_margin_px {
     my ($self, $width_px, $height_px) = @_;
+    $height_px //= $width_px;
     $self->{paper_margin_x_px} = $width_px  if defined $width_px;
     $self->{paper_margin_y_px} = $height_px if defined $height_px;
 }
 
 sub set_fudge_factor_px {
     my ($self, $width_px, $height_px) = @_;
+    $height_px //= $width_px;
     $self->{fudge_factor_x_px} = $width_px  if defined $width_px;
     $self->{fudge_factor_y_px} = $height_px if defined $height_px;
 }
@@ -133,7 +135,7 @@ sub set_center_lon_lat_deg {
 
     die("must specify longitude AND latitude.\n") if !defined $lon_deg || !defined $lat_deg;
 
-    $self->{reset_A} = _sub_to_call_this_sub(@_);
+    #$self->{reset_A} = _sub_to_call_this_sub(@_);
 
     $self->{center_lon_deg} = $lon_deg;
     $self->{center_lat_deg} = $lat_deg;
@@ -141,25 +143,25 @@ sub set_center_lon_lat_deg {
     $self->{center_lon_er} = $self->lon_deg_to_er($self->{center_lon_deg});
     $self->{center_lat_er} = $self->lon_deg_to_er($self->{center_lat_deg});
 
-    $self->{map_area_width_px}  = $self->{paper_size_x_px} - $self->{paper_margin_x_px} - $self->{fudge_factor_x_px};
-    $self->{map_area_height_px} = $self->{paper_size_y_px} - $self->{paper_margin_y_px} - $self->{fudge_factor_y_px};
-    $self->{map_width_px}  = $self->{paper_size_x_px} - $self->{paper_margin_x_px};
-    $self->{map_height_px} = $self->{paper_size_y_px} - $self->{paper_margin_y_px};
+    $self->{map_area_width_px}  = $self->{paper_width_px} - $self->{paper_margin_x_px} - $self->{fudge_factor_x_px};
+    $self->{map_area_height_px} = $self->{paper_height_px} - $self->{paper_margin_y_px} - $self->{fudge_factor_y_px};
+    $self->{map_width_px}  = $self->{paper_width_px} - $self->{paper_margin_x_px};
+    $self->{map_height_px} = $self->{paper_height_px} - $self->{paper_margin_y_px};
 
     $self->{center_x_px} = $self->{paper_width_px} / 2;
     $self->{center_y_px} = $self->{paper_height_px} / 2;
 
     $self->{left_x_px}   = $self->{paper_margin_x_px};
     $self->{right_x_px}  = $self->{paper_width_px} - $self->{paper_margin_x_px};
-    $self->{top_x_px}    = $self->{paper_margin_y_px};
-    $self->{bottom_x_px} = $self->{paper_height_px} - $self->{paper_margin_y_px};
+    $self->{top_y_px}    = $self->{paper_margin_y_px};
+    $self->{bottom_y_px} = $self->{paper_height_px} - $self->{paper_margin_y_px};
 }
 
 # B
 sub set_orientation {
     my ($self, $orientation) = @_;
 
-    $self->{reset_B} = _sub_to_call_this_sub(@_);
+    #$self->{reset_B} = _sub_to_call_this_sub(@_);
 
     $self->{orientation} = $orientation if defined $orientation;
 }
@@ -168,7 +170,7 @@ sub set_orientation {
 sub set_absolute_scale {
     my ($self, $scale) = @_;
 
-    $self->{reset_C} = _sub_to_call_this_sub(@_);
+    #$self->{reset_C} = _sub_to_call_this_sub(@_);
 
     $self->{scale_px_per_er} = $scale # in px per px
       * PX_PER_IN		       # in px per in
@@ -182,9 +184,9 @@ sub set_absolute_scale {
 sub set_lon_lat_boundaries {
     my ($self, $west_lon_deg, $east_lon_deg, $north_lat_deg, $south_lat_deg) = @_;
 
-    $self->{reset_A} = _sub_to_call_this_sub(@_);
-    $self->{reset_B} = undef;
-    $self->{reset_C} = undef;
+    #$self->{reset_A} = _sub_to_call_this_sub(@_);
+    #$self->{reset_B} = undef;
+    #$self->{reset_C} = undef;
 
     $self->{orientation} = 0;
 
@@ -197,16 +199,6 @@ sub set_lon_lat_boundaries {
     my $center_lat_er = ($north_lat_er + $south_lat_er) / 2;
     my $center_lon_deg = $self->lon_er_to_deg($center_lon_er);
     my $center_lat_deg = $self->lat_er_to_deg($center_lat_er);
-
-    # $self->{west_lon_deg} = $west_lon_deg;
-    # $self->{east_lon_deg} = $east_lon_deg;
-    # $self->{north_lon_deg} = $north_lat_deg;
-    # $self->{south_lon_deg} = $south_lat_deg;
-
-    # $self->{west_lon_er} = $west_lon_er;
-    # $self->{east_lon_er} = $east_lon_er;
-    # $self->{north_lat_er} = $north_lat_er;
-    # $self->{south_lat_er} = $south_lat_er;
 
     $self->{center_lon_er} = $center_lon_er;
     $self->{center_lat_er} = $center_lat_er;
@@ -221,8 +213,8 @@ sub set_lon_lat_boundaries {
     # =1 square
     # <1 portrait
 
-    my $paper_map_area_width = $self->{paper_width_px} - $self->{paper_margin_x_px} - $self->{fudge_factor_x_px};
-    my $paper_map_area_height = $self->{paper_height_px} - $self->{paper_margin_y_px} - $self->{fudge_factor_y_px};
+    my $paper_map_area_width  = $self->{paper_width_px}  - $self->{paper_margin_x_px} * 2 - $self->{fudge_factor_x_px} * 2;
+    my $paper_map_area_height = $self->{paper_height_px} - $self->{paper_margin_y_px} * 2 - $self->{fudge_factor_y_px} * 2;
 
     my $paper_map_area_aspect = $paper_map_area_width / $paper_map_area_height;
     # >1 landscape
@@ -243,8 +235,8 @@ sub set_lon_lat_boundaries {
 
     $self->{map_area_width_px}  = $self->{scale_px_per_er} * $width_er;
     $self->{map_area_height_px} = $self->{scale_px_per_er} * $height_er;
-    $self->{map_width_px}       = $self->{map_area_width_px} + $self->{fudge_factor_x_px};
-    $self->{map_height_px}      = $self->{map_area_height_px} + $self->{fudge_factor_y_px};
+    $self->{map_width_px}       = $self->{map_area_width_px}  + $self->{fudge_factor_x_px} * 2;
+    $self->{map_height_px}      = $self->{map_area_height_px} + $self->{fudge_factor_y_px} * 2;
 
     # in er, 0 = bottom left
     # in svg, 0 = top left
@@ -252,17 +244,17 @@ sub set_lon_lat_boundaries {
     if ($self->{horizontal_alignment} eq "left") {
 	$self->{center_x_px} = $self->{paper_margin_x_px} + $self->{fudge_factor_x_px} + $self->{map_width_px} / 2;
     } elsif ($self->{horizontal_alignment} eq "right") {
-	$self->{center_x_px} = $self->{paper_size_x_px} - $self->{paper_margin_x_px} - $self->{fudge_factor_x_px} - $self->{map_width_px} / 2;
+	$self->{center_x_px} = $self->{paper_width_px} - $self->{paper_margin_x_px} - $self->{fudge_factor_x_px} - $self->{map_width_px} / 2;
     } else {
-	$self->{center_x_px} = $self->{paper_size_x_px} / 2;
+	$self->{center_x_px} = $self->{paper_width_px} / 2;
     }
 
     if ($self->{vertical_alignment} eq "top") {
 	$self->{center_y_px} = $self->{paper_margin_y_px} + $self->{fudge_factor_y_px} + $self->{map_height_px} / 2;
     } elsif ($self->{vertical_alignment} eq "bottom") {
-	$self->{center_y_px} = $self->{paper_size_y_px} - $self->{paper_margin_y_px} - $self->{fudge_factor_y_px} - $self->{map_height_px} / 2;
+	$self->{center_y_px} = $self->{paper_height_px} - $self->{paper_margin_y_px} - $self->{fudge_factor_y_px} - $self->{map_height_px} / 2;
     } else {
-	$self->{center_y_px} = $self->{paper_size_y_px} / 2;
+	$self->{center_y_px} = $self->{paper_height_px} / 2;
     }
 
     $self->{left_x_px}   = $self->{paper_margin_x_px};
@@ -278,8 +270,8 @@ sub set_lon_lat_boundaries {
 	}
     }
 
-    $self->{top_x_px}    = $self->{paper_margin_y_px};
-    $self->{bottom_x_px} = $self->{paper_height_px} - $self->{paper_margin_y_px};
+    $self->{top_y_px}    = $self->{paper_margin_y_px};
+    $self->{bottom_y_px} = $self->{paper_height_px} - $self->{paper_margin_y_px};
     if (!$self->{vertical_fill}) {
 	if ($self->{vertical_alignment} eq "top") {
 	    $self->{bottom_y_px} = $self->{center_y_px} + $self->{map_height_px} / 2;
