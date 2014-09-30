@@ -1123,8 +1123,9 @@ sub draw_transit_stops {
 		my $lat_deg       = $stop->{stop_lat};
 		my $lon_deg       = $stop->{stop_lon};
 		my $title = join(" - ", grep { $_ } ($stop_code, $stop_name, $stop_desc));
-		my $x = $self->{converter}->lon_deg_to_x_px($lon_deg);
-		my $y = $self->{converter}->lat_deg_to_y_px($lat_deg);
+
+		my ($x, $y) = $self->{converter}->lon_lat_deg_to_x_y_px($lon_deg, $lat_deg);
+		
 		return if $x < $west_svg  || $x > $east_svg;
 		return if $y < $north_svg || $y > $south_svg;
 		my $circle = $self->circle_node(x => $x, y => $y, r => $r,
@@ -1250,8 +1251,9 @@ sub draw_transit_routes {
 		    my @coords = $self->get_transit_route_shape_points($gtfs, $shape_id);
 		    $shape_coords{$agency_route}{$shape_id} = [@coords];
 		    my @svg_coords = map {
-			my $svgx = $self->{converter}->lon_deg_to_x_px($_->[0]);
-			my $svgy = $self->{converter}->lat_deg_to_y_px($_->[1]);
+
+			my ($svgx, $svgy) = $self->{converter}->lon_lat_deg_to_x_y_px($_->[0], $_->[1]);
+
 			my $xzone = ($svgx <= $west_svg)  ? -1 : ($svgx >= $east_svg)  ? 1 : 0;
 			my $yzone = ($svgy <= $north_svg) ? -1 : ($svgy >= $south_svg) ? 1 : 0;
 			[ $svgx, $svgy, $xzone, $yzone ];
@@ -1268,6 +1270,7 @@ sub draw_transit_routes {
     }
 
     if ($self->{transit_route_fix_overlaps}) {
+	# FIXME
 	if (scalar(@{$self->{transit_route_fix_overlaps}})) {
 	    $self->diag("Handling user-defined overlaps...\n");
 	}
@@ -1544,8 +1547,7 @@ sub draw_openstreetmap_maps {
 		my $id  = $node->getAttribute("id");
 		my $lat_deg = 0 + $node->getAttribute("lat");
 		my $lon_deg = 0 + $node->getAttribute("lon");
-		my $svgx = $self->{converter}->lon_deg_to_x_px($lon_deg);
-		my $svgy = $self->{converter}->lat_deg_to_y_px($lat_deg);
+		my ($svgx, $svgy) = $self->{converter}->lon_lat_deg_to_x_y_px($lon_deg, $lat_deg);
 		my $xzone = ($svgx <= $west_svg)  ? -1 : ($svgx >= $east_svg)  ? 1 : 0;
 		my $yzone = ($svgy <= $north_svg) ? -1 : ($svgy >= $south_svg) ? 1 : 0;
 		my $result = [$svgx, $svgy, $xzone, $yzone];
@@ -2138,6 +2140,12 @@ sub remove_crop_lines {
 sub draw_crop_lines {
     my ($self) = @_;
 
+    # FIXME: don't use longitude/latitude coordinates, just use SVG
+    # coordinates to determine where to plot the crop lines and crop
+    # marks.
+
+    return;
+
     $self->init_xml();
 
     $self->{_dirty_} = 1;
@@ -2297,6 +2305,8 @@ sub draw_grid {
 	$grid_layer->removeChildNodes(); # OK
 	my $clipped_group = $self->find_or_create_clipped_group(parent => $grid_layer,
 								clip_path_id => $map_area->{clip_path_id});
+
+	# FIXME: do coordinate conversions for each point, not each x and each y.
 
 	my $south_deg = $self->south_outer_map_boundary_deg; my $y_south = $self->{converter}->lat_deg_to_y_px($south_deg);
 	my $north_deg = $self->north_outer_map_boundary_deg; my $y_north = $self->{converter}->lat_deg_to_y_px($north_deg);
@@ -2724,223 +2734,19 @@ sub south_outer_map_boundary_svg {
     return $self->{converter}->{bottom_y_px};
 }
 
-sub west_map_boundary_deg {
-    my ($self) = @_;
-    return $self->{west_deg};
-}
-sub east_map_boundary_deg {
-    my ($self) = @_;
-    return $self->{east_deg};
-}
-sub north_map_boundary_deg {
-    my ($self) = @_;
-    return $self->{north_deg};
-}
-sub south_map_boundary_deg {
-    my ($self) = @_;
-    return $self->{south_deg};
-}
-
-use Math::Trig;
-use constant D2R => atan2(1, 1) / 45;
-BEGIN {
-    sub update_scale {
-	my ($self, $map_area) = @_;
-
-	if (defined $self->{west_deg} &&
-	      defined $self->{east_deg} &&
-		defined $self->{north_deg} &&
-		  defined $self->{south_deg}) {
-	    my $converter = Geo::MapMaker::CoordinateConverter->new();
-	    $converter->set_paper_size_px($self->{paper_width_px}, $self->{paper_height_px});
-	    $converter->set_paper_margin_px($self->{paper_margin_px});
-	    $converter->set_fudge_factor_px($self->{fudge_factor_px});
-
-	    $converter->set_lon_lat_boundaries($self->{west_deg}, $self->{east_deg},
-					       $self->{north_deg}, $self->{south_deg});
-	    $self->{converter} = $converter;
-
-	} else {
-	    die("You must specify a map area somehow.\n");
-	    $self->{converter} = undef;
-	}
-
-	my $w_deg = $self->{west_deg};
-	my $e_deg = $self->{east_deg};
-	my $n_deg = $self->{north_deg};
-	my $s_deg = $self->{south_deg};
-	# specifically, an 'er' is 6378.1370 km equatorial radius, WGS-84 ellipsoid ***
-	my $wx_er = $self->{_west_er}  = _lon_deg_to_er($w_deg);
-	my $ex_er = $self->{_east_er}  = _lon_deg_to_er($e_deg);
-	my $ny_er = $self->{_north_er} = _lat_deg_to_er($n_deg);
-	my $sy_er = $self->{_south_er} = _lat_deg_to_er($s_deg);
-	my $width_er  = $ex_er - $wx_er;
-	my $height_er = $ny_er - $sy_er;
-	my $pww_px = $self->{paper_width_px}  - 2 * $self->{paper_margin_px} - 2 * $self->{fudge_factor_px}; # in px
-	my $phh_px = $self->{paper_height_px} - 2 * $self->{paper_margin_px} - 2 * $self->{fudge_factor_px}; # in px
-	if ($width_er / $height_er <= $pww_px / $phh_px) {
-	    $self->{_scale_px_per_er} = $phh_px / $height_er; # px/unit
-	} else {
-	    $self->{_scale_px_per_er} = $pww_px / $width_er; # px/unit
-	}
-	
-	# assuming top left
-	$self->{_north_svg} = $self->{paper_margin_px} + $self->{fudge_factor_px}; # so lat_deg_to_y_px works
-	$self->{_south_svg} = $self->lat_deg_to_y_px($self->{south_deg});
-	$self->{_west_svg}  = $self->{paper_margin_px} + $self->{fudge_factor_px}; # so lon_deg_to_x_px works
-	$self->{_east_svg}  = $self->lon_deg_to_x_px($self->{east_deg});
-	
-	# one of these will be zero.  maybe both.
-	my $extra_horizontal_room = $self->{paper_width_px}  - $self->{paper_margin_px} - $self->{_east_svg};
-	my $extra_vertical_room   = $self->{paper_height_px} - $self->{paper_margin_px} - $self->{_south_svg};
-	
-	if ($self->{vertical_align} eq "bottom") {
-	    $self->{_north_svg} += $extra_vertical_room;
-	    $self->{_south_svg} += $extra_vertical_room;
-	} elsif ($self->{vertical_align} eq "center") {
-	    $self->{_north_svg} += $extra_vertical_room / 2;
-	    $self->{_south_svg} += $extra_vertical_room / 2;
-	}
-	if ($self->{horizontal_align} eq "right") {
-	    $self->{_east_svg} += $extra_horizontal_room;
-	    $self->{_west_svg} += $extra_horizontal_room;
-	} elsif ($self->{horizontal_align} eq "center") {
-	    $self->{_east_svg} += $extra_horizontal_room / 2;
-	    $self->{_west_svg} += $extra_horizontal_room / 2;
-	}
-	
-	if ($map_area->{is_main} && $self->{extend_to_full_page}) {
-	    
-	    # recompute new values for all relevant variables and object properties
-	    my $new_north_svg =                            $self->{paper_margin_px} + $self->{fudge_factor_px};
-	    my $new_south_svg = $self->{paper_height_px} - $self->{paper_margin_px} - $self->{fudge_factor_px};
-	    my $new_west_svg  =                            $self->{paper_margin_px} + $self->{fudge_factor_px};
-	    my $new_east_svg  = $self->{paper_width_px}  - $self->{paper_margin_px} - $self->{fudge_factor_px};
-	    my $new_north_er  = $self->y_px_to_lat_er($new_north_svg);
-	    my $new_south_er  = $self->y_px_to_lat_er($new_south_svg);
-	    my $new_west_er   = $self->x_px_to_lon_er($new_west_svg);
-	    my $new_east_er   = $self->x_px_to_lon_er($new_east_svg);
-	    my $new_width_er  = $new_east_er - $new_west_er;
-	    my $new_height_er = $new_north_er - $new_south_er;
-	    my $new_north_deg = $self->y_px_to_lat_deg($new_north_svg);
-	    my $new_south_deg = $self->y_px_to_lat_deg($new_south_svg);
-	    my $new_west_deg  = $self->x_px_to_lon_deg($new_west_svg);
-	    my $new_east_deg  = $self->x_px_to_lon_deg($new_east_svg);
-	    
-	    # then set them.
-	    $self->{_north_svg}         = $new_north_svg;
-	    $self->{_south_svg}         = $new_south_svg;
-	    $self->{_east_svg}          = $new_east_svg;
-	    $self->{_west_svg}          = $new_west_svg;
-	    $width_er                   = $new_width_er;
-	    $height_er                  = $new_height_er;
-	    $self->{_west_er}  = $wx_er = $new_west_er;
-	    $self->{_east_er}  = $ex_er = $new_east_er;
-	    $self->{_north_er} = $ny_er = $new_north_er;
-	    $self->{_south_er} = $sy_er = $new_south_er;
-	    $self->{west_deg}  = $w_deg = $new_west_deg;
-	    $self->{east_deg}  = $e_deg = $new_east_deg;
-	    $self->{north_deg} = $n_deg = $new_north_deg;
-	    $self->{south_deg} = $s_deg = $new_south_deg;
-	}
-
-	$self->{_west_er_outer}    = $self->{_west_er}    - $self->{fudge_factor_px} / $self->{_scale_px_per_er};
-	$self->{_east_er_outer}    = $self->{_east_er}    + $self->{fudge_factor_px} / $self->{_scale_px_per_er};
-	$self->{_north_er_outer}   = $self->{_north_er}   - $self->{fudge_factor_px} / $self->{_scale_px_per_er};
-	$self->{_south_er_outer}   = $self->{_south_er}   + $self->{fudge_factor_px} / $self->{_scale_px_per_er};
-	
-	if (!($map_area->{is_main})) {
-	    # recalculate
-	    $w_deg = $map_area->{west_deg};
-	    $e_deg = $map_area->{east_deg};
-	    $n_deg = $map_area->{north_deg};
-	    $s_deg = $map_area->{south_deg};
-	    $wx_er = $self->{_west_er}  = _lon_deg_to_er($w_deg); # units
-	    $ex_er = $self->{_east_er}  = _lon_deg_to_er($e_deg); # units
-	    $ny_er = $self->{_north_er} = _lat_deg_to_er($n_deg); # units
-	    $sy_er = $self->{_south_er} = _lat_deg_to_er($s_deg); # units
-	    $width_er  = $ex_er - $wx_er;	      # units
-	    $height_er = $ny_er - $sy_er;	      # units
-	    if (exists $map_area->{zoom}) {
-		$self->{_scale_px_per_er} *= $map_area->{zoom};
-	    }
-	    if (exists $map_area->{left}) {
-		$self->{_west_svg} += $map_area->{left};
-		$self->{_east_svg} = $self->{_west_svg} + $self->{_scale_px_per_er} * $width_er;
-	    } elsif (exists $map_area->{right}) {
-		$self->{_east_svg} -= $map_area->{right};
-		$self->{_west_svg} = $self->{_east_svg} - $self->{_scale_px_per_er} * $width_er;
-	    }
-	    if (exists $map_area->{top}) {
-		$self->{_north_svg} += $map_area->{top};
-		$self->{_south_svg} = $self->{_north_svg} + $self->{_scale_px_per_er} * $height_er;
-	    } elsif (exists $map_area->{bottom}) {
-		$self->{_south_svg} -= $map_area->{bottom};
-		$self->{_north_svg} = $self->{_south_svg} - $self->{_scale_px_per_er} * $height_er;
-	    }
-	}
+sub update_scale {
+    my ($self, $map_area) = @_;
+    if (defined $self->{west_deg} && defined $self->{east_deg} && defined $self->{north_deg} && defined $self->{south_deg}) {
+	my $converter = Geo::MapMaker::CoordinateConverter->new();
+	$converter->set_paper_size_px($self->{paper_width_px}, $self->{paper_height_px});
+	$converter->set_paper_margin_px($self->{paper_margin_px});
+	$converter->set_fudge_factor_px($self->{fudge_factor_px});
+	$converter->set_lon_lat_boundaries($self->{west_deg}, $self->{east_deg}, $self->{north_deg}, $self->{south_deg});
+	$self->{converter} = $converter;
+    } else {
+	die("You must specify a map area somehow.\n");
+	$self->{converter} = undef;
     }
-    
-    # These need to NOT be object methods, for performance reasons.
-    sub _lon_deg_to_er {
-	my ($lon_deg) = @_;
-	return $lon_deg * D2R;
-    }
-    sub _lat_deg_to_er {
-	my ($lat_deg) = @_;
-	my $latr = $lat_deg * D2R;
-	return log(abs((1 + sin($latr)) / cos($latr)));
-    }
-
-    sub lon_er_to_x_px {
-	my ($self, $lon_er) = @_;
-	return $self->{_west_svg} + $self->{_scale_px_per_er} * ($lon_er - $self->{_west_er});
-    }
-    sub lat_er_to_y_px {
-	my ($self, $lat_er) = @_;
-	return $self->{_north_svg} + $self->{_scale_px_per_er} * ($self->{_north_er} - $lat_er);
-    }
-    sub x_px_to_lon_er {
-	my ($self, $x_px) = @_;
-	return ($x_px - $self->{_west_svg}) / $self->{_scale_px_per_er} + $self->{_west_er};
-    }
-    sub y_px_to_lat_er {
-	my ($self, $y_px) = @_;
-	return $self->{_north_er} - ($y_px - $self->{_north_svg}) / $self->{_scale_px_per_er};
-    }
-    sub lon_deg_to_x_px {
-	my ($self, $lon_deg) = @_;
-	  return $self->{_west_svg} + $self->{_scale_px_per_er} * (_lon_deg_to_er($lon_deg) - $self->{_west_er});
-    }
-    sub lat_deg_to_y_px {
-	my ($self, $lat_deg) = @_;
-	return $self->{_north_svg} + $self->{_scale_px_per_er} * ($self->{_north_er} - _lat_deg_to_er($lat_deg));
-    }
-    sub y_px_to_lat_deg {
-	my ($self, $y_svg) = @_;
-	my $y_er = $self->{_north_er} - ($y_svg - $self->{_north_svg}) / $self->{_scale_px_per_er};
-	return 360 / pi * atan(exp($y_er)) - 90;
-    }
-    sub x_px_to_lon_deg {
-	my ($self, $x_svg) = @_;
-	  my $x_er = $self->{_west_er}  + ($x_svg - $self->{_west_svg}) / $self->{_scale_px_per_er};
-	return $x_er / pi * 180;
-    }
-}
-
-use constant WGS84_EQUATORIAL_RADIUS_KILOMETERS => 6378.1370; # WGS84
-
-# returns the xxxxxx in 1:xxxxxx scale i.e. 1 inch on the map = this many inches in real life
-sub scale {
-    my ($self) = @_;
-    my $scale = $self->{_scale_px_per_er}; # this many pixels on the map = 1 unit of equatorial radius
-
-    $scale /= 90;		# inches
-    $scale *= 2.54;		# centimeters
-    $scale /= 100;		# meters
-    $scale /= 1000;		# kilometers;
-    $scale /= WGS84_EQUATORIAL_RADIUS_KILOMETERS;
-    return 1 / $scale;
 }
 
 ###############################################################################
