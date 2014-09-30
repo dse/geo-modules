@@ -48,16 +48,6 @@ use fields qw(
 		 top_y_px
 		 bottom_y_px
 
-		 west_lon_deg
-		 east_lon_deg
-		 north_lat_deg
-		 south_lat_deg
-
-		 west_lon_er
-		 east_lon_er
-		 north_lat_er
-		 south_lat_er
-
 		 scale_px_per_er
 	    );
 
@@ -141,10 +131,15 @@ sub set_vertical_fill {
 sub set_center_lon_lat_deg {
     my ($self, $lon_deg, $lat_deg) = @_;
 
+    die("must specify longitude AND latitude.\n") if !defined $lon_deg || !defined $lat_deg;
+
     $self->{reset_A} = _sub_to_call_this_sub(@_);
 
-    $self->{center_lon_deg} = $lon_deg if defined $lon_deg;
-    $self->{center_lat_deg} = $lat_deg if defined $lat_deg;
+    $self->{center_lon_deg} = $lon_deg;
+    $self->{center_lat_deg} = $lat_deg;
+
+    $self->{center_lon_er} = $self->lon_deg_to_er($self->{center_lon_deg});
+    $self->{center_lat_er} = $self->lon_deg_to_er($self->{center_lat_deg});
 
     $self->{map_area_width_px}  = $self->{paper_size_x_px} - $self->{paper_margin_x_px} - $self->{fudge_factor_x_px};
     $self->{map_area_height_px} = $self->{paper_size_y_px} - $self->{paper_margin_y_px} - $self->{fudge_factor_y_px};
@@ -193,21 +188,28 @@ sub set_lon_lat_boundaries {
 
     $self->{orientation} = 0;
 
-    $self->{west_lon_deg} = $west_lon_deg;
-    $self->{east_lon_deg} = $east_lon_deg;
-    $self->{north_lon_deg} = $north_lat_deg;
-    $self->{south_lon_deg} = $south_lat_deg;
+    my $west_lon_er = $self->lon_deg_to_er($west_lon_deg);
+    my $east_lon_er = $self->lon_deg_to_er($east_lon_deg);
+    my $north_lat_er = $self->lat_deg_to_er($north_lat_deg);
+    my $south_lat_er = $self->lat_deg_to_er($south_lat_deg);
 
-    my $west_lon_er  = $self->{west_lon_er}  = $self->lon_deg_to_er($west_lon_deg);
-    my $east_lon_er  = $self->{east_lon_er}  = $self->lon_deg_to_er($east_lon_deg);
-    my $north_lat_er = $self->{north_lat_er} = $self->lat_deg_to_er($north_lat_deg);
-    my $south_lat_er = $self->{south_lat_er} = $self->lat_deg_to_er($south_lat_deg);
-
-    my $center_lon_er = $self->{center_lon_er} = ($west_lon_er + $east_lon_er) / 2;
-    my $center_lat_er = $self->{center_lat_er} = ($north_lat_er + $south_lat_er) / 2;
+    my $center_lon_er = ($west_lon_er + $east_lon_er) / 2;
+    my $center_lat_er = ($north_lat_er + $south_lat_er) / 2;
     my $center_lon_deg = $self->lon_er_to_deg($center_lon_er);
     my $center_lat_deg = $self->lat_er_to_deg($center_lat_er);
 
+    # $self->{west_lon_deg} = $west_lon_deg;
+    # $self->{east_lon_deg} = $east_lon_deg;
+    # $self->{north_lon_deg} = $north_lat_deg;
+    # $self->{south_lon_deg} = $south_lat_deg;
+
+    # $self->{west_lon_er} = $west_lon_er;
+    # $self->{east_lon_er} = $east_lon_er;
+    # $self->{north_lat_er} = $north_lat_er;
+    # $self->{south_lat_er} = $south_lat_er;
+
+    $self->{center_lon_er} = $center_lon_er;
+    $self->{center_lat_er} = $center_lat_er;
     $self->{center_lon_deg} = $center_lon_deg;
     $self->{center_lat_deg} = $center_lat_deg;
 
