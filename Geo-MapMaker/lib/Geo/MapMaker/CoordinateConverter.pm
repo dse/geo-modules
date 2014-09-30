@@ -140,8 +140,6 @@ sub set_center_lon_lat_deg {
 
     die("must specify longitude AND latitude.\n") if !defined $lon_deg || !defined $lat_deg;
 
-    #$self->{reset_A} = _sub_to_call_this_sub(@_);
-
     $self->{center_lon_deg} = $lon_deg;
     $self->{center_lat_deg} = $lat_deg;
 
@@ -160,15 +158,11 @@ sub set_center_lon_lat_deg {
     $self->{right_x_px}  = $self->{paper_width_px} - $self->{paper_margin_x_px};
     $self->{top_y_px}    = $self->{paper_margin_y_px};
     $self->{bottom_y_px} = $self->{paper_height_px} - $self->{paper_margin_y_px};
-
-    $self->set_real_lat_lon_boundaries();
 }
 
 # B
 sub set_orientation {
     my ($self, $orientation) = @_;
-
-    #$self->{reset_B} = _sub_to_call_this_sub(@_);
 
     $self->{orientation} = $orientation if defined $orientation;
 }
@@ -176,8 +170,6 @@ sub set_orientation {
 # C
 sub set_absolute_scale {
     my ($self, $scale) = @_;
-
-    #$self->{reset_C} = _sub_to_call_this_sub(@_);
 
     $self->{scale_px_per_er} = $scale # in px per px
       * PX_PER_IN		       # in px per in
@@ -190,10 +182,6 @@ sub set_absolute_scale {
 
 sub set_lon_lat_boundaries {
     my ($self, $west_lon_deg, $east_lon_deg, $north_lat_deg, $south_lat_deg) = @_;
-
-    #$self->{reset_A} = _sub_to_call_this_sub(@_);
-    #$self->{reset_B} = undef;
-    #$self->{reset_C} = undef;
 
     $self->{orientation} = 0;
 
@@ -289,21 +277,14 @@ sub set_lon_lat_boundaries {
 	    $self->{top_y_px} = $self->{center_y_px} - $self->{map_height_px} / 2;
 	}
     }
-
-    $self->set_real_lat_lon_boundaries();
 }
 
 #------------------------------------------------------------------------------
 
-sub set_real_lat_lon_boundaries {
-    my ($self) = @_;
-    $self->{west_lon_deg}  = $self->x_px_to_lon_deg($self->{left_x_px});
-    $self->{east_lon_deg}  = $self->x_px_to_lon_deg($self->{right_x_px});
-    $self->{north_lat_deg} = $self->y_px_to_lat_deg($self->{top_y_px});
-    $self->{south_lat_deg} = $self->y_px_to_lat_deg($self->{bottom_y_px});
+sub lon_lat_deg_to_lon_lat_er {
+    my ($self, $lon_deg, $lat_deg) = @_;
+    return ($self->lon_deg_to_er($lon_deg), $self->lat_deg_to_er($lat_deg));
 }
-
-#------------------------------------------------------------------------------
 
 sub lon_deg_to_er {
     my ($self, $lon_deg) = @_;
@@ -316,6 +297,11 @@ sub lat_deg_to_er {
     return log(abs((1 + sin($lat_rad)) / cos($lat_rad)));
 }
 
+sub lon_lat_er_to_lon_lat_deg {
+    my ($self, $lon_er, $lat_er) = @_;
+    return ($self->lon_er_to_deg($lon_er), $self->lat_er_to_deg($lat_er));
+}
+
 sub lon_er_to_deg {
     my ($self, $lon_er) = @_;
     return $lon_er / D2R;
@@ -326,24 +312,78 @@ sub lat_er_to_deg {
     return (2 * atan(exp($lat_er)) - pip2) / D2R;
 }
 
+sub lon_lat_er_to_x_y_px {
+    my ($self, $lon_er, $lat_er) = @_;
+    my $dx_er = $lon_er - $self->{center_lon_er};
+    my $dy_er = $lat_er - $self->{center_lat_er};
+    my $theta = $self->{orientation} * D2R;
+    my $cos = cos($theta);
+    my $sin = sin($theta);
+    my $dxp_er = $dx_er * $cos - $dy_er * $sin;
+    my $dyp_er = $dx_er * $sin + $dy_er * $cos;
+    my $x_px = $self->{center_x_px} + $self->{scale_px_per_er} * $dxp_er;
+    my $y_px = $self->{center_y_px} - $self->{scale_px_per_er} * $dyp_er;
+    return ($x_px, $y_px);
+}
+
 sub lon_er_to_x_px {
     my ($self, $lon_er) = @_;
+    my $o = $self->{orientation};
+    if ($o) {
+	# FIXME
+	die("non-zero orientation not yet supported.");
+    }
     return $self->{center_x_px} + $self->{scale_px_per_er} * ($lon_er - $self->{center_lon_er});
 }
 
 sub lat_er_to_y_px {
     my ($self, $lat_er) = @_;
+    my $o = $self->{orientation};
+    if ($o) {
+	# FIXME
+	die("non-zero orientation not yet supported.");
+    }
     return $self->{center_y_px} + $self->{scale_px_per_er} * ($self->{center_lat_er} - $lat_er);
+}
+
+sub x_y_px_to_lon_lat_er {
+    my ($self, $x_px, $y_px) = @_;
+    my $dxp_er = ($x_px - $self->{center_x_px}) / $self->{scale_px_per_er};
+    my $dyp_er = ($self->{center_y_px} - $y_px) / $self->{scale_px_per_er};
+    my $theta = $self->{orientation} * D2R;
+    my $cos = cos(-$theta);
+    my $sin = sin(-$theta);
+    my $dx_er = $dxp_er * $cos - $dyp_er * $sin;
+    my $dy_er = $dxp_er * $sin + $dyp_er * $cos;
+    my $lon_er = $self->{center_lon_er} + $dx_er;
+    my $lat_er = $self->{center_lat_er} + $dy_er;
+    return ($lon_er, $lat_er);
 }
 
 sub x_px_to_lon_er {
     my ($self, $x_px) = @_;
+    my $o = $self->{orientation};
+    if ($o) {
+	# FIXME
+	die("non-zero orientation not yet supported.");
+    }
     return ($x_px - $self->{center_x_px}) / $self->{scale_px_per_er} + $self->{center_lon_er};
 }
 
 sub y_px_to_lat_er {
     my ($self, $y_px) = @_;
+    my $o = $self->{orientation};
+    if ($o) {
+	# FIXME
+	die("non-zero orientation not yet supported.");
+    }
     return $self->{center_lat_er} - ($y_px - $self->{center_y_px}) / $self->{scale_px_per_er};
+}
+
+sub lon_lat_deg_to_x_y_px {
+    my ($self, $lon_deg, $lat_deg) = @_;
+    return ($self->lon_deg_to_x_px($lon_deg),
+	    $self->lat_deg_to_y_px($lat_deg));
 }
 
 sub lon_deg_to_x_px {
@@ -356,6 +396,12 @@ sub lat_deg_to_y_px {
     return $self->lat_er_to_y_px($self->lat_deg_to_er($lat_deg));
 }
 
+sub x_y_px_to_lon_lat_deg {
+    my ($self, $x_px, $y_px) = @_;
+    return ($self->x_px_to_lon_deg($x_px),
+	    $self->y_px_to_lat_deg($y_px));
+}
+
 sub x_px_to_lon_deg {
     my ($self, $x_px) = @_;
     return $self->lon_er_to_deg($self->x_px_to_lon_er($x_px));
@@ -364,14 +410,6 @@ sub x_px_to_lon_deg {
 sub y_px_to_lat_deg {
     my ($self, $y_px) = @_;
     return $self->lat_er_to_deg($self->y_px_to_lat_er($y_px));
-}
-
-sub _sub_to_call_this_sub {
-    my @args = @_;
-    my @caller = caller(1);
-    for (my $i = 0; $i <= $#caller; $i += 1) {
-	print("$i: $caller[$i]\n");
-    }
 }
 
 1;
