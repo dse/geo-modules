@@ -11,57 +11,55 @@ use constant PX_PER_IN => 90;
 use constant MM_PER_IN => 25.4;
 use constant MM_PER_KM => 1_000_000;
 
-use constant FIELDS => qw(
-			     paper_width_px
-			     paper_height_px
-			     paper_margin_x_px
-			     paper_margin_y_px
-			     fudge_factor_x_px
-			     fudge_factor_y_px
-			     horizontal_alignment
-			     vertical_alignment
-			     horizontal_fill
-			     vertical_fill
+use fields qw(
+		 paper_width_px
+		 paper_height_px
+		 paper_margin_x_px
+		 paper_margin_y_px
+		 fudge_factor_x_px
+		 fudge_factor_y_px
+		 horizontal_alignment
+		 vertical_alignment
+		 horizontal_fill
+		 vertical_fill
 
-			     reset_A
-			     reset_B
-			     reset_C
+		 reset_A
+		 reset_B
+		 reset_C
 
-			     orientation
+		 orientation
 
-			     center_lon_deg
-			     center_lat_deg
+		 center_lon_deg
+		 center_lat_deg
 
-			     center_lon_er
-			     center_lat_er
+		 center_lon_er
+		 center_lat_er
 
-			     map_area_width_px
-			     map_area_height_px
-			     map_width_px
-			     map_height_px
+		 map_area_width_px
+		 map_area_height_px
+		 map_width_px
+		 map_height_px
 
-			     center_x_px
-			     center_y_px
+		 center_x_px
+		 center_y_px
 
-			     left_x_px
-			     right_x_px
-			     top_y_px
-			     bottom_y_px
+		 left_x_px
+		 right_x_px
+		 top_y_px
+		 bottom_y_px
 
-			     west_lon_deg
-			     east_lon_deg
-			     north_lat_deg
-			     south_lat_deg
+		 west_lon_deg
+		 east_lon_deg
+		 north_lat_deg
+		 south_lat_deg
 
-			     west_lon_er
-			     east_lon_er
-			     north_lat_er
-			     south_lat_er
+		 west_lon_er
+		 east_lon_er
+		 north_lat_er
+		 south_lat_er
 
-			     scale_px_per_er
-			);
-
-use fields (FIELDS);
+		 scale_px_per_er
+	    );
 
 use constant DEFAULTS => (
     paper_width_px       => 8.5 * PX_PER_IN,
