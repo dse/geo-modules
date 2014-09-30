@@ -10,72 +10,73 @@ use constant PX_PER_IN => 90;
 use constant MM_PER_IN => 25.4;
 use constant MM_PER_KM => 1_000_000;
 
-use fields qw(
-		 paper_width_px
-		 paper_height_px
-		 paper_margin_x_px
-		 paper_margin_y_px
-		 fudge_factor_x_px
-		 fudge_factor_y_px
-		 horizontal_alignment
-		 vertical_alignment
-		 horizontal_fill
-		 vertical_fill
+use constant FIELDS => qw(
+			     paper_width_px
+			     paper_height_px
+			     paper_margin_x_px
+			     paper_margin_y_px
+			     fudge_factor_x_px
+			     fudge_factor_y_px
+			     horizontal_alignment
+			     vertical_alignment
+			     horizontal_fill
+			     vertical_fill
 
-		 reset_A
-		 reset_B
-		 reset_C
+			     reset_A
+			     reset_B
+			     reset_C
 
-		 orientation
+			     orientation
 
-		 center_lon_deg
-		 center_lat_deg
-		 center_lon_er
-		 center_lat_er
+			     center_lon_deg
+			     center_lat_deg
+			     center_lon_er
+			     center_lat_er
 
-		 map_area_width_px
-		 map_area_height_px
-		 map_width_px
-		 map_height_px
+			     map_area_width_px
+			     map_area_height_px
+			     map_width_px
+			     map_height_px
 
-		 center_x_px
-		 center_y_px
+			     center_x_px
+			     center_y_px
 
-		 left_x_px
-		 right_x_px
-		 top_y_px
-		 bottom_y_px
+			     left_x_px
+			     right_x_px
+			     top_y_px
+			     bottom_y_px
 
-		 west_lon_er
-		 east_lon_er
-		 north_lat_er
-		 south_lat_er
+			     west_lon_er
+			     east_lon_er
+			     north_lat_er
+			     south_lat_er
 
-		 scale_px_per_er
+			     scale_px_per_er
+			);
 
-		 
-	    );
+use fields (FIELDS);
+
+use constant DEFAULTS => (
+    paper_width_px       => 8.5 * PX_PER_IN,
+    paper_height_px      => 11 * PX_PER_IN,
+    paper_margin_x_px    => 0.25 * PX_PER_IN,
+    paper_margin_y_px    => 0.25 * PX_PER_IN,
+    fudge_factor_x_px    => 0.25 * PX_PER_IN,
+    fudge_factor_y_px    => 0.25 * PX_PER_IN,
+
+    orientation          => 0,
+    horizontal_alignment => "center",
+    vertical_alignment   => "center",
+    horizontal_fill      => 0,
+    vertical_fill        => 0,
+   );
 
 sub new {
     my ($class, %args) = @_;
     my $self = fields::new($class);
 
-    my %defaults = (
-	paper_width_px       => 8.5 * PX_PER_IN,
-	paper_height_px      => 11 * PX_PER_IN,
-	paper_margin_x_px    => 0.25 * PX_PER_IN,
-	paper_margin_y_px    => 0.25 * PX_PER_IN,
-	fudge_factor_x_px    => 0.25 * PX_PER_IN,
-	fudge_factor_y_px    => 0.25 * PX_PER_IN,
-
-	orientation          => 0,
-	horizontal_alignment => "center",
-	vertical_alignment   => "center",
-	horizontal_fill      => 0,
-	vertical_fill        => 0,
-       );
-
-    while (my ($k, $v) = each(%$defaults)) {
+    my %defaults = (DEFAULTS);
+    while (my ($k, $v) = each(%defaults)) {
 	$self->{$k} = $v;
     }
 
@@ -308,18 +309,42 @@ sub lat_er_to_deg {
 
 sub lon_er_to_x_px {
     my ($self, $lon_er) = @_;
+    return $self->{center_x_px} + $self->{scale_px_per_er} * ($lon_er - $self->{center_lon_er});
 }
 
 sub lat_er_to_y_px {
     my ($self, $lat_er) = @_;
+    return $self->{center_y_px} + $self->{scale_px_per_er} * ($self->{center_lat_er} - $lat_er);
 }
 
 sub x_px_to_lon_er {
     my ($self, $x_px) = @_;
+    return ($x_px - $self->{center_x_px}) / $self->{scale_px_per_er} + $self->{center_lon_er};
 }
 
 sub y_px_to_lat_er {
     my ($self, $y_px) = @_;
+    return $self->{center_lat_er} - ($y_px - $self->{center_y_px}) / $self->{scale_px_per_er};
+}
+
+sub lon_deg_to_x_px {
+    my ($self, $lon_deg) = @_;
+    return $self->lon_er_to_x_px($self->lon_deg_to_er($lon_deg));
+}
+
+sub lat_deg_to_y_px {
+    my ($self, $lat_deg) = @_;
+    return $self->lat_er_to_y_px($self->lat_deg_to_er($lat_deg));
+}
+
+sub x_px_to_lon_deg {
+    my ($self, $x_px) = @_;
+    return $self->lon_er_to_deg($self->x_px_to_lon_er($x_px));
+}
+
+sub y_px_to_lat_deg {
+    my ($self, $y_px) = @_;
+    return $self->lat_er_to_deg($self->y_px_to_lat_er($y_px));
 }
 
 sub _sub_to_call_this_sub {
