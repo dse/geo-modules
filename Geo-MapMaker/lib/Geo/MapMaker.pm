@@ -94,6 +94,8 @@ BEGIN {
 		  debug
 		  verbose
 
+		  extra_defs
+
 
 		  _scale_px_per_er
 
@@ -457,14 +459,38 @@ sub find_or_create_defs_node {
     my ($self) = @_;
     my $doc = $self->{_svg_doc};
     my $doc_elt = $doc->documentElement();
-    my ($defs) = $doc->findnodes("/*/svg:defs");
+    my ($defs) = $doc->findnodes("/*/svg:defs[\@id='geoMapmakerDefs']");
     if (!$defs) {
 	$self->{_dirty_} = 1;
 	$defs = $doc->createElementNS($NS{"svg"}, "defs");
+	$defs->setAttribute("id", "geoMapmakerDefs");
 	$doc_elt->insertBefore($defs, $doc_elt->firstChild());
     }
-    $defs->setAttribute("id", "geoMapmakerDefs");
     return $defs;
+}
+
+sub create_or_delete_extra_defs_node {
+    my ($self) = @_;
+    my $doc = $self->{_svg_doc};
+    my $doc_elt = $doc->documentElement();
+
+    if (defined $self->{extra_defs}) {
+	my ($extra_defs) = $doc->findnodes("/*/svg:defs[\@id='geoMapmakerExtraDefs']");
+	if (!$extra_defs) {
+	    $self->{_dirty_} = 1;
+	    $extra_defs = $doc->createElementNS($NS{"svg"}, "defs");
+	    $extra_defs->setAttribute("id", "geoMapmakerExtraDefs");
+	    $extra_defs->appendWellBalancedChunk($self->{extra_defs});
+	    $doc_elt->insertAfter($extra_defs, $self->find_or_create_defs_node());
+	}
+	return $extra_defs;
+    } else {
+	my ($extra_defs) = $doc->findnodes("/*/svg:defs[\@id='geoMapmakerExtraDefs']");
+	if ($extra_defs) {
+	    $extra_defs->unbindNode();
+	}
+	return;
+    }
 }
 
 sub update_or_create_style_node {
@@ -1447,6 +1473,7 @@ sub update_styles {
     foreach my $map_area (@{$self->{_map_areas}}) {
 	$self->update_scale($map_area); # don't think this is necessary, but . . .
 	$self->update_or_create_style_node();
+	$self->create_or_delete_extra_defs_node();
     }
 }
 
@@ -1463,6 +1490,7 @@ sub stuff_all_layers_need {
 	$self->update_or_create_white_layer($map_area, $map_area_under_layer);
 	$self->update_or_create_background_layer($map_area, $map_area_under_layer);
 	$self->update_or_create_style_node();
+	$self->create_or_delete_extra_defs_node();
 	$self->update_or_create_border_layer($map_area, $map_area_layer);
     }
 }
