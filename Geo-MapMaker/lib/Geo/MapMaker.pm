@@ -141,6 +141,12 @@ BEGIN {
 
 		  converter
 
+
+		  left_point
+		  right_point
+		  top_point
+		  bottom_point
+
 		);
 }
 use fields @_FIELDS;
@@ -2736,17 +2742,33 @@ sub south_outer_map_boundary_svg {
 
 sub update_scale {
     my ($self, $map_area) = @_;
+
+    my $converter = Geo::MapMaker::CoordinateConverter->new();
+    $converter->set_paper_size_px($self->{paper_width_px}, $self->{paper_height_px});
+    $converter->set_paper_margin_px($self->{paper_margin_px});
+    $converter->set_fudge_factor_px($self->{fudge_factor_px});
+    $self->{converter} = $converter;
+
     if (defined $self->{west_deg} && defined $self->{east_deg} && defined $self->{north_deg} && defined $self->{south_deg}) {
-	my $converter = Geo::MapMaker::CoordinateConverter->new();
-	$converter->set_paper_size_px($self->{paper_width_px}, $self->{paper_height_px});
-	$converter->set_paper_margin_px($self->{paper_margin_px});
-	$converter->set_fudge_factor_px($self->{fudge_factor_px});
-	$converter->set_lon_lat_boundaries($self->{west_deg}, $self->{east_deg}, $self->{north_deg}, $self->{south_deg});
-	$self->{converter} = $converter;
+	$self->{converter}->set_lon_lat_boundaries($self->{west_deg}, $self->{east_deg}, $self->{north_deg}, $self->{south_deg});
+	$self->{converter}->set_orientation(0);
+    } elsif (defined $self->{left_point} && defined $self->{right_point}) {
+	$self->{converter}->set_left_right_geographic_points($self->{left_point}->{longitude},
+							     $self->{left_point}->{latitude},
+							     $self->{right_point}->{longitude},
+							     $self->{right_point}->{latitude});
+    } elsif (defined $self->{top_point} && defined $self->{bottom_point}) {
+	$self->{converter}->set_top_bottom_geographic_points($self->{top_point}->{longitude},
+							     $self->{top_point}->{latitude},
+							     $self->{bottom_point}->{longitude},
+							     $self->{bottom_point}->{latitude});
     } else {
 	die("You must specify a map area somehow.\n");
 	$self->{converter} = undef;
     }
+
+    # FIXME: if we do inset maps again the CoordinateConverter and
+    # possibly this method will have to be modified to support them.
 }
 
 ###############################################################################
