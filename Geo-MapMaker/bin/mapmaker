@@ -3,15 +3,15 @@ use warnings;
 use strict;
 
 BEGIN {
-	foreach my $devdir ("$ENV{HOME}/git/geo-modules/Geo-GTFS/lib",
-			    "$ENV{HOME}/git/geo-modules/Geo-MapMaker/lib") {
-		if (-d $devdir) {
-			warn("Including $devdir\n");
-			$ENV{USE_INLINE_TEMP_CACHE} = 1;
-			require lib;
-			import lib $devdir;
-		}
+    foreach my $devdir ("$ENV{HOME}/git/geo-modules/Geo-GTFS/lib",
+			"$ENV{HOME}/git/geo-modules/Geo-MapMaker/lib") {
+	if (-d $devdir) {
+	    warn("Including $devdir\n");
+	    $ENV{USE_INLINE_TEMP_CACHE} = 1;
+	    require lib;
+	    import lib $devdir;
 	}
+    }
 }
 
 use Carp qw();
@@ -58,7 +58,6 @@ sub init {
 	die("No config to speak of at $self->{file}.\n");
     }
     $self->find_process_includes();
-    print(Dump($self->{data}));
 }
 
 sub find_process_includes {
@@ -70,12 +69,12 @@ sub find_process_includes {
 	}
     }
     elsif (ref($data) eq "HASH") {
-	while (my ($k, $v) = each(%$data)) {
+	foreach my $k (keys(%$data)) {
 	    if ($k eq "include") {
-		$self->include($data, $v);
+		$self->include($data, $data->{$k});
 		delete $data->{include};
 	    } else {
-		$self->find_process_includes($v);
+		$self->find_process_includes($data->{$k});
 	    }
 	}
     }
@@ -91,7 +90,7 @@ sub include {
 		$self->include($hash, $v);
 		delete $from->{include};
 	    } else {
-		$hash->{$k} = $v;
+		$self->merge($hash, $k, $v);
 		$self->find_process_includes($v);
 	    }
 	}
@@ -106,7 +105,7 @@ sub include {
 		    $self->include($hash, $v);
 		    delete $load->{include};
 		} else {
-		    $hash->{$k} = $v;
+		    $self->merge($hash, $k, $v);
 		    $self->find_process_includes($v);
 		}
 	    }
@@ -122,6 +121,25 @@ sub include {
 	die();
     } else {
 	die("include: $from (neither hash nor array nor string) specified.\n");
+    }
+}
+
+sub merge {
+    my ($self, $hash, $k, $v) = @_;
+    if (exists($hash->{$k})) {
+	if ($k eq "classes") {
+	    if (ref($hash->{$k}) eq "HASH" && ref($v) eq "HASH") {
+		%{$hash->{$k}} = (%{$hash->{$k}}, %$v);
+	    } elsif (ref($hash->{$k}) eq "ARRAY" && ref($v) eq "ARRAY") {
+		push(@{$hash->{$k}}, @$v);
+	    } else {
+		$hash->{$k} = $v;
+	    }
+	} else {
+	    $hash->{$k} = $v;
+	}
+    } else {
+	$hash->{$k} = $v;
     }
 }
 
