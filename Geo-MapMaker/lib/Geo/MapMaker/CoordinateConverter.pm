@@ -9,7 +9,11 @@ use constant WGS84_EQUATORIAL_RADIUS_KILOMETERS => 6378.1370; # WGS84
 use constant KM_PER_ER => WGS84_EQUATORIAL_RADIUS_KILOMETERS;
 use constant PX_PER_IN => 90;
 use constant MM_PER_IN => 25.4;
+use constant IN_PER_MM => 1 / MM_PER_IN;
 use constant MM_PER_KM => 1_000_000;
+use constant PX_PER_ER => PX_PER_IN * IN_PER_MM * MM_PER_KM * KM_PER_ER;
+use constant PX_PER_FT => PX_PER_IN * 12;
+use constant PX_PER_M  => PX_PER_IN * 1000 / 25.4;
 
 use fields qw(
 		 paper_width_px
@@ -144,12 +148,12 @@ sub set_center_lon_lat_deg {
     $self->{center_lat_deg} = $lat_deg;
 
     $self->{center_lon_er} = $self->lon_deg_to_er($self->{center_lon_deg});
-    $self->{center_lat_er} = $self->lon_deg_to_er($self->{center_lat_deg});
+    $self->{center_lat_er} = $self->lat_deg_to_er($self->{center_lat_deg});
 
-    $self->{map_area_width_px}  = $self->{paper_width_px} - $self->{paper_margin_x_px} - $self->{fudge_factor_x_px};
-    $self->{map_area_height_px} = $self->{paper_height_px} - $self->{paper_margin_y_px} - $self->{fudge_factor_y_px};
-    $self->{map_width_px}  = $self->{paper_width_px} - $self->{paper_margin_x_px};
-    $self->{map_height_px} = $self->{paper_height_px} - $self->{paper_margin_y_px};
+    $self->{map_area_width_px}  = $self->{paper_width_px} - $self->{paper_margin_x_px} * 2 - $self->{fudge_factor_x_px} * 2;
+    $self->{map_area_height_px} = $self->{paper_height_px} - $self->{paper_margin_y_px} * 2 - $self->{fudge_factor_y_px} * 2;
+    $self->{map_width_px}       = $self->{paper_width_px} - $self->{paper_margin_x_px} * 2;
+    $self->{map_height_px}      = $self->{paper_height_px} - $self->{paper_margin_y_px} * 2;
 
     $self->{center_x_px} = $self->{paper_width_px} / 2;
     $self->{center_y_px} = $self->{paper_height_px} / 2;
@@ -170,12 +174,7 @@ sub set_orientation {
 # C
 sub set_absolute_scale {
     my ($self, $scale) = @_;
-
-    $self->{scale_px_per_er} = $scale # in px per px
-      * PX_PER_IN		       # in px per in
-	/ MM_PER_IN		       # in px per mm
-	  * MM_PER_KM		       # in px per km
-	    * KM_PER_ER;	       # in px per er
+    $self->{scale_px_per_er} = $scale * PX_PER_ER;
 }
 
 #------------------------------------------------------------------------------
@@ -279,11 +278,53 @@ sub set_lon_lat_boundaries {
     }
 }
 
+sub set_left_right_geographic_points {
+    my ($self, $left_lon_deg, $left_lat_deg, 
+	$right_lon_deg, $right_lat_deg) = @_;
+
+    my $center_lon_deg = ($left_lon_deg + $right_lon_deg) / 2;
+    my $center_lat_deg = ($left_lat_deg + $right_lat_deg) / 2;
+
+    $self->set_center_lon_lat_deg($center_lon_deg, $center_lat_deg);
+
+    my ($left_lon_er,  $left_lat_er)  = $self->lon_lat_deg_to_lon_lat_er($left_lon_deg,  $left_lat_deg);
+    my ($right_lon_er, $right_lat_er) = $self->lon_lat_deg_to_lon_lat_er($right_lon_deg, $right_lat_deg);
+
+    my $dist_er = sqrt( ($right_lat_er - $left_lat_er) ** 2 +
+			  ($right_lon_er - $left_lon_er) ** 2 );
+
+    $self->{scale_px_per_er} = $self->{map_area_width_px} / $dist_er;
+
+    $self->{orientation} = atan2( $left_lat_er - $right_lat_er,
+				  $right_lon_er - $left_lon_er ) / D2R;
+}
+
+sub set_top_bottom_geographic_points {
+    my ($self, $top_lon_deg, $top_lat_deg, 
+	$bottom_lon_deg, $bottom_lat_deg) = @_;
+
+    my $center_lon_deg = ($top_lon_deg + $bottom_lon_deg) / 2;
+    my $center_lat_deg = ($top_lat_deg + $bottom_lat_deg) / 2;
+
+    $self->set_center_lon_lat_deg($center_lon_deg, $center_lat_deg);
+
+    my ($top_lon_er,  $top_lat_er)  = $self->lon_lat_deg_to_lon_lat_er($top_lon_deg,  $top_lat_deg);
+    my ($bottom_lon_er, $bottom_lat_er) = $self->lon_lat_deg_to_lon_lat_er($bottom_lon_deg, $bottom_lat_deg);
+
+    my $dist_er = sqrt( ($bottom_lat_er - $top_lat_er) ** 2 +
+			  ($bottom_lon_er - $top_lon_er) ** 2 );
+
+    $self->{scale_px_per_er} = $self->{map_area_height_px} / $dist_er;
+
+    $self->{orientation} = atan2( $top_lon_er - $bottom_lon_er , $top_lat_er - $bottom_lat_er ) / D2R;
+}
+
 #------------------------------------------------------------------------------
 
 sub lon_lat_deg_to_lon_lat_er {
     my ($self, $lon_deg, $lat_deg) = @_;
-    return ($self->lon_deg_to_er($lon_deg), $self->lat_deg_to_er($lat_deg));
+    my ($lon_er, $lat_er) = ($self->lon_deg_to_er($lon_deg), $self->lat_deg_to_er($lat_deg));
+    return ($lon_er, $lat_er);
 }
 
 sub lon_deg_to_er {
@@ -326,26 +367,6 @@ sub lon_lat_er_to_x_y_px {
     return ($x_px, $y_px);
 }
 
-sub lon_er_to_x_px {
-    my ($self, $lon_er) = @_;
-    my $o = $self->{orientation};
-    if ($o) {
-	# FIXME
-	die("non-zero orientation not yet supported.");
-    }
-    return $self->{center_x_px} + $self->{scale_px_per_er} * ($lon_er - $self->{center_lon_er});
-}
-
-sub lat_er_to_y_px {
-    my ($self, $lat_er) = @_;
-    my $o = $self->{orientation};
-    if ($o) {
-	# FIXME
-	die("non-zero orientation not yet supported.");
-    }
-    return $self->{center_y_px} + $self->{scale_px_per_er} * ($self->{center_lat_er} - $lat_er);
-}
-
 sub x_y_px_to_lon_lat_er {
     my ($self, $x_px, $y_px) = @_;
     my $dxp_er = ($x_px - $self->{center_x_px}) / $self->{scale_px_per_er};
@@ -360,30 +381,10 @@ sub x_y_px_to_lon_lat_er {
     return ($lon_er, $lat_er);
 }
 
-sub x_px_to_lon_er {
-    my ($self, $x_px) = @_;
-    my $o = $self->{orientation};
-    if ($o) {
-	# FIXME
-	die("non-zero orientation not yet supported.");
-    }
-    return ($x_px - $self->{center_x_px}) / $self->{scale_px_per_er} + $self->{center_lon_er};
-}
-
-sub y_px_to_lat_er {
-    my ($self, $y_px) = @_;
-    my $o = $self->{orientation};
-    if ($o) {
-	# FIXME
-	die("non-zero orientation not yet supported.");
-    }
-    return $self->{center_lat_er} - ($y_px - $self->{center_y_px}) / $self->{scale_px_per_er};
-}
-
 sub lon_lat_deg_to_x_y_px {
     my ($self, $lon_deg, $lat_deg) = @_;
-    return ($self->lon_deg_to_x_px($lon_deg),
-	    $self->lat_deg_to_y_px($lat_deg));
+    my ($lon_er, $lat_er) = $self->lon_lat_deg_to_lon_lat_er($lon_deg, $lat_deg);
+    return $self->lon_lat_er_to_x_y_px($lon_er, $lat_er);
 }
 
 sub lon_deg_to_x_px {
@@ -410,6 +411,26 @@ sub x_px_to_lon_deg {
 sub y_px_to_lat_deg {
     my ($self, $y_px) = @_;
     return $self->lat_er_to_deg($self->y_px_to_lat_er($y_px));
+}
+
+#------------------------------------------------------------------------------
+
+our $RX_FLOAT;
+BEGIN {
+    $RX_FLOAT = qr{(?:\d+|\d*\.\d+)};
+}
+
+sub units_to_px {
+    my ($self, $units) = @_;
+    if ($units =~ m{^($RX_FLOAT) \s* ft$}) {
+	return $self->{scale_px_per_er} / PX_PER_ER * PX_PER_FT;
+    }
+    elsif ($units =~ m{^($RX_FLOAT) \s* m$}) {
+	return $self->{scale_px_per_er} / PX_PER_ER * PX_PER_M;
+    }
+    else {
+	die("units of '$units' not supported.\n");
+    }
 }
 
 1;
