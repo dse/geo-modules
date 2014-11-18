@@ -74,7 +74,7 @@ sub new {
 	if ($username eq "www-data" || defined $ENV{REQUEST_METHOD}) {
 	    $HOME = "/home/dse";
 	} else {
-	    my $HOME = $ENV{HOME} // "/tmp";
+	    $HOME = $ENV{HOME} // "/tmp";
 	}
 
 	my %args = (
