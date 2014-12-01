@@ -59,7 +59,17 @@ affecting manually-edited layers.
 
 
 our @_FIELDS;
+our @_FIELDS_OSM;
+our @_FIELDS_GTFS;
 BEGIN {
+    @_FIELDS_OSM = qw(_map_xml_filenames);
+    
+    @_FIELDS_GTFS = qw(transit_route_overrides
+		       transit_route_defaults
+		       transit_route_groups
+		       transit_orig_route_color_mapping
+		       transit_trip_exceptions);
+    
     @_FIELDS = qw(filename
 		  _read_filename
 
@@ -78,15 +88,9 @@ BEGIN {
 		  _svg_doc
 		  _svg_doc_elt
 		  _xpc
-		  _map_xml_filenames
 
 		  _cache
 		  include
-		  transit_route_overrides
-		  transit_route_defaults
-		  transit_route_groups
-		  transit_orig_route_color_mapping
-		  transit_trip_exceptions
 		  _dirty_
 		  debug
 		  verbose
@@ -149,6 +153,8 @@ BEGIN {
 		);
 }
 use fields @_FIELDS;
+use fields @_FIELDS_OSM;
+use fields @_FIELDS_GTFS;
 
 sub new {
     my ($class, %options) = @_;
