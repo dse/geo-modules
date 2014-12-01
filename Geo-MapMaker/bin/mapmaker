@@ -146,7 +146,6 @@ sub cmd__map {
     my $mapmaker = Geo::MapMaker->new(filename => $mapname, %$mapinfo);
     $mapmaker->{verbose} = $self->{verbose};
     $mapmaker->{debug}   = $self->{debug};
-    # $mapmaker->{config}  = $self->{config};
     $self->{mapmaker} = $mapmaker;
     $self->$method(@args);
 }
