@@ -79,8 +79,6 @@ BEGIN {
 		  _svg_doc_elt
 		  _xpc
 		  _map_xml_filenames
-		  _nodes
-		  _ways
 
 		  _cache
 		  include
