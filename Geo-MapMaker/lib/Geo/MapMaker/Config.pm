@@ -3,6 +3,8 @@ use warnings;
 use strict;
 use YAML::Syck qw(LoadFile Dump);
 
+our $VERSION = '0.02';
+
 sub new {
     my ($class, %args) = @_;
     my $self = bless(\%args, $class);
