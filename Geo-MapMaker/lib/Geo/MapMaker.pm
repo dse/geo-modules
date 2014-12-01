@@ -62,7 +62,7 @@ our @_FIELDS;
 our @_FIELDS_OSM;
 our @_FIELDS_GTFS;
 BEGIN {
-    @_FIELDS_OSM = qw(_map_xml_filenames);
+    @_FIELDS_OSM = qw(_osm_xml_filenames);
     
     @_FIELDS_GTFS = qw(transit_route_overrides
 		       transit_route_defaults
@@ -209,7 +209,7 @@ BEGIN {
 
 sub update_openstreetmap {
     my ($self, $force) = @_;
-    $self->{_map_xml_filenames} = [];
+    $self->{_osm_xml_filenames} = [];
     $self->_update_openstreetmap($force);
 }
 
@@ -241,7 +241,7 @@ sub _update_openstreetmap {
 	$self->_update_openstreetmap($force, $center_lon, $center_lat, $east_deg,   $north_deg);
     } elsif (-e $xml_filename && !$force) {
 	warn("Not updating $xml_filename\n") if $self->{verbose};
-	push(@{$self->{_map_xml_filenames}}, $xml_filename);
+	push(@{$self->{_osm_xml_filenames}}, $xml_filename);
     } else {
 	my $ua = LWP::UserAgent->new();
 	print STDERR ("Downloading $url ... ");
@@ -249,7 +249,7 @@ sub _update_openstreetmap {
 	printf STDERR ("%s\n", $response->status_line());
 	my $rc = $response->code();
 	if ($rc == RC_NOT_MODIFIED) {
-	    push(@{$self->{_map_xml_filenames}}, $xml_filename);
+	    push(@{$self->{_osm_xml_filenames}}, $xml_filename);
 	    # ok then
 	} elsif ($rc == 400) {
 	    file_put_contents($txt_filename, "split-up");
@@ -260,7 +260,7 @@ sub _update_openstreetmap {
 	    $self->_update_openstreetmap($force, $west_deg,   $center_lat, $center_lon, $north_deg);
 	    $self->_update_openstreetmap($force, $center_lon, $center_lat, $east_deg,   $north_deg);
 	} elsif (is_success($rc)) {
-	    push(@{$self->{_map_xml_filenames}}, $xml_filename);
+	    push(@{$self->{_osm_xml_filenames}}, $xml_filename);
 	    # ok then
 	} else {
 	    croak(sprintf("Failure: %s => %s\n",
@@ -1472,7 +1472,7 @@ sub draw_openstreetmap_maps {
     }
 
     my %unused;
-    my $num_maps = scalar(@{$self->{_map_xml_filenames}});
+    my $num_maps = scalar(@{$self->{_osm_xml_filenames}});
     my $map_number = 0;
     my %wayid_used;
     my %nodeid_used;
@@ -1499,7 +1499,7 @@ sub draw_openstreetmap_maps {
 	}
     }
 
-    foreach my $filename (@{$self->{_map_xml_filenames}}) {
+    foreach my $filename (@{$self->{_osm_xml_filenames}}) {
 	$map_number += 1;
 
 	$self->diag("($map_number/$num_maps) Parsing $filename ... ");
