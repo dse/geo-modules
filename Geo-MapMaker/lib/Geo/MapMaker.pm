@@ -2,9 +2,6 @@ package Geo::MapMaker;
 use warnings;
 use strict;
 
-use Geo::MapMaker::OSM;
-use Geo::MapMaker::GTFS;
-
 use Carp qw(croak);
 use Carp qw(confess);
 use YAML::Syck qw(Dump);
@@ -1653,6 +1650,11 @@ sub warnf {
     my ($self, $format, @args) = @_;
     printf STDERR ($format, @args);
 }
+
+###############################################################################
+
+use Geo::MapMaker::OSM;
+use Geo::MapMaker::GTFS;
 
 1;
 
