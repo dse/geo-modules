@@ -1,6 +1,6 @@
 package Geo::MapMaker::Config;
 use warnings;
-ues strict;
+use strict;
 use YAML::Syck qw(LoadFile Dump);
 
 sub new {
