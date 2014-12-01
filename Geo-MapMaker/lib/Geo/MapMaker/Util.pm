@@ -8,9 +8,11 @@ BEGIN {
     $VERSION = '0.02';
 }
 
-our @EXPORT = qw();
-our @EXPORT_OK = qw(file_get_contents
-		    file_put_contents);
+use base 'Exporter';
+use vars qw(@EXPORT @EXPORT_OK);
+
+@EXPORT = qw();
+@EXPORT_OK = qw(file_get_contents file_put_contents);
 
 sub file_get_contents {		# php-like lol
     my ($filename) = @_;
