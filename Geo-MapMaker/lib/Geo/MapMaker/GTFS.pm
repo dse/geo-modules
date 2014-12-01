@@ -269,7 +269,7 @@ END
     my %result;
     while (my ($shape_id, $direction_id) = $sth->fetchrow_array()) {
 	if (exists($result{$shape_id}) && $result{$shape_id} != $direction_id) {
-	    warn("  shape id to direction id mapping not possible!\n");
+	    CORE::warn("  shape id to direction id mapping not possible!\n");
 	    $sth->finish();
 	    return ();
 	} else {
