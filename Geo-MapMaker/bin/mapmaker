@@ -40,7 +40,9 @@ $shell->{verbose} = $verbose;
 $shell->{debug} = $debug;
 $shell->run(@ARGV);
 
-package Geo::GTFS::MapMaker::Config;
+package Geo::MapMaker::Config;
+use warnings;
+ues strict;
 use YAML::Syck qw(LoadFile Dump);
 
 sub new {
@@ -144,6 +146,8 @@ sub merge {
 }
 
 package My::Shell;
+use warnings;
+use strict;
 use List::MoreUtils qw(firstidx);
 
 sub new {
@@ -220,7 +224,7 @@ sub find_method {
 sub load_map_config {
 	my ($self) = @_;
 	return if $self->{maps};
-	$self->{config} = Geo::GTFS::MapMaker::Config->new();
+	$self->{config} = Geo::MapMaker::Config->new();
 	$self->{maps} = $self->{config}->{data};
 }
 
