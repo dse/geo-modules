@@ -46,7 +46,7 @@ sub _update_openstreetmap {
 	$self->_update_openstreetmap($force, $west_deg,   $center_lat, $center_lon, $north_deg);
 	$self->_update_openstreetmap($force, $center_lon, $center_lat, $east_deg,   $north_deg);
     } elsif (-e $xml_filename && !$force) {
-	warn("Not updating $xml_filename\n") if $self->{verbose};
+	CORE::warn("Not updating $xml_filename\n") if $self->{verbose};
 	push(@{$self->{_osm_xml_filenames}}, $xml_filename);
     } else {
 	my $ua = LWP::UserAgent->new();
