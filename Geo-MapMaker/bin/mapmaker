@@ -7,7 +7,7 @@ BEGIN {
 			"$ENV{HOME}/git/geo-modules/Geo-MapMaker/lib") {
 	if (-d $devdir) {
 	    warn("Including $devdir\n");
-	    $ENV{USE_INLINE_TEMP_CACHE} = 1;
+	    $ENV{USE_INLINE_TEMP_CACHE} = 1; # see Geo::MapMaker::Util
 	    require lib;
 	    import lib $devdir;
 	}
