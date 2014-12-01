@@ -26,13 +26,13 @@ Getopt::Long::Configure("bundling", "gnu_compat");
 Getopt::Long::GetOptions("show-stack-traces" => sub { $SIG{__DIE__} = \&Carp::confess; },
 			 "v|verbose+" => \$verbose,
 			 "D|debug=s" => sub {
-				 foreach (split(/[\s,]+/, $_[1])) {
-					 if (/=/) { my ($k, $v) = ($`, $');
-						    warn("debug: $k => $v\n");
-						    $debug->{$`} = $'; }
-					 else     { warn("debug: $_ => 1\n");
-						    $debug->{$_} = 1;  }
-				 }
+			     foreach (split(/[\s,]+/, $_[1])) {
+				 if (/=/) { my ($k, $v) = ($`, $');
+					    warn("debug: $k => $v\n");
+					    $debug->{$`} = $'; }
+				 else     { warn("debug: $_ => 1\n");
+					    $debug->{$_} = 1;  }
+			     }
 			 },
 			 "h|help" => sub { $shell->cmd__help(); exit(0); });
 
@@ -151,14 +151,14 @@ use strict;
 use List::MoreUtils qw(firstidx);
 
 sub new {
-	my $class = shift();
-	my $self = bless({}, $class);
-	return $self;
+    my $class = shift();
+    my $self = bless({}, $class);
+    return $self;
 }
 
 sub cmd__help {
-	my ($self) = @_;
-	print(<<"END");
+    my ($self) = @_;
+    print(<<"END");
 usage:
 	$0 [ OPTION ... ] list-maps
 	$0 [ OPTION ... ] FILENAME COMMAND [ \; COMMAND ... ]
@@ -187,243 +187,243 @@ END
 }
 
 sub run {
-	my ($self, @args) = @_;
-	my @next;
-	my $semicolon = firstidx { $_ eq ";" } @args;
-	if ($semicolon != -1) {
-		splice(@args, $semicolon, 1);
-		@next = splice(@args, $semicolon);
-	}
-	my $command = shift(@args);
-	if (!defined $command) {
-		die("no command specified; type '$0 help' for help.\n");
-	}
-	if ($command =~ /\./) {	# is a filename
-		unshift(@args, $command);
-		$command = "map";
-	}
-	my $method = $self->find_method($command);
-	die("no such command: '$command'; type '$0 help' for help.\n") unless $method;
-	$self->$method(@args);
+    my ($self, @args) = @_;
+    my @next;
+    my $semicolon = firstidx { $_ eq ";" } @args;
+    if ($semicolon != -1) {
+	splice(@args, $semicolon, 1);
+	@next = splice(@args, $semicolon);
+    }
+    my $command = shift(@args);
+    if (!defined $command) {
+	die("no command specified; type '$0 help' for help.\n");
+    }
+    if ($command =~ /\./) {	# is a filename
+	unshift(@args, $command);
+	$command = "map";
+    }
+    my $method = $self->find_method($command);
+    die("no such command: '$command'; type '$0 help' for help.\n") unless $method;
+    $self->$method(@args);
 
-	if (@next) {
-		$self->run(@next);
-	}
+    if (@next) {
+	$self->run(@next);
+    }
 }
 
 sub find_method {
-	my ($self, $command, $prefix) = @_;
-	$command =~ s{-}{_}g;
-	my $method_name = "cmd__" . $command;
-	if (defined $prefix) {
-		$method_name = "cmd_" . $prefix . "__" . $command;
-	}
-	return $self->can($method_name);
+    my ($self, $command, $prefix) = @_;
+    $command =~ s{-}{_}g;
+    my $method_name = "cmd__" . $command;
+    if (defined $prefix) {
+	$method_name = "cmd_" . $prefix . "__" . $command;
+    }
+    return $self->can($method_name);
 }
 
 sub load_map_config {
-	my ($self) = @_;
-	return if $self->{maps};
-	$self->{config} = Geo::MapMaker::Config->new();
-	$self->{maps} = $self->{config}->{data};
+    my ($self) = @_;
+    return if $self->{maps};
+    $self->{config} = Geo::MapMaker::Config->new();
+    $self->{maps} = $self->{config}->{data};
 }
 
 sub cmd__list_maps {
-	my ($self) = @_;
-	$self->load_map_config();
-	foreach (sort { $a cmp $b } keys(%{$self->{maps}})) {
-		print("$_\n");
-	}
+    my ($self) = @_;
+    $self->load_map_config();
+    foreach (sort { $a cmp $b } keys(%{$self->{maps}})) {
+	print("$_\n");
+    }
 }
 
 sub cmd__map {
-	my ($self, $mapname, $subcommand, @args) = @_;
-	die("no map name specified\n") unless defined $mapname;
-	die("no subcommand specified\n") unless defined $subcommand;
-	my $method = $self->find_method($subcommand);
-	die("no such command: '$subcommand'\n") unless $method;
-	$self->load_map_config();
-	my $mapinfo = $self->{maps}->{$mapname};
-	if (!$mapinfo) {
-		die("no such map: '$mapname'\n");
-	}
-	my $mapmaker = Geo::MapMaker->new(filename => $mapname, %$mapinfo);
-	$mapmaker->{verbose} = $self->{verbose};
-	$mapmaker->{debug}   = $self->{debug};
-	# $mapmaker->{config}  = $self->{config};
-	$self->{mapmaker} = $mapmaker;
-	$self->$method(@args);
+    my ($self, $mapname, $subcommand, @args) = @_;
+    die("no map name specified\n") unless defined $mapname;
+    die("no subcommand specified\n") unless defined $subcommand;
+    my $method = $self->find_method($subcommand);
+    die("no such command: '$subcommand'\n") unless $method;
+    $self->load_map_config();
+    my $mapinfo = $self->{maps}->{$mapname};
+    if (!$mapinfo) {
+	die("no such map: '$mapname'\n");
+    }
+    my $mapmaker = Geo::MapMaker->new(filename => $mapname, %$mapinfo);
+    $mapmaker->{verbose} = $self->{verbose};
+    $mapmaker->{debug}   = $self->{debug};
+    # $mapmaker->{config}  = $self->{config};
+    $self->{mapmaker} = $mapmaker;
+    $self->$method(@args);
 }
 
 sub cmd__gtfs_update {
-	my ($self) = @_;
-	my $mm = $self->{mapmaker};
-	die("map MAPNAME must be specified.\n") unless $mm;
+    my ($self) = @_;
+    my $mm = $self->{mapmaker};
+    die("map MAPNAME must be specified.\n") unless $mm;
 
-	my @gtfs = $mm->gtfs();
-	if (!scalar(@gtfs)) {
-		die("map refers to no transit data.\n");
-	}
-	foreach my $gtfs (@gtfs) {
-		$gtfs->update();
-		$gtfs->repopulate();
-	}
+    my @gtfs = $mm->gtfs();
+    if (!scalar(@gtfs)) {
+	die("map refers to no transit data.\n");
+    }
+    foreach my $gtfs (@gtfs) {
+	$gtfs->update();
+	$gtfs->repopulate();
+    }
 }
 
 sub cmd__force_gtfs_update {
-	my ($self) = @_;
-	my $mm = $self->{mapmaker};
-	die("map MAPNAME must be specified.\n") unless $mm;
+    my ($self) = @_;
+    my $mm = $self->{mapmaker};
+    die("map MAPNAME must be specified.\n") unless $mm;
 
-	my @gtfs = $mm->gtfs();
-	if (!scalar(@gtfs)) {
-		die("map refers to no transit data.\n");
-	}
-	foreach my $gtfs (@gtfs) {
-		$gtfs->force_update();
-		$gtfs->force_repopulate();
-	}
+    my @gtfs = $mm->gtfs();
+    if (!scalar(@gtfs)) {
+	die("map refers to no transit data.\n");
+    }
+    foreach my $gtfs (@gtfs) {
+	$gtfs->force_update();
+	$gtfs->force_repopulate();
+    }
 }
 
 sub cmd__osm_update {
-	goto *cmd__openstreetmap_update;
+    goto *cmd__openstreetmap_update;
 }
 
 sub cmd__openstreetmap_update {
-	my ($self) = @_;
-	my $mm = $self->{mapmaker};
-	die("map MAPNAME must be specified.\n") unless $mm;
-	$mm->update_openstreetmap();
+    my ($self) = @_;
+    my $mm = $self->{mapmaker};
+    die("map MAPNAME must be specified.\n") unless $mm;
+    $mm->update_openstreetmap();
 }
 
 sub cmd__force_osm_update {
-	goto *cmd__force_openstreetmap_update;
+    goto *cmd__force_openstreetmap_update;
 }
 
 sub cmd__force_openstreetmap_update {
-	my ($self) = @_;
-	my $mm = $self->{mapmaker};
-	die("map MAPNAME must be specified.\n") unless $mm;
-	$mm->force_update_openstreetmap();
+    my ($self) = @_;
+    my $mm = $self->{mapmaker};
+    die("map MAPNAME must be specified.\n") unless $mm;
+    $mm->force_update_openstreetmap();
 }
 
 sub cmd__gtfs_repopulate_database {
-	my ($self) = @_;
-	my $mm = $self->{mapmaker};
-	die("map MAPNAME must be specified.\n") unless $mm;
-	my @gtfs = $mm->gtfs();
-	if (!scalar(@gtfs)) {
-		die("map refers to no transit data.\n");
-	}
-	foreach my $gtfs (@gtfs) {
-		$gtfs->repopulate();
-	}
+    my ($self) = @_;
+    my $mm = $self->{mapmaker};
+    die("map MAPNAME must be specified.\n") unless $mm;
+    my @gtfs = $mm->gtfs();
+    if (!scalar(@gtfs)) {
+	die("map refers to no transit data.\n");
+    }
+    foreach my $gtfs (@gtfs) {
+	$gtfs->repopulate();
+    }
 }
 
 sub cmd__force_gtfs_repopulate_database {
-	my ($self) = @_;
-	my $mm = $self->{mapmaker};
-	die("map MAPNAME must be specified.\n") unless $mm;
-	my @gtfs = $mm->gtfs();
-	if (!scalar(@gtfs)) {
-		die("map refers to no transit data.\n");
-	}
-	foreach my $gtfs (@gtfs) {
-		$gtfs->force_repopulate();
-	}
+    my ($self) = @_;
+    my $mm = $self->{mapmaker};
+    die("map MAPNAME must be specified.\n") unless $mm;
+    my @gtfs = $mm->gtfs();
+    if (!scalar(@gtfs)) {
+	die("map refers to no transit data.\n");
+    }
+    foreach my $gtfs (@gtfs) {
+	$gtfs->force_repopulate();
+    }
 }
 
 sub cmd__draw_openstreetmap_maps {
-	my ($self, @args) = @_;
-	my $mm = $self->{mapmaker};
-	die("map MAPNAME must be specified.\n") unless $mm;
-	$mm->update_openstreetmap();
-	$mm->draw_openstreetmap_maps(@args);
+    my ($self, @args) = @_;
+    my $mm = $self->{mapmaker};
+    die("map MAPNAME must be specified.\n") unless $mm;
+    $mm->update_openstreetmap();
+    $mm->draw_openstreetmap_maps(@args);
 }
 
 sub cmd__draw_transit_routes {
-	my ($self, @routes) = @_;
-	my $mm = $self->{mapmaker};
-	die("map MAPNAME must be specified.\n") unless $mm;
-	my @gtfs = $mm->gtfs();
-	if (!scalar(@gtfs)) {
-		die("map refers to no transit data.\n");
-	}
-	$mm->draw_transit_routes(@routes);
+    my ($self, @routes) = @_;
+    my $mm = $self->{mapmaker};
+    die("map MAPNAME must be specified.\n") unless $mm;
+    my @gtfs = $mm->gtfs();
+    if (!scalar(@gtfs)) {
+	die("map refers to no transit data.\n");
+    }
+    $mm->draw_transit_routes(@routes);
 }
 
 sub cmd__draw_transit_stops {
-	my ($self) = @_;
-	my $mm = $self->{mapmaker};
-	die("map MAPNAME must be specified.\n") unless $mm;
-	my @gtfs = $mm->gtfs();
-	if (!scalar(@gtfs)) {
-		die("map refers to no transit data.\n");
-	}
-	$mm->draw_transit_stops();
+    my ($self) = @_;
+    my $mm = $self->{mapmaker};
+    die("map MAPNAME must be specified.\n") unless $mm;
+    my @gtfs = $mm->gtfs();
+    if (!scalar(@gtfs)) {
+	die("map refers to no transit data.\n");
+    }
+    $mm->draw_transit_stops();
 }
 
 sub cmd__update_styles {
-	my ($self) = @_;
-	my $mm = $self->{mapmaker};
-	die("map MAPNAME must be specified.\n") unless $mm;
-	$mm->update_styles();
+    my ($self) = @_;
+    my $mm = $self->{mapmaker};
+    die("map MAPNAME must be specified.\n") unless $mm;
+    $mm->update_styles();
 }
 
 sub cmd__draw_grid {
-	my ($self) = @_;
-	my $mm = $self->{mapmaker};
-	die("map MAPNAME must be specified.\n") unless $mm;
-	$mm->draw_grid();
+    my ($self) = @_;
+    my $mm = $self->{mapmaker};
+    die("map MAPNAME must be specified.\n") unless $mm;
+    $mm->draw_grid();
 }
 
 sub cmd__remove_grid {
-	my ($self) = @_;
-	my $mm = $self->{mapmaker};
-	die("map MAPNAME must be specified.\n") unless $mm;
-	$mm->remove_grid();
+    my ($self) = @_;
+    my $mm = $self->{mapmaker};
+    die("map MAPNAME must be specified.\n") unless $mm;
+    $mm->remove_grid();
 }
 
 sub cmd__draw_crop_lines {
-	my ($self) = @_;
-	my $mm = $self->{mapmaker};
-	die("map MAPNAME must be specified.\n") unless $mm;
-	$mm->draw_crop_lines();
+    my ($self) = @_;
+    my $mm = $self->{mapmaker};
+    die("map MAPNAME must be specified.\n") unless $mm;
+    $mm->draw_crop_lines();
 }
 
 sub cmd__remove_crop_lines {
-	my ($self) = @_;
-	my $mm = $self->{mapmaker};
-	die("map MAPNAME must be specified.\n") unless $mm;
-	$mm->remove_crop_lines();
+    my ($self) = @_;
+    my $mm = $self->{mapmaker};
+    die("map MAPNAME must be specified.\n") unless $mm;
+    $mm->remove_crop_lines();
 }
 
 sub cmd__save_as {
-	my ($self, $filename) = @_;
-	die("FILENAME must be specified.\n") unless defined $filename;
-	my $mm = $self->{mapmaker};
-	die("map MAPNAME must be specified.\n") unless $mm;
-	$mm->save($filename);
+    my ($self, $filename) = @_;
+    die("FILENAME must be specified.\n") unless defined $filename;
+    my $mm = $self->{mapmaker};
+    die("map MAPNAME must be specified.\n") unless $mm;
+    $mm->save($filename);
 }
 
 sub cmd__enable_layers {
-	my ($self, @layers) = @_;
-	die("at least one LAYER must be specified.\n") unless scalar @layers;
-	my $mm = $self->{mapmaker};
-	die("map MAPNAME must be specified.\n") unless $mm;
-	$mm->enable_layers(@layers);
+    my ($self, @layers) = @_;
+    die("at least one LAYER must be specified.\n") unless scalar @layers;
+    my $mm = $self->{mapmaker};
+    die("map MAPNAME must be specified.\n") unless $mm;
+    $mm->enable_layers(@layers);
 }
 sub cmd__disable_layers {
-	my ($self, @layers) = @_;
-	die("at least one LAYER must be specified.\n") unless scalar @layers;
-	my $mm = $self->{mapmaker};
-	die("map MAPNAME must be specified.\n") unless $mm;
-	$mm->disable_layers(@layers);
+    my ($self, @layers) = @_;
+    die("at least one LAYER must be specified.\n") unless scalar @layers;
+    my $mm = $self->{mapmaker};
+    die("map MAPNAME must be specified.\n") unless $mm;
+    $mm->disable_layers(@layers);
 }
 sub cmd__list_layers {
-	my ($self) = @_;
-	my $mm = $self->{mapmaker};
-	die("map MAPNAME must be specified.\n") unless $mm;
-	$mm->list_layers();
+    my ($self) = @_;
+    my $mm = $self->{mapmaker};
+    die("map MAPNAME must be specified.\n") unless $mm;
+    $mm->list_layers();
 }
 
