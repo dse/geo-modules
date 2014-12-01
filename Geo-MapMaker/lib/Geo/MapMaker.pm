@@ -89,7 +89,6 @@ BEGIN {
 		  transit_route_groups
 		  transit_orig_route_color_mapping
 		  transit_trip_exceptions
-		  transit_route_fix_overlaps
 		  _dirty_
 		  debug
 		  verbose
@@ -192,7 +191,7 @@ use Carp qw(confess);
 use File::Path qw(mkpath);
 use File::Basename;
 use List::MoreUtils qw(all firstidx uniq);
-use Geo::MapMaker::Util qw(file_get_contents file_put_contents move_line_away);
+use Geo::MapMaker::Util qw(file_get_contents file_put_contents);
 use Geo::MapMaker::CoordinateConverter;
 
 our %NS;
@@ -1282,51 +1281,6 @@ sub draw_transit_routes {
 		}
 	    }
 	}
-    }
-
-    if ($self->{transit_route_fix_overlaps}) {
-	# FIXME
-	if (scalar(@{$self->{transit_route_fix_overlaps}})) {
-	    $self->diag("Handling user-defined overlaps...\n");
-	}
-	foreach my $overlap (@{$self->{transit_route_fix_overlaps}}) {
-	    my $separation = $overlap->{separation} // 1.0;
-	    my $direction   = $overlap->{direction}   // 0;
-	    my $direction_2 = $direction;
-	    if ($direction eq "left") {
-		$direction_2 = "right";
-	    } elsif ($direction eq "right") {
-		$direction_2 = "left";
-	    }
-	    my $agency_route_A = $overlap->{route_A}; # this route stays
-	    my $agency_route_B = $overlap->{route_B}; # this route gets moved over
-	    next unless defined $agency_route_A;
-	    next unless defined $agency_route_B;
-	    $self->diag("  overlap $agency_route_A $agency_route_B...");
-	    my $north_deg = $overlap->{north_deg};
-	    my $south_deg = $overlap->{south_deg};
-	    my $east_deg  = $overlap->{east_deg};
-	    my $west_deg  = $overlap->{west_deg};
-	    foreach my $map_area (@{$self->{_map_areas}}) {
-		my $map_area_index = $map_area->{index};
-		$self->update_scale($map_area);
-		my $north_svg = defined $north_deg ? $self->{converter}->lat_deg_to_y_px($north_deg) : undef;
-		my $south_svg = defined $south_deg ? $self->{converter}->lat_deg_to_y_px($south_deg) : undef;
-		my $east_svg  = defined $east_deg  ? $self->{converter}->lon_deg_to_x_px($east_deg)  : undef;
-		my $west_svg  = defined $west_deg  ? $self->{converter}->lon_deg_to_x_px($west_deg)  : undef;
-		foreach my $shape_id_B (keys(%{$shape_svg_coords{$map_area_index}{$agency_route_B}})) {
-		    foreach my $shape_id_A (keys(%{$shape_svg_coords{$map_area_index}{$agency_route_A}})) {
-			move_line_away($north_svg, $south_svg, $east_svg, $west_svg,
-				       $separation,
-				       $direction,
-				       $shape_svg_coords{$map_area_index}{$agency_route_B}{$shape_id_B},
-				       $shape_svg_coords{$map_area_index}{$agency_route_A}{$shape_id_A});
-		    }
-		}
-	    }
-	    $self->diag("done.\n");
-	}
-	$self->diag("Done with overlaps.\n");
     }
 
     $self->diag("Drawing routes...\n");
