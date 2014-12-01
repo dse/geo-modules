@@ -13,7 +13,7 @@ use constant TRUE  => 1;
 # classname in SVG, or some shit.
 
 =head1 NAME
-	
+
 Geo::MapMaker - Create semi-usable maps from GTFS and OSM data.
 
 =head1 VERSION
@@ -23,7 +23,7 @@ Version 0.01
 =cut
 
 our $VERSION = '0.01';
-	
+
 =head1 SYNOPSIS
 
     use Geo::MapMaker;
@@ -212,25 +212,25 @@ sub update_openstreetmap {
 
 sub _update_openstreetmap {
     my ($self, $force, $west_deg, $south_deg, $east_deg, $north_deg) = @_;
-    
+
     $west_deg  //= $self->west_map_data_boundary_deg();
     $south_deg //= $self->south_map_data_boundary_deg();
     $east_deg  //= $self->east_map_data_boundary_deg();
     $north_deg //= $self->north_map_data_boundary_deg();
-    
+
     my $center_lat = ($north_deg + $south_deg) / 2;
     my $center_lon = ($west_deg + $east_deg) / 2;
-    
+
     my $url = sprintf("http://api.openstreetmap.org/api/0.6/map?bbox=%.8f,%.8f,%.8f,%.8f",
 		      $west_deg, $south_deg, $east_deg, $north_deg);
     my $txt_filename = sprintf("%s/.geo-mapmaker-osm/map_%.8f_%.8f_%.8f_%.8f_bbox.txt",
 			       $ENV{HOME}, $west_deg, $south_deg, $east_deg, $north_deg);
     my $xml_filename = sprintf("%s/.geo-mapmaker-osm/map_%.8f_%.8f_%.8f_%.8f_bbox.xml",
 			       $ENV{HOME}, $west_deg, $south_deg, $east_deg, $north_deg);
-    
+
     mkpath(dirname($xml_filename));
     my $status = eval { file_get_contents($txt_filename); };
-    
+
     if ($status && $status eq "split-up") {
 	$self->_update_openstreetmap($force, $west_deg,   $south_deg,  $center_lon, $center_lat);
 	$self->_update_openstreetmap($force, $center_lon, $south_deg,  $east_deg,   $center_lat);
@@ -337,24 +337,24 @@ sub init_xml {
 </svg>
 END
     }
-    
+
     my $doc_elt = $doc->documentElement();
-    
+
     $self->{_parser} = $parser;
     $self->{_svg_doc} = $doc;
     $self->{_svg_doc_elt} = $doc_elt;
-    
+
     $doc_elt->setAttribute("width", sprintf("%.2f", $self->{paper_width_px}));
     $doc_elt->setAttribute("height", sprintf("%.2f", $self->{paper_height_px}));
     $doc_elt->setNamespace($NS{"svg"}, "svg", 0);
-    
+
     my $xpc = XML::LibXML::XPathContext->new($doc);
     $xpc->registerNs("svg"      => $NS{"svg"});
     $xpc->registerNs("inkscape" => $NS{"inkscape"});
     $xpc->registerNs("sodipodi" => $NS{"sodipodi"});
     $xpc->registerNs("mapmaker" => $NS{"mapmaker"});
     $self->{_xpc} = $xpc;
-    
+
     if ($doc_is_new) {
 	my ($view) = $doc->findnodes("//sodipodi:namedview[\@id='base']");
 	if ($view) {
@@ -364,16 +364,16 @@ END
 				  sprintf("%.2f", $self->{paper_height_px} / 2));
 	}
     }
-    
+
     # keep dox with the old namespace working
     $doc_elt->setAttributeNS("http://www.w3.org/2000/xmlns/", "xmlns:mapmaker", $NS{"mapmaker"});
-    
-    $self->{_map_areas} = [ { is_main => 1, name => "Main Map" }, 
+
+    $self->{_map_areas} = [ { is_main => 1, name => "Main Map" },
 			    eval { @{$self->{inset_maps}} } ];
-    
+
     $self->add_indexes_to_array($self->{_map_areas});
     $self->add_indexes_to_array($self->{transit_route_groups});
-    
+
     foreach my $map_area (@{$self->{_map_areas}}) {
 	my $id = $map_area->{id};
 	my $index = $map_area->{index};
@@ -392,11 +392,11 @@ END
 	    $map_area->{id_prefix} = "ma" . $index . "_";
 	}
     }
-    
+
     $self->{_read_filename} = $self->{filename};
-    
+
     $self->upgrade_mapmaker_version();
-    
+
     $self->{_dirty_} = 1;
 }
 
@@ -509,7 +509,7 @@ sub update_or_create_style_node {
     $style->setAttribute("id", "geoMapmakerStyles");
 
     my $contents = "\n";
-	
+
     $contents .= <<'END';
 	.WHITE      { fill: #fff; }
 	.MAP_BORDER { fill: none !important; stroke-linejoin: square !important; }
@@ -556,7 +556,7 @@ sub update_or_create_clip_path_node {
     foreach my $other (@others) {
 	$other->unbindNode();
     }
-	
+
     ($path, @others) = $cpnode->findnodes("svg:path");
     if (!$path) {
 	$path = $doc->createElementNS($NS{"svg"}, "path");
@@ -593,7 +593,7 @@ END
 
 sub update_or_create_map_area_layer {
     my ($self, $map_area, $options) = @_;
-	
+
     my $doc     = $self->{_svg_doc};
     my $doc_elt = $self->{_svg_doc_elt};
 
@@ -609,9 +609,9 @@ sub update_or_create_map_area_layer {
     } else {
 	$more_options->{but_after} = $layer_name . " (under)";
     }
-	
+
     $self->{_dirty_} = 1;
-	
+
     my $class = $options->{class};
     if (defined $class) {
 	$class .= " mapAreaLayer";
@@ -896,7 +896,7 @@ END
 		where	 routes.route_short_name = ?
                          and stop_times.stop_id = ?
 END
-	
+
     foreach my $exception (@exceptions) {
 	if ($return_excluded_trips) {
 	    next unless $exception->{exclude};
@@ -1049,7 +1049,7 @@ END
 sub get_transit_route_shape_points {
     my ($self, $gtfs, $shape_id) = @_;
     my $dbh = $gtfs->dbh();
-	
+
     my $sth = $dbh->prepare_cached(<<"END");
 		select shape_pt_lon, shape_pt_lat
 		from shapes
@@ -1103,9 +1103,9 @@ sub draw_transit_stops {
 	$self->diagf("Fetching transit stops for %s ... ", $gtfs->{data}->{name});
 	my @stops = $self->get_transit_stops($gtfs, { });
 	$self->diag("Done.\n");
-		
+
 	$self->diagf("Drawing transit stops for %s ... ", $gtfs->{data}->{name});
-		
+
 	my $class        = "transit-stop";
 	my $class_2      = "transit-stop_2";
 	my $has_style_2  = $self->has_style_2(class => $class);
@@ -1114,14 +1114,14 @@ sub draw_transit_stops {
 	my $r_2 = $self->get_style_property(class => $class,
 					    style_attr_name => "style_2",
 					    property => "r") // 0.5;
-	
+
 	foreach my $map_area (@{$self->{_map_areas}}) {
 	    $self->update_scale($map_area);
 	    my $west_svg  = $self->west_outer_map_boundary_svg;
 	    my $east_svg  = $self->east_outer_map_boundary_svg;
 	    my $north_svg = $self->north_outer_map_boundary_svg;
 	    my $south_svg = $self->south_outer_map_boundary_svg;
-		
+
 	    my $map_area_layer = $self->update_or_create_map_area_layer($map_area);
 	    my $transit_stops_layer = $self->update_or_create_transit_stops_layer($map_area, $map_area_layer);
 	    $self->erase_autogenerated_content_within($transit_stops_layer);
@@ -1140,7 +1140,7 @@ sub draw_transit_stops {
 		my $title = join(" - ", grep { $_ } ($stop_code, $stop_name, $stop_desc));
 
 		my ($x, $y) = $self->{converter}->lon_lat_deg_to_x_y_px($lon_deg, $lat_deg);
-		
+
 		return if $x < $west_svg  || $x > $east_svg;
 		return if $y < $north_svg || $y > $south_svg;
 		my $circle = $self->circle_node(x => $x, y => $y, r => $r,
@@ -1149,7 +1149,7 @@ sub draw_transit_stops {
 						id => "ts_" . $stop_code . $suffix);
 		$clipped_group->appendChild($circle);
 	    };
-		
+
 	    foreach my $stop ($self->get_transit_stops($gtfs)) {
 		$plot->($stop, $class, $r);
 	    }
@@ -1165,10 +1165,10 @@ sub draw_transit_stops {
 
 sub draw_transit_routes {
     my ($self, @routes) = @_;
-	
+
     my @gtfs = $self->gtfs();
     if (!scalar(@gtfs)) { return; }
-	
+
     $self->init_xml();
 
     $self->{_dirty_} = 1;
@@ -1180,10 +1180,10 @@ sub draw_transit_routes {
 	$route_group_by_name{$group->{name}} = $group if defined $group->{name};
 	$route_group_by_name{$group->{id}}   = $group if defined $group->{id};
     }
-	
+
     my $exceptions_group_name = eval { $self->{transit_trip_exceptions}->{group} };
     my $exceptions_group;
-    my $exceptions_class;  
+    my $exceptions_class;
     my $exceptions_class_2;
     if (defined $exceptions_group_name) {
 	$exceptions_group = $route_group_by_name{$exceptions_group_name};
@@ -1193,13 +1193,13 @@ sub draw_transit_routes {
 	$exceptions_class_2 = $exceptions_group->{class} . "_2";
     }
 
-    my %shape_direction_id;	
-    my %shape_excepted;	
-    my %shape_excluded;	
-    my %route_shape_id;	
-    my %shape_coords;       
-    my %shape_svg_coords;   
-    my %route_group;        
+    my %shape_direction_id;
+    my %shape_excepted;
+    my %shape_excluded;
+    my %route_shape_id;
+    my %shape_coords;
+    my %shape_svg_coords;
+    my %route_group;
 
     $self->diag("Gathering and converting route coordinates...\n");
     foreach my $gtfs (@gtfs) {
@@ -1209,7 +1209,7 @@ sub draw_transit_routes {
 	    my $agency_route = $agency_id . "/" . $route_short_name;
 
 	    next if scalar(@routes) && !grep { $_ eq $route_short_name || $_ eq $agency_route } @routes;
-			
+
 	    my $route_long_name = $route->{route_long_name};
 	    my $route_desc  = $route->{route_desc};
 	    my $route_name  = $route->{name}  = join(" - ", grep { $_ } ($route_short_name, $route_long_name));
@@ -1220,12 +1220,12 @@ sub draw_transit_routes {
 	    }
 
 	    $self->diagf("  Route $agency_route - $route_title ...\n");
-			
+
 	    my %s2d = $self->get_shape_id_to_direction_id_map(gtfs => $gtfs, route => $route_short_name);
 	    while (my ($shape_id, $direction_id) = each(%s2d)) {
 		$shape_direction_id{$agency_route}{$shape_id} = $direction_id;
 	    }
-			
+
 	    my @shape_id = $self->get_transit_route_shape_ids($gtfs, $route_short_name);
 	    $route_shape_id{$agency_route} = [@shape_id];
 
@@ -1338,7 +1338,7 @@ sub draw_transit_routes {
 	  if $self->{debug}->{drawtransitroutes};
 	my $agency_id = $gtfs->{data}{agency_id};
 	foreach my $route ($self->get_transit_routes($gtfs)) {
-			
+
 	    my $route_short_name = $route->{route_short_name};
 	    my $agency_route = $agency_id . "/" . $route_short_name;
 
@@ -1355,10 +1355,10 @@ sub draw_transit_routes {
 	    foreach my $map_area (@{$self->{_map_areas}}) {
 		my $map_area_index = $map_area->{index};
 		$self->update_scale($map_area);
-				
+
 		my $map_area_layer = $self->update_or_create_map_area_layer($map_area);
 		my $transit_map_layer = $self->update_or_create_transit_map_layer($map_area, $map_area_layer);
-				
+
 		my $normal_shape_collection    = { shortname => "normal",
 						   suffix => "",
 						   group => $route_group{$agency_route},
@@ -1369,7 +1369,7 @@ sub draw_transit_routes {
 						   shapes => [ ] };
 		my $shape_collections = [ $exception_shape_collection,
 					  $normal_shape_collection ];
-				
+
 		foreach my $collection (@$shape_collections) {
 		    my $route_group = $collection->{group};
 		    my $route_group_class = $route_group->{class};
@@ -1394,7 +1394,7 @@ sub draw_transit_routes {
 		    $collection->{route_layer}       = $route_layer;
 		    $collection->{clipped_group}     = $clipped_group;
 		}
-				
+
 		foreach my $shape_id (@shape_id) {
 		    next unless $shape_svg_coords{$map_area_index};
 		    next unless $shape_svg_coords{$map_area_index}{$agency_route};
@@ -1427,7 +1427,7 @@ sub draw_transit_routes {
 			if ($self->{debug}->{drawtransitroutes}) {
 			    $self->warnf("       drawing a shape for rt $route_short_name $collection->{shortname}\n");
 			}
-						
+
 			my $id = $map_area->{id_prefix} . "rt" . $route_short_name . "_ch" . $index;
 			my $id2 = $id . "_2";
 			my $polyline = $self->polyline(points => $shape, class => $class, id => $id);
@@ -1484,7 +1484,7 @@ sub draw_openstreetmap_maps {
     $self->init_xml();
     $self->{_dirty_} = 1;
     $self->stuff_all_layers_need();
-	
+
     foreach my $map_area (@{$self->{_map_areas}}) {
 	$self->update_scale($map_area);
 	my $prefix = $map_area->{id_prefix};
@@ -1637,7 +1637,7 @@ sub draw_openstreetmap_maps {
 			   tags   => {}
 			  };
 	    $ways{$id} = $result;
-			
+
 	    my @tag = $way->findnodes("tag");
 	    foreach my $tag (@tag) {
 		my $k = $tag->getAttribute("k");
@@ -1672,7 +1672,7 @@ sub draw_openstreetmap_maps {
 	    }
 	    $self->diag("done.\n");
 	}
-		
+
 	foreach my $map_area (@{$self->{_map_areas}}) {
 	    $self->update_scale($map_area);
 	    my $index = $map_area->{index};
@@ -1716,7 +1716,7 @@ sub draw_openstreetmap_maps {
 		    my $closed_class   =           $info->{class};
 		    my $open_class_2   = "OPEN " . $info->{class} . "_2";
 		    my $closed_class_2 =           $info->{class} . "_2";
-				
+
 		    foreach my $way (@ways) {
 			$way->{used} = 1;
 			my $points = $way->{points}[$index];
@@ -1853,7 +1853,7 @@ sub points_to_path {
 			 int($_->[POINT_Y] * 100 + 0.5) / 100 ] } @points;
     my $result = sprintf("m %.2f,%.2f", @{$coords[0]});
     for (my $i = 1; $i < scalar(@coords); $i += 1) {
-	$result .= sprintf(" %.2f,%.2f", 
+	$result .= sprintf(" %.2f,%.2f",
 			   $coords[$i][POINT_X] - $coords[$i - 1][POINT_X],
 			   $coords[$i][POINT_Y] - $coords[$i - 1][POINT_Y]);
     }
@@ -2085,7 +2085,7 @@ sub compose_style_hash {
     my $style_attr_name = $args{style_attr_name} // "style";
     my $class           = $args{class};
     my %style           = $args{style} ? %{$args{style}} : ();
-	
+
     my @class = (ref($class) eq "ARRAY") ? @$class : ($class);
     @class = grep { /\S/ } map { split(/\s+/, $_) } @class;
 
@@ -2127,7 +2127,7 @@ sub compose_style_string {
     my $style = $self->compose_style_hash(%args);
     return join(";",
 		map { $_ . ":" . $style->{$_} }
-		  sort  
+		  sort
 		    grep { $_ ne "r" }
 		      keys %$style);
 }
@@ -2646,7 +2646,7 @@ sub save {
 	    return;
 	}
     }
-	
+
     $filename //= $self->{filename};
 
     if (!defined $filename && !$self->{_dirty_}) {
@@ -2677,7 +2677,7 @@ sub save {
     close($fh);
 
     $self->{_dirty_} = 0; # assuming we want no auto-save when doing save-as.
-	
+
     $self->diag("done.\n");
 }
 
@@ -2688,7 +2688,7 @@ sub list_layers {
     foreach my $layer ($self->{_svg_doc}->findnodes($xpath)) {
 	my $path = $layer->nodePath();;
 	my $count =()= $path =~ m{/}g;
-	print("  " x $count, 
+	print("  " x $count,
 	      $layer->getAttributeNS($NS{inkscape}, "label"), "\n");
     }
 }
