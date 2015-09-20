@@ -4,7 +4,6 @@ use strict;
 
 use Carp qw(croak);
 use Carp qw(confess);
-use YAML::Syck qw(Dump);
 
 use constant FALSE => 0;
 use constant TRUE  => 1;
@@ -132,12 +131,10 @@ BEGIN {
 
 		  converter
 
-
 		  left_point
 		  right_point
 		  top_point
 		  bottom_point
-
 		);
 }
 use fields @_FIELDS;
@@ -162,7 +159,64 @@ sub new {
 	    $self->{$k} = $v;
 	}
     }
+    if (defined(my $filename = $self->{filename})) {
+	my $mapmaker_yaml_filename = $self->mapmaker_yaml_filename($filename);
+	$self->load_mapmaker_yaml($mapmaker_yaml_filename);
+    }
     return $self;
+}
+
+sub mapmaker_yaml_filename {
+    my ($self, $filename) = @_;
+    $filename .= ".mapmaker.yaml";
+    return $filename;
+}
+
+use YAML::Syck qw(Load LoadFile);
+
+sub load_mapmaker_yaml {
+    my ($self, $filename) = @_;
+    my $data = eval { LoadFile($filename); };
+    if ($@) { warn($@); }
+    if ($data) {
+	while (my ($k, $v) = each(%$data)) {
+	    if ($k eq "INCLUDE" || $k eq "include") {
+		if (ref($v) eq "ARRAY") {
+		    foreach my $f (@$v) {
+			$self->include_mapmaker_yaml($f, $filename);
+		    }
+		} else {
+		    $self->include_mapmaker_yaml($v, $filename);
+		}
+	    } elsif ($k eq "gtfs") {
+		$self->gtfs($v);
+	    } else {
+		$self->{$k} = $v;
+	    }
+	}
+    }
+}
+
+use File::Basename qw(dirname);
+
+sub include_mapmaker_yaml {
+    my ($self, $filename, $orig_filename) = @_;
+
+    my $dirname = dirname($orig_filename);
+    my $abs_path = File::Spec->rel2abs($filename, $dirname);
+    print("[$dirname] $filename => $abs_path\n");
+
+    my $data = eval { LoadFile($filename); };
+    if ($@) { warn($@); }
+    if ($data) {
+	while (my ($k, $v) = each(%$data)) {
+	    if ($k eq "gtfs") {
+		$self->gtfs($v);
+	    } else {
+		$self->{$k} = $v;
+	    }
+	}
+    }
 }
 
 sub DESTROY {
@@ -430,9 +484,9 @@ sub update_or_create_style_node {
     my $contents = "\n";
 
     $contents .= <<'END';
-	.WHITE      { fill: #fff; }
+	.WHITE { fill: #fff; }
 	.MAP_BORDER { fill: none !important; stroke-linejoin: square !important; }
-	.OPEN       { fill: none !important; stroke-linecap: round; stroke-linejoin: round; }
+	.OPEN { fill: none !important; stroke-linecap: round; stroke-linejoin: round; }
 	.TEXT_NODE_BASE {
 		text-align: center;
 		text-anchor: middle;
@@ -440,10 +494,12 @@ sub update_or_create_style_node {
 END
 
     foreach my $class (sort keys %{$self->{classes}}) {
-	my $css   = $self->compose_style_string(class => $class);
-	my $css_2 = $self->compose_style_string(class => $class, style_attr_name => "style_2");
-	$contents .= "\t.${class}    { $css }\n";
-	$contents .= "\t.${class}_2 { $css_2 }\n" if $self->has_style_2(class => $class);
+	my $css        = $self->compose_style_string(class => $class);
+	my $css_2      = $self->compose_style_string(class => $class, style_attr_name => "style_2");
+	my $css_BRIDGE = $self->compose_style_string(class => $class, style_attr_name => "style_BRIDGE");
+	$contents .= "\t.${class}   { $css }\n";
+	$contents .= "\t.${class}_2 { $css_2 }\n"      if $self->has_style_2(class => $class);
+	$contents .= "\t.${class}_2 { $css_BRIDGE }\n" if $self->has_style_BRIDGE(class => $class);
     }
 
     $self->{_dirty_} = 1;
@@ -958,6 +1014,12 @@ sub has_style_2 {
     my ($self, %args) = @_;
     my $class = $args{class};
     return scalar($self->get_style_hashes(class => $class, style_attr_name => "style_2")) ? 1 : 0;
+}
+
+sub has_style_BRIDGE {
+    my ($self, %args) = @_;
+    my $class = $args{class};
+    return scalar($self->get_style_hashes(class => $class, style_attr_name => "style_BRIDGE")) ? 1 : 0;
 }
 
 sub compose_style_string {
