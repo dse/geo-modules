@@ -15,11 +15,13 @@ sub new {
 
 sub init {
     my ($self) = @_;
-    $self->{data} = LoadFile($self->{file});
-    if (!$self->{data}) {
-	die("No config to speak of at $self->{file}.\n");
+    if (-e $self->{file}) {
+	$self->{data} = LoadFile($self->{file});
+	if (!$self->{data}) {
+	    die("No config to speak of at $self->{file}.\n");
+	}
+	$self->find_process_includes();
     }
-    $self->find_process_includes();
 }
 
 sub find_process_includes {
