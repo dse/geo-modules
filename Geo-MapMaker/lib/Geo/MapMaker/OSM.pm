@@ -51,13 +51,14 @@ sub _update_openstreetmap {
     } else {
 	my $ua = LWP::UserAgent->new();
 	print STDERR ("Downloading $url ... ");
+      try_again:
 	my $response = $ua->mirror($url, $xml_filename);
 	printf STDERR ("%s\n", $response->status_line());
 	my $rc = $response->code();
 	if ($rc == RC_NOT_MODIFIED) {
 	    push(@{$self->{_osm_xml_filenames}}, $xml_filename);
 	    # ok then
-	} elsif ($rc == 400) {
+	} elsif ($rc == 400) {	# Bad Request
 	    file_put_contents($txt_filename, "split-up");
 	    my $center_lat = ($north_deg + $south_deg) / 2;
 	    my $center_lon = ($west_deg + $east_deg) / 2;
@@ -68,6 +69,10 @@ sub _update_openstreetmap {
 	} elsif (is_success($rc)) {
 	    push(@{$self->{_osm_xml_filenames}}, $xml_filename);
 	    # ok then
+	} elsif ($rc == 509) {	# Bandwidth Exceeded
+	    CORE::warn("Waiting 30 seconds...\n");
+	    sleep(30);
+	    goto try_again;
 	} else {
 	    croak(sprintf("Failure: %s => %s\n",
 			  $response->base(),
@@ -155,6 +160,9 @@ sub draw_openstreetmap_maps {
 	    }
 	}
     }
+
+    my %bridge_wayid;
+    my @deferred;
 
     foreach my $filename (@{$self->{_osm_xml_filenames}}) {
 	$map_number += 1;
@@ -259,6 +267,9 @@ sub draw_openstreetmap_maps {
 		my $v = $tag->getAttribute("v");
 		# k/v from xml
 		if (defined $k) {
+		    if ($k eq "bridge" and $v eq "yes") {
+			$bridge_wayid{$id} = 1;
+		    }
 		    if (defined $v) {
 			$result->{tags}->{$k} = $v;
 			if ($way_preindex_kv{$k,$v}) {
@@ -327,12 +338,18 @@ sub draw_openstreetmap_maps {
 			$options->{scale} = $map_area->{zoom};
 		    }
 
-		    my $open_class     = "OPEN " . $info->{class};
-		    my $closed_class   =           $info->{class};
-		    my $open_class_2   = "OPEN " . $info->{class} . "_2";
-		    my $closed_class_2 =           $info->{class} . "_2";
+		    my $open_class          = "OPEN " . $info->{class};
+		    my $closed_class        =           $info->{class};
+		    my $open_class_2        = "OPEN " . $info->{class} . "_2";
+		    my $closed_class_2      =           $info->{class} . "_2";
+		    my $open_class_BRIDGE   = "OPEN " . $info->{class} . "_BRIDGE";
+		    my $closed_class_BRIDGE =           $info->{class} . "_BRIDGE";
 
 		    foreach my $way (@ways) {
+			my $wayid = $way->{id};
+			my $is_bridge = $bridge_wayid{$wayid};
+			my $defer = 0;
+
 			$way->{used} = 1;
 			my $points = $way->{points}[$index];
 
@@ -343,28 +360,56 @@ sub draw_openstreetmap_maps {
 
 			my $id  = $map_area->{id_prefix} . "w" . $way->{id};
 			my $id2 = $map_area->{id_prefix} . "w" . $way->{id} . "_2";
+			my $id3 = $map_area->{id_prefix} . "w" . $way->{id} . "_BRIDGE"; # bridge
+
+			my @append;
 
 			if ($way->{closed}) {
+			    if ($is_bridge && $self->has_style_BRIDGE(class => $class)) {
+				my $polygon_BRIDGE = $self->polygon(points => $points,
+								    class => $closed_class_BRIDGE,
+								    id => $id3);
+				push(@append, [ $group, $polygon_BRIDGE ]);
+				$defer = 1 if $is_bridge;
+			    }
 			    my $polygon = $self->polygon(points => $points,
 							 class => $closed_class,
 							 id => $id);
-			    $group->appendChild($polygon);
+			    push(@append, [ $group, $polygon ]);
 			    if ($self->has_style_2(class => $class)) {
 				my $polygon_2 = $self->polygon(points => $points,
 							       class => $closed_class_2,
 							       id => $id2);
-				$group->appendChild($polygon_2);
+				push(@append, [ $group, $polygon_2 ]);
+				$defer = 1 if $is_bridge;
 			    }
 			} else {
+			    if ($is_bridge && $self->has_style_BRIDGE(class => $class)) {
+				my $polyline_BRIDGE = $self->polyline(points => $points,
+								      class => $open_class_BRIDGE,
+								      id => $id3);
+				push(@append, [ $group, $polyline_BRIDGE ]);
+				$defer = 1 if $is_bridge;
+			    }
 			    my $polyline = $self->polyline(points => $points,
 							   class => $open_class,
 							   id => $id);
-			    $group->appendChild($polyline);
+			    push(@append, [ $group, $polyline ]);
 			    if ($self->has_style_2(class => $class)) {
 				my $polyline_2 = $self->polyline(points => $points,
 								 class => $open_class_2,
 								 id => $id2);
-				$group->appendChild($polyline_2);
+				push(@append, [ $group, $polyline_2 ]);
+				$defer = 1 if $is_bridge;
+			    }
+			}
+
+			if ($defer) {
+			    push(@deferred, @append);
+			} else {
+			    foreach my $append (@append) {
+				my ($parent, $child) = @$append;
+				$parent->appendChild($child);
 			    }
 			}
 		    }
@@ -429,6 +474,11 @@ sub draw_openstreetmap_maps {
 		$unused{$k,$v} += 1;
 	    }
 	}
+    }
+
+    foreach my $deferred (@deferred) {
+	my ($parent, $child) = @$deferred;
+	$parent->appendChild($child);
     }
 
     if ($self->{verbose} >= 2) {
