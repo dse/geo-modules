@@ -1,13 +1,21 @@
 package Geo::GTFS; # -*- cperl -*-
 use warnings;
 use strict;
+
 =head1 NAME
+
 Geo::GTFS - Maintain a SQLite database of GTFS data
+
 =head1 VERSION
+
 Version 0.03
+
 =cut
+
 our $VERSION = '0.03';
+
 =head1 SYNOPSIS
+
     use Geo::GTFS;
 
     my $gtfs = Geo::GTFS->new("http://developer.trimet.org/schedule/gtfs.zip");
@@ -16,6 +24,7 @@ our $VERSION = '0.03';
     $gtfs->repopulate();	# repopulate data if needed
 
     my $dbh = $gtfs->dbh();
+
 =head1 DESCRIPTION
 
 Geo::GTFS creates and maintains a SQLite database of GTFS data.  You
