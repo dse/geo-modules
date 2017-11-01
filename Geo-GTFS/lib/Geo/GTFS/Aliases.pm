@@ -1,7 +1,10 @@
 package Geo::GTFS::Aliases;
 use warnings;
 use strict;
+
 use YAML qw(LoadFile DumpFile Load Dump);
+use File::Basename qw(dirname);
+use File::Path qw(make_path);
 
 # we do our best here to prevent multiple objects sharing a single
 # file.
@@ -40,7 +43,10 @@ sub init_rc {
 sub save_rc {
     my ($self) = @_;
     my $filename = $self->{filename};
-    eval { make_path(dirname($filename)); };
+    my $dirname = dirname($filename);
+    eval {
+        make_path(dirname($filename));
+    };
     if ($filename && $self->{dirty}) {
         DumpFile($filename, $self->{aliases});
     }
