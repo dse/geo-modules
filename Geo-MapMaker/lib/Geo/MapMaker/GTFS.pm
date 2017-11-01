@@ -8,6 +8,8 @@ package Geo::MapMaker;
 use warnings;
 use strict;
 
+use List::Util qw(uniq);
+
 use fields qw(
 		 _gtfs_list
 		 transit_route_overrides
