@@ -328,6 +328,7 @@ sub get_transit_route_shape_ids {
 		from trips
 		join routes on trips.route_id = routes.route_id
 		where route_short_name = ?
+                      and shape_id != ' ' and shape_id != '' and shape_id is not null
 END
     $sth->execute($route_short_name);
     my @result;
