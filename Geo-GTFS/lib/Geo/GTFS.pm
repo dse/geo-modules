@@ -353,6 +353,14 @@ create table if not exists trips (
 	block_id		varchar(16),
 		-- block = 2+ sequential trips with same vehicle
 	shape_id		varchar(16)	references shapes(shape_id)
+        wheelchair_accessible   integer,
+                -- 0 or empty = no information
+                -- 1          = yes
+                -- 2          = no
+        bikes_allowed           integer
+                -- 0 or empty = no information
+                -- 1          = yes
+                -- 2          = no
 );
 END
 	$dbh->do(<<"END");
