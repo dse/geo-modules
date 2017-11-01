@@ -8,7 +8,7 @@ package Geo::MapMaker;
 use warnings;
 use strict;
 
-use List::Util qw(uniq);
+use List::MoreUtils qw(uniq);
 
 use fields qw(
 		 _gtfs_list
@@ -255,6 +255,7 @@ END
     return @all_trips;
 }
 
+# not used anywhere for now
 sub get_shape_id_to_direction_id_map {
     my ($self, %args) = @_;
     my $gtfs  = $args{gtfs};
@@ -289,8 +290,8 @@ sub get_transit_shape_ids_from_trip_ids {
 
     my $dbh = $gtfs->dbh();
 
-    my @trip_ids  = sort { $a <=> $b } uniq map { $_->{trip_id} } @trips;
-    my @shape_ids = sort { $a <=> $b } uniq map { $_->{shape_id} } @trips;
+    my @trip_ids  = sort { $a <=> $b } grep { /\S/ } uniq map { $_->{trip_id}  } @trips;
+    my @shape_ids = sort { $a <=> $b } grep { /\S/ } uniq map { $_->{shape_id} } @trips;
     return () unless scalar(@trip_ids) and scalar(@shape_ids);
 
     my $sql = <<"END";
@@ -485,7 +486,6 @@ sub draw_transit_routes {
 	$exceptions_class_2 = $exceptions_group->{class} . "_2";
     }
 
-    my %shape_direction_id;
     my %shape_excepted;
     my %shape_excluded;
     my %route_shape_id;
@@ -513,12 +513,8 @@ sub draw_transit_routes {
 
 	    $self->diagf("  Route $agency_route - $route_title ...\n");
 
-	    my %s2d = $self->get_shape_id_to_direction_id_map(gtfs => $gtfs, route => $route_short_name);
-	    while (my ($shape_id, $direction_id) = each(%s2d)) {
-		$shape_direction_id{$agency_route}{$shape_id} = $direction_id;
-	    }
-
 	    my @shape_id = $self->get_transit_route_shape_ids($gtfs, $route_short_name);
+            $self->diagf("    %d shape_ids\n", scalar @shape_id);
 	    $route_shape_id{$agency_route} = [@shape_id];
 
 	    my @excepted_trips = $self->get_excepted_transit_trips(gtfs => $gtfs, route => $route_short_name);
@@ -527,6 +523,11 @@ sub draw_transit_routes {
 	    my @excluded_shape_id = $self->get_transit_shape_ids_from_trip_ids(gtfs => $gtfs, trips => \@excluded_trips);
 	    $shape_excepted{$agency_route}{$_} = 1 foreach @excepted_shape_id;
 	    $shape_excluded{$agency_route}{$_} = 1 foreach @excluded_shape_id;
+
+            $self->diagf("    %d excepted trips\n", scalar @excepted_trips);
+            $self->diagf("    %d excluded trips\n", scalar @excluded_trips);
+            $self->diagf("    %d excepted shape_ids\n", scalar @excepted_shape_id);
+            $self->diagf("    %d excluded shape_ids\n", scalar @excluded_shape_id);
 
 	    my $route_group_name;
 	    if (defined($route_group_name = $self->{transit_route_overrides}->{$route_short_name}->{group})) {
@@ -556,6 +557,7 @@ sub draw_transit_routes {
 		my $south_svg = $self->south_outer_map_boundary_svg;
 		foreach my $shape_id (@shape_id) {
 		    my @coords = $self->get_transit_route_shape_points($gtfs, $shape_id);
+                    $self->diagf("      %d shape points\n", scalar @coords);
 		    $shape_coords{$agency_route}{$shape_id} = [@coords];
 		    my @svg_coords = map {
 
