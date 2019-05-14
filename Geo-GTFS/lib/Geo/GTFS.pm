@@ -220,10 +220,16 @@ sub get_populated_mtime {
     my ($self) = @_;
     my $dbh = $self->dbh();
     my $mtime;
-    eval {
-        ($mtime) = $dbh->selectrow_array("select mtime from mtime");
-    };
-    return $mtime;
+    my $sth = $dbh->table_info(undef, undef, "mtime1");
+    my $hash = $sth->fetchrow_hashref;
+    if ($hash) {
+        eval {
+            ($mtime) = $dbh->selectrow_array("select mtime from mtime");
+        };
+        return $mtime;
+    } else {
+        return undef;
+    }
 }
 
 sub drop_tables {
@@ -250,6 +256,56 @@ sub drop_tables {
     $dbh->do("drop table if exists mtime;");
 
     print STDERR ("done.\n") if $self->{verbose};
+}
+
+our @TABLES;
+our %TABLE_FIELDS;
+our @INDEXES;
+BEGIN {
+    @TABLES = qw(gtfs_feeds
+                 gtfs_feed_versions
+                 mtime
+                 agency
+                 stops
+                 routes
+                 trips
+                 stop_times
+                 calendar
+                 calendar_dates
+                 fare_attributes
+                 fare_rules
+                 shapes
+                 frequencies
+                 transfers
+                 feed_info);
+    @INDEXES = (
+        { name => "idx_shapes_id",          table => "shapes", column => "shape_id" },
+        { name => "idx_shapes_pt_sequence", table => "shapes", column => "shape_pt_sequence" },
+        { name => "idx_trips_route_id",     table => "trips",  column => "route_id" },
+        { name => "idx_trips_shape_id",     table => "trips",  column => "shape_id" },
+        { name => "idx_stop_times_trip_id", table => "stop",   column => "times(trip_id" },
+        { name => "idx_trip_id",            table => "trips",  column => "trip_id" },
+        { name => "idx_stop_times_stop_id", table => "stop",   column => "times(stop_id" },
+        { name => "idx_stop_id",            table => "stops",  column => "stop_id" },
+        { name => "idx_stop_name",          table => "stops",  column => "stop_name" },
+        { name => "idx_stop_code",          table => "stops",  column => "stop_code" },
+        { name => "idx_route_id",           table => "routes", column => "route_id" },
+        { name => "idx_route_short_name",   table => "routes", column => "route_short_name" },
+    );
+    %TABLE_FIELDS = (
+        "gtfs_feeds" => [
+            { name => "gtfs_feed_id",         type => "integer", primary_key => 1, autoincrement => 1 },
+            { name => "gtfs_feed_url",        type => "varchar", length => 256, unique => 1, not_null => 1 },
+            { name => "gtfs_feed_short_name", type => "varchar", length => 64, unique => 1, not_null => 1 },
+            { name => "gtfs_Feed_long_name",  type => "varchar", length => 256, unique => 1, not_null => 1 },
+        ],
+        "gtfs_feed_versions" => [
+            { name => "gtfs_feed_version_id", type => "integer", primary_key => 1, autoincrement => 1 },
+            { name => "gtfs_feed_id",         type => "integer", not_null => 1, references => { table => "gtfs_feeds", column => "gtfs_feed_id" } },
+            { name => "gtfs_feed_version_mtime", type => "integer", not_null => 1 },
+            { name => "gtfs_feed_version_url", type => "varchar", length => 256, not_null => 1 },
+        ],
+    );
 }
 
 sub _create_tables {
@@ -352,7 +408,7 @@ create table if not exists trips (
                 --   1 = opposite direction (e.g., inbound)
         block_id		varchar(16),
                 -- block = 2+ sequential trips with same vehicle
-        shape_id		varchar(16)	references shapes(shape_id)
+        shape_id		varchar(16)	references shapes(shape_id),
         wheelchair_accessible   integer,
                 -- 0 or empty = no information
                 -- 1          = yes

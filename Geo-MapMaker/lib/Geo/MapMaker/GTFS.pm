@@ -8,7 +8,10 @@ package Geo::MapMaker;
 use warnings;
 use strict;
 
+use Geo::MapMaker::Constants qw(:all);
+
 use List::MoreUtils qw(uniq);
+use Text::Diff qw(diff);
 
 use fields qw(
 		 _gtfs_list
@@ -18,6 +21,10 @@ use fields qw(
 		 transit_orig_route_color_mapping
 		 transit_trip_exceptions
 	    );
+
+use constant SIMPLIFY_THRESHOLD => 1;
+use constant SIMPLIFY_MINIMUM_DISTANCE => 4;
+use constant GROUP_INTO_CHUNKS => 1;
 
 sub update_or_create_transit_map_layer {
     my ($self, $map_area, $map_area_layer) = @_;
@@ -561,9 +568,7 @@ sub draw_transit_routes {
                     $self->diagf("      %d shape points\n", scalar @coords);
 		    $shape_coords{$agency_route}{$shape_id} = [@coords];
 		    my @svg_coords = map {
-
 			my ($svgx, $svgy) = $self->{converter}->lon_lat_deg_to_x_y_px($_->[0], $_->[1]);
-
 			my $xzone = ($svgx <= $west_svg)  ? -1 : ($svgx >= $east_svg)  ? 1 : 0;
 			my $yzone = ($svgy <= $north_svg) ? -1 : ($svgy >= $south_svg) ? 1 : 0;
 			[ $svgx, $svgy, $xzone, $yzone ];
@@ -573,6 +578,10 @@ sub draw_transit_routes {
 		    if (all { $_->[POINT_Y_ZONE] == -1 } @svg_coords) { next; }
 		    if (all { $_->[POINT_Y_ZONE] ==  1 } @svg_coords) { next; }
 		    foreach (@svg_coords) { splice(@$_, 2); }
+                    if (SIMPLIFY_THRESHOLD) {
+                        printf STDERR ("shape id %s\n", $shape_id);
+                        @svg_coords = $self->simplify_path(@svg_coords);
+                    }
 		    $shape_svg_coords{$map_area_index}{$agency_route}{$shape_id} = \@svg_coords;
 		}
 	    }
@@ -665,12 +674,19 @@ sub draw_transit_routes {
 			$collection = $normal_shape_collection;
 		    }
 		    next unless $collection;
-		    push(@{$collection->{shapes}}, \@svg_coords);
+		    push(@{$collection->{shapes}}, {
+                        shape_id => $shape_id,
+                        points => \@svg_coords
+                    });
 		}
 
-		foreach my $collection (@$shape_collections) {
-		    $collection->{shapes} = [ find_chunks(@{$collection->{shapes}}) ];
-		}
+                if (GROUP_INTO_CHUNKS) {
+                    foreach my $collection (@$shape_collections) {
+                        $collection->{shapes} = [
+                            find_chunks(@{$collection->{shapes}})
+                        ];
+                    }
+                }
 
 		foreach my $collection (@$shape_collections) {
 		    my $class             = $collection->{class};
@@ -685,10 +701,14 @@ sub draw_transit_routes {
 
 			my $id = $map_area->{id_prefix} . "rt" . $route_short_name . "_ch" . $index;
 			my $id2 = $id . "_2";
-			my $polyline = $self->polyline(points => $shape, class => $class, id => $id);
+			my $polyline = $self->polyline(points => $shape->{points}, class => $class, id => $id,
+                                                       shape_id => $shape->{shape_id},
+                                                       shape_id_hash => $shape->{shape_id_hash});
 			$clipped_group->appendChild($polyline);
 			if ($self->has_style_2(class => $class)) {
-			    my $polyline_2 = $self->polyline(points => $shape, class => $class_2, id => $id2);
+			    my $polyline_2 = $self->polyline(points => $shape->{points}, class => $class_2, id => $id2,
+                                                             shape_id => $shape->{shape_id},
+                                                             shape_id_hash => $shape->{shape_id_hash});
 			    $clipped_group->appendChild($polyline_2);
 			}
 		    } continue {
@@ -699,6 +719,91 @@ sub draw_transit_routes {
 	}
     }
     $self->diag("Done.\n");
+}
+
+sub simplify_path {
+    my ($self, @coords) = @_;
+
+    my $text1 = join('', map { sprintf("%g, %g\n", @$_) } @coords);
+
+    my $totalNodes = scalar @coords;
+    # CORE::warn(sprintf("simplify_path: %s nodes\n", scalar @coords));
+
+    my @duplicateIndexes;
+    for (my $i = 0; $i < scalar(@coords) - 1; $i += 1) {
+        my ($x1, $y1) = @{$coords[$i]};
+        my ($x2, $y2) = @{$coords[$i + 1]};
+        if ($x1 == $x2 && $y1 == $y2) {
+            push(@duplicateIndexes, $i);
+        }
+    }
+    @duplicateIndexes = reverse @duplicateIndexes;
+    foreach my $index (@duplicateIndexes) {
+        splice(@coords, $index, 1);
+    }
+    # CORE::warn(sprintf("               %s duplicate nodes removed\n", scalar @duplicateIndexes));
+
+    # for (my $i = 0; $i < scalar(@coords); $i += 1) {
+    #     CORE::warn(sprintf("%5d: (%g, %g)\n", $i, $coords[$i][0], $coords[$i][1]));
+    # }
+
+    my $duplicateNodes = scalar @duplicateIndexes;
+
+    my @distance;
+    for (my $i = 1; $i < scalar(@coords) - 1; $i += 1) {
+        my ($x0, $y0) = @{$coords[$i - 1]};
+        my ($x1, $y1) = @{$coords[$i]};
+        my ($x2, $y2) = @{$coords[$i + 1]};
+        if ($x0 == $x2 && $y0 == $y2) {
+            # points exactly the same
+            next;
+        }
+        if (sqrt(($x2 - $x0) ** 2 + ($y2 - $y0) ** 2) < SIMPLIFY_MINIMUM_DISTANCE) {
+            # points close enough to one another
+            next;
+        }
+        my $distance = $self->distance_from_point_to_line(
+            $i, $x0, $y0, $x2, $y2, $x1, $y1
+        );
+        if ($distance <= SIMPLIFY_THRESHOLD) {
+            push(@distance, { distance => $distance, coordsIndex => $i });
+            # CORE::warn(sprintf("%5d: (%g %g) (%g %g) (%g %g) %g\n", $i, $x0, $y0, $x2, $y2, $x1, $y1, $distance));
+        }
+    }
+    my @coordsIndex = sort { $b <=> $a } map { $_->{coordsIndex} } @distance;
+    my $removedNodes = scalar @coordsIndex;
+    foreach my $coordsIndex (@coordsIndex) {
+        warn(sprintf("between (%g %g) and (%g %g) removing %d (%g %g)\n",
+                     @{$coords[$coordsIndex - 1]},
+                     @{$coords[$coordsIndex + 1]},
+                     $coordsIndex,
+                     @{$coords[$coordsIndex]}));
+        splice(@coords, $coordsIndex, 1);
+    }
+    # CORE::warn(sprintf("               %s nodes removed\n", scalar @candidates));
+
+    CORE::warn(sprintf("simplify_path %d %d %d\n", $totalNodes, $duplicateNodes, $removedNodes));
+
+    my $text2 = join('', map { sprintf("%g, %g\n", @$_) } @coords);
+
+    print STDERR diff(\$text1, \$text2), "\n";
+
+    return @coords;
+}
+
+sub distance_from_point_to_line {
+    my ($self, $i, $x1, $y1, $x2, $y2, $x0, $y0) = @_;
+    # https://en.wikipedia.org/wiki/Distance_from_a_point_to_a_line
+    # CORE::warn(sprintf("%5d: (%g, %g) (%g, %g) (%g, %g)\n", $i,
+    #                    $x1, $y1, $x0, $y0, $x2, $y2));
+    return
+        abs(
+            ($y2 - $y1) * $x0 - ($x2 - $x1) * $y0 + $x2 * $y1 - $y2 * $x1
+        )
+        /
+        sqrt(
+            ($y2 - $y1) ** 2 + ($x2 - $x1) ** 2
+        );
 }
 
 sub gtfs {

@@ -8,10 +8,15 @@ package Geo::MapMaker;
 use warnings;
 use strict;
 
+use Geo::MapMaker::Constants qw(:all);
+
 use fields qw(
 		 _osm_xml_filenames
 		 osm_layers
-	    );
+         );
+
+use LWP::Simple;                # RC_NOT_MODIFIED
+use List::MoreUtils qw(all uniq);
 
 sub update_openstreetmap {
     my ($self, $force) = @_;
@@ -47,6 +52,9 @@ sub _update_openstreetmap {
 	$self->_update_openstreetmap($force, $center_lon, $center_lat, $east_deg,   $north_deg);
     } elsif (-e $xml_filename && !$force) {
 	CORE::warn("Not updating $xml_filename\n") if $self->{verbose};
+	push(@{$self->{_osm_xml_filenames}}, $xml_filename);
+    } elsif (-e $xml_filename && $force && -M $xml_filename < 1) {
+	CORE::warn("Not updating $xml_filename (force in effect but less than 1 day old)\n") if $self->{verbose};
 	push(@{$self->{_osm_xml_filenames}}, $xml_filename);
     } else {
 	my $ua = LWP::UserAgent->new();
@@ -136,8 +144,10 @@ sub draw_openstreetmap_maps {
     my %unused;
     my $num_maps = scalar(@{$self->{_osm_xml_filenames}});
     my $map_number = 0;
-    my %wayid_used;
-    my %nodeid_used;
+    my %wayid_exists;
+    my %nodeid_exists;
+    my %wayid_included;
+    my %keep_ways;              # cloned DOM <way> nodes
 
     my %way_preindex_k;
     my %node_preindex_k;
@@ -180,6 +190,9 @@ sub draw_openstreetmap_maps {
 	my %node_index_kv;
 	my %nodeid_exclude;
 
+        my %doc_wayid_exists;
+        my %doc_wayid_included;
+
 	$self->diag(scalar(@nodes) . " elements found.\n");
 	foreach my $map_area (@{$self->{_map_areas}}) {
 	    $self->update_scale($map_area);
@@ -205,11 +218,11 @@ sub draw_openstreetmap_maps {
 
 	foreach my $node (@nodes) {
 	    my $id = $node->getAttribute("id");
-	    if ($nodeid_used{$id}) { # for all split-up areas
+	    if ($nodeid_exists{$id}) { # for all split-up areas
 		$nodeid_exclude{$id} = 1; # for this split-up area
 		next;
 	    }
-	    $nodeid_used{$id} = 1;
+	    $nodeid_exists{$id} = 1;
 
 	    my $result = { id => $id, tags => {} };
 
@@ -244,11 +257,16 @@ sub draw_openstreetmap_maps {
 	$self->diag(scalar(@ways) . " elements found; indexing ... ");
 	foreach my $way (@ways) {
 	    my $id = $way->getAttribute("id");
-	    if ($wayid_used{$id}) { # for all split-up areas
+
+            $doc_wayid_exists{$id} = 1;
+
+	    if ($wayid_exists{$id}) { # for all split-up areas
 		$wayid_exclude{$id} = 1; # for this split-up area
 		next;
 	    }
-	    $wayid_used{$id} = 1;
+
+	    $wayid_exists{$id} = 1;
+
 	    my @nodeid = map { $_->getAttribute("ref"); } $way->findnodes("nd");
 	    my $closed = (scalar(@nodeid)) > 2 && ($nodeid[0] == $nodeid[-1]);
 	    pop(@nodeid) if $closed;
@@ -364,6 +382,9 @@ sub draw_openstreetmap_maps {
 
 			my @append;
 
+                        $wayid_included{$wayid} = 1;
+                        $doc_wayid_included{$wayid} = 1;
+
 			if ($way->{closed}) {
 			    if ($is_bridge && $self->has_style_BRIDGE(class => $class)) {
 				my $polygon_BRIDGE = $self->polygon(points => $points,
@@ -474,6 +495,17 @@ sub draw_openstreetmap_maps {
 		$unused{$k,$v} += 1;
 	    }
 	}
+
+        if ($self->{osm_features_not_included_filename}) {
+            my @doc_wayids_not_included =
+                grep { !exists $doc_wayid_included{$_} }
+                keys %doc_wayid_exists;
+            foreach my $wayid (@doc_wayids_not_included) {
+                my ($way_node) = $doc->findnodes('/osm/way[@id=' + $wayid + ']');
+                $way_node = $way_node->cloneNode(1);
+                $keep_ways{$wayid} = $way_node;
+            }
+        }
     }
 
     foreach my $deferred (@deferred) {
@@ -492,6 +524,40 @@ sub draw_openstreetmap_maps {
 		   $n);
 	}
     }
+
+    if ($self->{osm_features_not_included_filename}) {
+        my @wayids_not_included =
+            grep { !exists $wayid_included{$_} }
+            keys %wayid_exists;
+        my @ways_not_included = map { $keep_ways{$_} } @wayids_not_included;
+        $self->write_features_not_included(@ways_not_included);
+    }
+}
+
+sub write_features_not_included {
+    my ($self, @ways_not_included) = @_;
+
+    my $filename = $self->{osm_features_not_included_filename};
+    if (!defined $filename) {
+        return;
+    }
+
+    my $fh;
+    if (!open($fh, ">", $filename)) {
+        CORE::warn("Cannot write $filename: $!\n");
+        return;
+    };
+
+    my $doc = XML::LibXML::Document->new();
+    my $root = $doc->createElement("features-not-included");
+    $doc->setDocumentElement($root);
+
+    foreach my $way_not_included (@ways_not_included) {
+        $root->appendChild($way_not_included);
+    }
+
+    $doc->toFH($fh, 1);
+    close($fh);
 }
 
 1;
