@@ -22,9 +22,12 @@ use fields qw(
 		 transit_trip_exceptions
 	    );
 
-use constant SIMPLIFY_THRESHOLD => 1;
+# set to 0 to turn off path simplifying
+use constant SIMPLIFY_THRESHOLD => 0;
+
 use constant SIMPLIFY_MINIMUM_DISTANCE => 4;
-use constant GROUP_INTO_CHUNKS => 1;
+
+use constant GROUP_INTO_CHUNKS => 0;
 
 sub update_or_create_transit_map_layer {
     my ($self, $map_area, $map_area_layer) = @_;
