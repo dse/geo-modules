@@ -448,8 +448,10 @@ sub draw_transit_stops {
 		return if $y < $north_svg || $y > $south_svg;
 		my $circle = $self->circle_node(x => $x, y => $y, r => $r,
 						class => $class,
-						title => $title,
-						id => "ts_" . $stop_code . $suffix);
+                                                ($self->{_xml_debug_info} ? (
+                                                    title => $title,
+                                                    id => "ts_" . $stop_code . $suffix
+                                                ) : ()));
 		$clipped_group->appendChild($circle);
 	    };
 
@@ -704,14 +706,20 @@ sub draw_transit_routes {
 
 			my $id = $map_area->{id_prefix} . "rt" . $route_short_name . "_ch" . $index;
 			my $id2 = $id . "_2";
-			my $polyline = $self->polyline(points => $shape->{points}, class => $class, id => $id,
-                                                       shape_id => $shape->{shape_id},
-                                                       shape_id_hash => $shape->{shape_id_hash});
+			my $polyline = $self->polyline(points => $shape->{points}, class => $class,
+                                                       ($self->{_xml_debug_info} ? (
+                                                           id => $id,
+                                                           shape_id => $shape->{shape_id},
+                                                           shape_id_hash => $shape->{shape_id_hash}
+                                                       ) : ()));
 			$clipped_group->appendChild($polyline);
 			if ($self->has_style_2(class => $class)) {
-			    my $polyline_2 = $self->polyline(points => $shape->{points}, class => $class_2, id => $id2,
-                                                             shape_id => $shape->{shape_id},
-                                                             shape_id_hash => $shape->{shape_id_hash});
+			    my $polyline_2 = $self->polyline(points => $shape->{points}, class => $class_2,
+                                                             ($self->{_xml_debug_info} ? (
+                                                                 id => $id2,
+                                                                 shape_id => $shape->{shape_id},
+                                                                 shape_id_hash => $shape->{shape_id_hash}
+                                                             ) : ()));
 			    $clipped_group->appendChild($polyline_2);
 			}
 		    } continue {
