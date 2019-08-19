@@ -70,12 +70,14 @@ where COMMAND is one of:
 	force-gtfs-repopulate-database
 	draw-openstreetmap-maps
 	draw-transit-routes
+	draw-transit-stops
 	update-styles
 	draw-grid
 	remove-grid
 	draw-crop-lines
 	remove-crop-lines
 	save-as FILENAME
+        just-rewrite
 	enable-layers LAYER ...
 	disable-layers LAYER ...
 	list-layers
@@ -301,6 +303,13 @@ sub cmd__save_as {
     my $mm = $self->{mapmaker};
     die("map MAPNAME must be specified.\n") unless $mm;
     $mm->save($filename);
+}
+
+sub cmd__just_rewrite {
+    my ($self) = @_;
+    my $mm = $self->{mapmaker};
+    die("map MAPNAME must be specified.\n") unless $mm;
+    $mm->just_rewrite();
 }
 
 sub cmd__enable_layers {
