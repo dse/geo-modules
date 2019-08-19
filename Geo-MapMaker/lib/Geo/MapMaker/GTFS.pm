@@ -784,11 +784,11 @@ sub simplify_path {
     my @coordsIndex = sort { $b <=> $a } map { $_->{coordsIndex} } @distance;
     my $removedNodes = scalar @coordsIndex;
     foreach my $coordsIndex (@coordsIndex) {
-        warn(sprintf("between (%g %g) and (%g %g) removing %d (%g %g)\n",
-                     @{$coords[$coordsIndex - 1]},
-                     @{$coords[$coordsIndex + 1]},
-                     $coordsIndex,
-                     @{$coords[$coordsIndex]}));
+        CORE::warn(sprintf("between (%g %g) and (%g %g) removing %d (%g %g)\n",
+                           @{$coords[$coordsIndex - 1]},
+                           @{$coords[$coordsIndex + 1]},
+                           $coordsIndex,
+                           @{$coords[$coordsIndex]}));
         splice(@coords, $coordsIndex, 1);
     }
     # CORE::warn(sprintf("               %s nodes removed\n", scalar @candidates));
