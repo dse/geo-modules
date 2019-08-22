@@ -446,8 +446,15 @@ sub draw_transit_stops {
 
 		return if $x < $west_svg  || $x > $east_svg;
 		return if $y < $north_svg || $y > $south_svg;
+
 		my $circle = $self->circle_node(x => $x, y => $y, r => $r,
 						class => $class,
+                                                attr => {
+                                                    'data-stop-id' => $stop_id,
+                                                    'data-stop-code' => $stop_code,
+                                                    'data-stop-name' => $stop_name,
+                                                    'data-stop-desc' => $stop_desc,
+                                                },
                                                 ($self->{_xml_debug_info} ? (
                                                     title => $title,
                                                     id => "ts_" . $stop_code . $suffix
@@ -510,19 +517,23 @@ sub draw_transit_routes {
     foreach my $gtfs (@gtfs) {
 	my $agency_id = $gtfs->{data}{agency_id};
 	foreach my $route ($self->get_transit_routes($gtfs)) {
+
+            my $route_id         = $route->{id};
 	    my $route_short_name = $route->{route_short_name};
+	    my $route_long_name  = $route->{route_long_name};
+	    my $route_desc       = $route->{route_desc};
+            my $route_type       = $route->{route_type};
+	    my $route_color      = $route->{route_color};
+	    if ($route_color) {
+		$route_color = "#" . lc($route_color);
+	    }
+
 	    my $agency_route = $agency_id . "/" . $route_short_name;
 
 	    next if scalar(@routes) && !grep { $_ eq $route_short_name || $_ eq $agency_route } @routes;
 
-	    my $route_long_name = $route->{route_long_name};
-	    my $route_desc  = $route->{route_desc};
 	    my $route_name  = $route->{name}  = join(" - ", grep { $_ } ($route_short_name, $route_long_name));
 	    my $route_title = $route->{title} = join(" - ", grep { $_ } ($route_short_name, $route_long_name, $route_desc));
-	    my $route_color = $route->{route_color};
-	    if ($route_color) {
-		$route_color = "#" . lc($route_color);
-	    }
 
 	    $self->diagf("  Route $agency_route - $route_title ...\n");
 
@@ -603,13 +614,16 @@ sub draw_transit_routes {
 	my $agency_id = $gtfs->{data}{agency_id};
 	foreach my $route ($self->get_transit_routes($gtfs)) {
 
+            my $route_id         = $route->{id};
 	    my $route_short_name = $route->{route_short_name};
+	    my $route_long_name  = $route->{route_long_name};
+	    my $route_desc       = $route->{route_desc};
+            my $route_type       = $route->{route_type};
+
 	    my $agency_route = $agency_id . "/" . $route_short_name;
 
 	    next if scalar(@routes) && !grep { $_ eq $route_short_name || $_ eq $agency_route } @routes;
 
-	    my $route_long_name = $route->{route_long_name};
-	    my $route_desc  = $route->{route_desc};
 	    my $route_name  = $route->{name}  = join(" - ", grep { $_ } ($route_short_name, $route_long_name));
 	    my $route_title = $route->{title} = join(" - ", grep { $_ } ($route_short_name, $route_long_name, $route_desc));
 
@@ -707,6 +721,9 @@ sub draw_transit_routes {
 			my $id = $map_area->{id_prefix} . "rt" . $route_short_name . "_ch" . $index;
 			my $id2 = $id . "_2";
 			my $polyline = $self->polyline(points => $shape->{points}, class => $class,
+                                                       attr => {
+                                                           'data-shape-id' => $shape->{shape_id},
+                                                       },
                                                        ($self->{_xml_debug_info} ? (
                                                            id => $id,
                                                            shape_id => $shape->{shape_id},
@@ -715,6 +732,9 @@ sub draw_transit_routes {
 			$clipped_group->appendChild($polyline);
 			if ($self->has_style_2(class => $class)) {
 			    my $polyline_2 = $self->polyline(points => $shape->{points}, class => $class_2,
+                                                             attr => {
+                                                                 'data-shape-id' => $shape->{shape_id},
+                                                             },
                                                              ($self->{_xml_debug_info} ? (
                                                                  id => $id2,
                                                                  shape_id => $shape->{shape_id},
