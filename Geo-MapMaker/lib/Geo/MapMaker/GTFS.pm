@@ -20,6 +20,7 @@ use fields qw(
 		 transit_route_groups
 		 transit_orig_route_color_mapping
 		 transit_trip_exceptions
+                 transit_exclude_shape_id
 	    );
 
 # set to 0 to turn off path simplifying
@@ -538,6 +539,11 @@ sub draw_transit_routes {
 	    $self->diagf("  Route $agency_route - $route_title ...\n");
 
 	    my @shape_id = $self->get_transit_route_shape_ids($gtfs, $route_short_name);
+
+            @shape_id = grep {
+                !$self->{transit_exclude_shape_id}->{$_}
+            } @shape_id;
+
             $self->diagf("    %d shape_ids\n", scalar @shape_id);
 	    $route_shape_id{$agency_route} = [@shape_id];
 
