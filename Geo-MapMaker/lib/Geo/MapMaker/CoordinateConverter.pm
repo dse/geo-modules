@@ -4,7 +4,7 @@ use strict;
 
 use Math::Trig;
 use Math::Trig qw(:pi);
-use constant D2R => atan2(1, 1) / 45;
+use constant D2R => atan2(1, 1) / 45; # degrees to radians
 use constant WGS84_EQUATORIAL_RADIUS_KILOMETERS => 6378.1370; # WGS84
 use constant KM_PER_ER => WGS84_EQUATORIAL_RADIUS_KILOMETERS;
 use constant PX_PER_IN => 90;
@@ -14,6 +14,24 @@ use constant MM_PER_KM => 1_000_000;
 use constant PX_PER_ER => PX_PER_IN * IN_PER_MM * MM_PER_KM * KM_PER_ER;
 use constant PX_PER_FT => PX_PER_IN * 12;
 use constant PX_PER_M  => PX_PER_IN * 1000 / 25.4;
+
+use Exporter qw();
+use base 'Exporter';
+
+our %EXPORT_TAGS = (
+    const => [qw(D2R WGS84_EQUATORIAL_RADIUS_KILOMETERS
+                 KM_PER_ER
+                 PX_PER_IN
+                 MM_PER_IN
+                 IN_PER_MM
+                 MM_PER_KM
+                 PX_PER_ER
+                 PX_PER_FT
+                 PX_PER_M)]
+);
+our @EXPORT_OK = map { @{$EXPORT_TAGS{$_}} } keys %EXPORT_TAGS;
+
+# ER = equatorial radius
 
 use fields qw(
 		 paper_width_px
