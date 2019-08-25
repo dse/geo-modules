@@ -827,6 +827,13 @@ sub polygon {
     $path->setAttributeNS($NS{"mapmaker"}, "mapmaker:shape-ids",
                           join(', ', nsort keys %{$args{shape_id_hash}}))
         if defined $args{shape_id_hash};
+
+    if (eval { ref $args{attr} eq 'HASH' }) {
+        foreach my $key (nsort keys %{$args{attr}}) {
+            $path->setAttribute($key, $args{attr}->{$key});
+        }
+    }
+
     return $path;
 }
 
@@ -846,6 +853,13 @@ sub polyline {
     $path->setAttributeNS($NS{"mapmaker"}, "mapmaker:shape-ids",
                           join(', ', nsort keys %{$args{shape_id_hash}}))
         if defined $args{shape_id_hash};
+
+    if (eval { ref $args{attr} eq 'HASH' }) {
+        foreach my $key (nsort keys %{$args{attr}}) {
+            $path->setAttribute($key, $args{attr}->{$key});
+        }
+    }
+
     return $path;
 }
 
@@ -890,6 +904,13 @@ sub find_or_create_clipped_group {
     if ($parent) {
 	$parent->appendChild($group);
     }
+
+    if (eval { ref $args{attr} eq 'HASH' }) {
+        foreach my $key (nsort keys %{$args{attr}}) {
+            $group->setAttribute($key, $args{attr}->{$key});
+        }
+    }
+
     return $group;
 }
 
@@ -1052,6 +1073,13 @@ sub create_element {
     $element->setAttribute("class", $args{class}) if defined $args{class};
     $element->setAttribute("style", $args{style}) if defined $args{style};
     $element->setAttribute("id", $id) if defined $id;
+
+    if (eval { ref $args{attr} eq 'HASH' }) {
+        foreach my $key (nsort keys %{$args{attr}}) {
+            $element->setAttribute($key, $args{attr}->{$key});
+        }
+    }
+
     return $element;
 }
 
@@ -1074,6 +1102,13 @@ sub rectangle {
     $path->setAttribute("class",  $args{class}) if defined $args{class};
     $path->setAttribute("style",  $args{style}) if defined $args{style};
     $path->setAttribute("id", $id) if defined $id;
+
+    if (eval { ref $args{attr} eq 'HASH' }) {
+        foreach my $key (nsort keys %{$args{attr}}) {
+            $path->setAttribute($key, $args{attr}->{$key});
+        }
+    }
+
     return $path;
 
     # we're not using a rectangle node here for some reason...
@@ -1433,6 +1468,13 @@ sub circle_node {
     $circle_node->setAttribute("r", sprintf("%.2f", $r));
     $circle_node->setAttribute("title", $title) if defined $title && $title =~ /\S/;
     $circle_node->setAttribute("id", $id) if defined $id;
+
+    if (eval { ref $args{attr} eq 'HASH' }) {
+        foreach my $key (nsort keys %{$args{attr}}) {
+            $circle_node->setAttribute($key, $args{attr}->{$key});
+        }
+    }
+
     return $circle_node;
 }
 
@@ -1460,6 +1502,13 @@ sub text_node {
     $tspan_node->appendText($text);
     $tspan_node->setAttribute("id", $id . "_s") if defined $id;
     $text_node->appendChild($tspan_node);
+
+    if (eval { ref $args{attr} eq 'HASH' }) {
+        foreach my $key (nsort keys %{$args{attr}}) {
+            $text_node->setAttribute($key, $args{attr}->{$key});
+        }
+    }
+
     return $text_node;
 }
 
