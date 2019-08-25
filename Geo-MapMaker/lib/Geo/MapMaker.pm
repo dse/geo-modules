@@ -3,6 +3,7 @@ use warnings;
 use strict;
 
 use Geo::MapMaker::Constants qw(:all);
+use Geo::MapMaker::CoordinateConverter qw(:const);
 
 use Carp qw(croak);
 use Carp qw(confess);
@@ -159,6 +160,56 @@ sub new {
     $self->{extend_to_full_page} = FALSE;
     $self->{vertical_align} = "top";
     $self->{horizontal_align} = "left";
+
+    {
+        my $pw = delete $options{paper_width};
+        my $ph = delete $options{paper_height};
+        my $pm = delete $options{paper_margin};
+        if (defined $pw) {
+            my $dim = $self->dim($pw);
+            if (!defined $dim) {
+                die("invalid paper_width: $pw\n");
+            }
+            $self->{paper_width_px} = $dim;
+            warn("paper width $pw => $dim\n");
+        }
+        if (defined $ph) {
+            my $dim = $self->dim($ph);
+            if (!defined $dim) {
+                die("invalid paper_height: $ph\n");
+            }
+            $self->{paper_height_px} = $dim;
+            warn("paper height $ph => $dim\n");
+        }
+        if (defined $pm) {
+            my $dim = $self->dim($pm);
+            if (!defined $dim) {
+                die("invalid paper_margin: $pm\n");
+            }
+            $self->{paper_margin_px} = $dim;
+            warn("paper margin $pm => $dim\n");
+        }
+    }
+
+    {
+        my $lat   = delete $options{map_center_latitude}; # e.g., 38.2
+        my $lon   = delete $options{map_center_longitude}; # e.g., -85.7
+        my $scale = delete $options{map_scale}; # 1:45,000 would be 45000
+        if (defined $lat && defined $lon && defined $scale) {
+            my $diff_y_px = $self->{paper_height_px} / 2 - $self->{paper_margin_px};
+            my $diff_x_px = $self->{paper_width_px}  / 2 - $self->{paper_margin_px};
+            warn("diff_y_px: $diff_y_px\n");
+            my $lat_n = $lat + $diff_y_px * $scale / PX_PER_ER / D2R;
+            my $lat_s = $lat - $diff_y_px * $scale / PX_PER_ER / D2R;
+            my $lon_w = $lon - $diff_x_px * $scale / PX_PER_ER / D2R / cos($lat * D2R);
+            my $lon_e = $lon + $diff_x_px * $scale / PX_PER_ER / D2R / cos($lat * D2R);
+            $self->{south_deg} = $lat_s;
+            $self->{north_deg} = $lat_n;
+            $self->{west_deg} = $lon_w;
+            $self->{east_deg} = $lon_e;
+        }
+    }
+
     while (my ($k, $v) = each(%options)) {
 	if ($self->can($k)) {
 	    $self->$k($v);
@@ -166,12 +217,38 @@ sub new {
 	    $self->{$k} = $v;
 	}
     }
+
     if (defined(my $filename = $self->{filename})) {
 	my $mapmaker_yaml_filename = $self->mapmaker_yaml_filename($filename);
 	$self->load_mapmaker_yaml($mapmaker_yaml_filename);
     }
     $self->{osm_features_not_included_filename} = undef;
     return $self;
+}
+
+use Regexp::Common qw(number);
+
+sub dim {
+    my ($self, $value) = @_;
+    if ($value =~ m{^
+                    \s*
+                    ($RE{num}{real})
+                    (?:
+                        \s*(cm|mm|in|px|pt)
+                    )?
+                    \s*
+                    $}xi) {
+        my ($px, $unit) = ($1, $2);
+        if (defined $unit) {
+            $px *= PX_PER_IN        if $unit eq 'in';
+            $px *= PX_PER_IN / 25.4 if $unit eq 'mm';
+            $px *= PX_PER_IN / 2.54 if $unit eq 'cm';
+            $px *= PX_PER_IN / 72   if $unit eq 'pt';
+        }
+        return $px;
+    } else {
+        die("invalid value: $value\n");
+    }
 }
 
 sub mapmaker_yaml_filename {
