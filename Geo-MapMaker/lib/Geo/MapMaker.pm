@@ -171,7 +171,6 @@ sub new {
                 die("invalid paper_width: $pw\n");
             }
             $self->{paper_width_px} = $dim;
-            warn("paper width $pw => $dim\n");
         }
         if (defined $ph) {
             my $dim = $self->dim($ph);
@@ -179,7 +178,6 @@ sub new {
                 die("invalid paper_height: $ph\n");
             }
             $self->{paper_height_px} = $dim;
-            warn("paper height $ph => $dim\n");
         }
         if (defined $pm) {
             my $dim = $self->dim($pm);
@@ -187,7 +185,6 @@ sub new {
                 die("invalid paper_margin: $pm\n");
             }
             $self->{paper_margin_px} = $dim;
-            warn("paper margin $pm => $dim\n");
         }
     }
 
@@ -198,7 +195,6 @@ sub new {
         if (defined $lat && defined $lon && defined $scale) {
             my $diff_y_px = $self->{paper_height_px} / 2 - $self->{paper_margin_px};
             my $diff_x_px = $self->{paper_width_px}  / 2 - $self->{paper_margin_px};
-            warn("diff_y_px: $diff_y_px\n");
             my $lat_n = $lat + $diff_y_px * $scale / PX_PER_ER / D2R;
             my $lat_s = $lat - $diff_y_px * $scale / PX_PER_ER / D2R;
             my $lon_w = $lon - $diff_x_px * $scale / PX_PER_ER / D2R / cos($lat * D2R);
