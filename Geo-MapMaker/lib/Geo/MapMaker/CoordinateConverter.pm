@@ -73,7 +73,7 @@ use constant DEFAULTS => (
     vertical_alignment   => "center",
     horizontal_fill      => 0,
     vertical_fill        => 0,
-   );
+);
 
 sub new {
     my ($class, %args) = @_;
