@@ -153,6 +153,7 @@ sub draw_openstreetmap_maps {
     my %node_preindex_k;
     my %way_preindex_kv;
     my %node_preindex_kv;
+    
     foreach my $info (@{$self->{osm_layers}}) {
 	my $tags = $info->{tags};
 	my $type = $info->{type} // "way"; # 'way' or 'node'
@@ -513,18 +514,6 @@ sub draw_openstreetmap_maps {
 	$parent->appendChild($child);
     }
 
-    if ($self->{verbose} >= 2) {
-	print("You may also want to include...\n");
-	foreach my $kv (sort keys %unused) {
-	    my ($k, $v) = split($;, $kv);
-	    my $n = $unused{$kv};
-	    printf("  { %-25s %-25s } # %6d objects\n",
-		   "k: '$k',",
-		   "v: '$v'",
-		   $n);
-	}
-    }
-
     if ($self->{osm_features_not_included_filename}) {
         my @wayids_not_included =
             grep { !exists $wayid_included{$_} }
@@ -532,6 +521,34 @@ sub draw_openstreetmap_maps {
         my @ways_not_included = map { $keep_ways{$_} } @wayids_not_included;
         $self->write_features_not_included(@ways_not_included);
     }
+
+    $self->write_objects_not_included(\%unused);
+}
+
+sub write_objects_not_included {
+    my $self = shift;
+    my $unused = shift;         # hash
+    my $filename = $self->{osm_objects_not_included_filename};
+    if (!defined $filename) {
+        return;
+    }
+    if (!scalar keys %$unused) {
+        if (!unlink($filename)) {
+            warn("cannot unlink $filename: $!\n");
+        }
+        return;
+    }
+    my $fh;
+    if (!open($fh, '>', $filename)) {
+        warn("cannot write $filename: $!\n");
+        return;
+    }
+    foreach my $kv (sort keys %$unused) {
+        my ($k, $v) = split($;, $kv);
+        my $n = $unused->{$kv};
+        printf $fh ("%8d %s %s\n", $n, $k, $v);
+    }
+    warn("Wrote $filename\n");
 }
 
 sub write_features_not_included {
