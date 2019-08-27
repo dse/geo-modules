@@ -17,6 +17,7 @@ use fields qw(
 
 use LWP::Simple;                # RC_NOT_MODIFIED
 use List::MoreUtils qw(all uniq);
+use Sort::Naturally;
 
 sub update_openstreetmap {
     my ($self, $force) = @_;
@@ -146,29 +147,35 @@ sub draw_openstreetmap_maps {
     # dispaly counter through XML files
     my $xml_file_number = 0;
 
-    my %unused;
-
-    my %unused_node_k;
-    my %unused_node_kv;
-    my %unused_way_k;
-    my %unused_way_kv;
-
-    my %wayid_exists;
-
-    # keep track of which <node> ids we've iterated through
+    # keep track of which <node> and <way> ids we've iterated through
     # because they can be duplicated across different XML files
     my %nodeid_exists;
+    my %wayid_exists;
 
-    my %wayid_included;
+    # track the same but for determining whether to use each node or
+    # way.  NOTE: $..._use_kv{$k,$v} does not imply $..._use_k{$k}
+    my %way_use_k;
+    my %way_use_kv;
+    my %node_use_k;
+    my %node_use_kv;
 
-    my %keep_ways;              # cloned DOM <way> nodes
+    # track used and unused <node> and <way> ids
+    my @used_nodeid;           # array of nodeids
+    my @used_wayid;            # array of wayids
+    my @unused_nodeid;         # array of nodeids
+    my @unused_wayid;          # array of wayids
+    my %used_nodeid;
+    my %used_wayid;
 
-    # track which keys and key-value pairs we're looking for
-    # when searching through <way> elements and <node> elements
-    my %way_preindex_k;
-    my %node_preindex_k;
-    my %way_preindex_kv;
-    my %node_preindex_kv;
+    my %used_node_tag_k; # track keys of used nodes' tags, value = arrayref of node ids
+    my %used_node_tag_kv; # track key-values of used nodes' tags, value = arrayref of node ids
+    my %used_way_tag_k; # track keys of used nodes' tags, value = arrayref of node ids
+    my %used_way_tag_kv; # track key-values of used nodes' tags, value = arrayref of node ids
+
+    my %unused_node_tag_k; # track keys of unused nodes' tags, value = arrayref of node ids
+    my %unused_node_tag_kv; # track key-values of unused nodes' tags, value = arrayref of node ids
+    my %unused_way_tag_k; # track keys of unused nodes' tags, value = arrayref of node ids
+    my %unused_way_tag_kv; # track key-values of unused nodes' tags, value = arrayref of node ids
 
     my %bridge_wayid;
 
@@ -179,16 +186,21 @@ sub draw_openstreetmap_maps {
 	my $type = $info->{type} // "way"; # 'way' or 'node'
 	foreach my $tag (@$tags) {
 	    my ($k, $v) = @{$tag}{qw(k v)};
-	    # k/v from osm_layers
-	    if (defined $k) {
-		if ($type eq "way") {
-		    $way_preindex_k{$k} = 1;
-		    $way_preindex_kv{$k,$v} = 1 if defined $v;
-		} elsif ($type eq "node") {
-		    $node_preindex_k{$k} = 1;
-		    $node_preindex_kv{$k,$v} = 1 if defined $v;
-		}
-	    }
+            if (defined $k) {
+                if ($type eq 'way') {
+                    if (defined $v) {
+                        $way_use_kv{$k,$v} = 1;
+                    } else {
+                        $way_use_k{$k} = 1;
+                    }
+                } elsif ($type eq 'node') {
+                    if (defined $v) {
+                        $node_use_kv{$k,$v} = 1;
+                    } else {
+                        $node_use_k{$k} = 1;
+                    }
+                }
+            }
 	}
     }
 
@@ -202,7 +214,9 @@ sub draw_openstreetmap_maps {
 	$self->diag("  Finding <node> elements ... ");
 	my @nodes = $doc->findnodes("/osm/node");
 
-        # multi-level hash
+        # each <node> element's coordinates for each map area
+        #
+        # %node_coords is a multi-level hash
         # first key <node> id; second key <map area index>
         # each value is an array:
         #     [<x>, <y>, <xzone>, <yzone>]
@@ -215,22 +229,26 @@ sub draw_openstreetmap_maps {
         #                     1 if south of bounds
 	my %node_coords;
 
-	my %node_info;
+        my %node_k;
+        my %node_kv;
+	my %way_k;
+	my %way_kv;
+        my %ways;
 
-        # {<tagkey>} => [ { id => <id>, tags => { } }, ... ]
-	my %node_index_k;
+        # lists of <node> and <way> ids to exclude for this XML file
+        # due to being duplicated from earlier XML files
+	my %this_xml_nodeid_is_dup;
+	my %this_xml_wayid_is_dup;
 
-        # {<tagkey>,<tagvalue>} => [ { id => <id>, tags => { } }, ... ]
-	my %node_index_kv;
+        my %this_xml_has_nodeid;
+        my %this_xml_has_wayid;
 
-        # list of <node> ids to exclude for this XML file due to being
-        # duplicated from earlier XML files
-	my %nodeid_exclude;
+        my @this_xml_used_nodeid;        # array of nodeids
+        my @this_xml_used_wayid;         # array of wayids
+        my @this_xml_unused_nodeid;      # array of nodeids
+        my @this_xml_unused_wayid;       # array of wayids
 
-        my %doc_wayid_exists;
-        my %doc_wayid_included;
-
-	$self->diag(scalar(@nodes) . " node elements found.\n");
+	$self->diag(scalar(@nodes) . " <node> elements found; indexing ...\n");
 
 	foreach my $map_area (@{$self->{_map_areas}}) {
 	    $self->update_scale($map_area);
@@ -257,10 +275,13 @@ sub draw_openstreetmap_maps {
 	foreach my $node (@nodes) {
 	    my $id = $node->getAttribute("id");
 	    if ($nodeid_exists{$id}) { # for all split-up areas
-		$nodeid_exclude{$id} = 1; # for this split-up area
+		$this_xml_nodeid_is_dup{$id} = 1; # for this split-up area
 		next;
 	    }
+            $this_xml_has_nodeid{$id} = 1;
 	    $nodeid_exists{$id} = 1;
+
+            my $use_this_node = 0;
 
 	    my $result = { id => $id, tags => {} };
 
@@ -268,42 +289,59 @@ sub draw_openstreetmap_maps {
 	    foreach my $tag (@tag) {
 		my $k = $tag->getAttribute("k");
 		my $v = $tag->getAttribute("v");
-		# k/v from xml
-		if (defined $k) {
-		    if (defined $v) {
-			$result->{tags}->{$k} = $v;
-			if ($node_preindex_kv{$k,$v}) {
-			    push(@{$node_index_kv{$k, $v}}, $result);
-                        }
-		    }
-		    if ($node_preindex_k{$k}) {
-			push(@{$node_index_k{$k}}, $result);
+                if (defined $k) {
+                    if ($node_use_k{$k}) {
+                        $use_this_node = 1;
+                        push(@{$node_k{$k}}, $result);
                     }
-		}
+                    if (defined $v && $node_use_kv{$k,$v}) {
+                        $use_this_node = 1;
+                        push(@{$node_kv{$k,$v}}, $result);
+                    }
+
+                    # DON'T WORRY: a node cannot have two tags with the same key
+                    $result->{tags}->{$k} = $v if defined $v;
+                }
 	    }
+
+            if ($use_this_node) {
+                push(@used_nodeid, $id);
+                $used_nodeid{$id} = 1;
+                push(@this_xml_used_nodeid, $id);
+                foreach my $tag (@tag) {
+                    my $k = $tag->getAttribute("k");
+                    my $v = $tag->getAttribute("v");
+                    push(@{$used_node_tag_k{$k}}, $id);
+                    push(@{$used_node_tag_kv{$k,$v}}, $id);
+                }
+            } else {
+                push(@unused_nodeid, $id);
+                $used_nodeid{$id} = 0;
+                push(@this_xml_unused_nodeid, $id);
+                foreach my $tag (@tag) {
+                    my $k = $tag->getAttribute("k");
+                    my $v = $tag->getAttribute("v");
+                    push(@{$unused_node_tag_k{$k}}, $id);
+                    push(@{$unused_node_tag_kv{$k,$v}}, $id);
+                }
+            }
 	}
 	$self->diag("done.\n");
 
 	$self->diag("  Finding <way> elements ... ");
 	my @ways = $doc->findnodes("/osm/way");
 
-	my %ways;
-	my %way_index_k;
-	my %way_index_kv;
-	my %wayid_exclude;
-
-	$self->diag(scalar(@ways) . " elements found; indexing ... ");
+	$self->diag(scalar(@ways) . " <way> elements found; indexing ... ");
 	foreach my $way (@ways) {
 	    my $id = $way->getAttribute("id");
-
-            $doc_wayid_exists{$id} = 1;
-
 	    if ($wayid_exists{$id}) { # for all split-up areas
-		$wayid_exclude{$id} = 1; # for this split-up area
+		$this_xml_wayid_is_dup{$id} = 1; # for this split-up area
 		next;
 	    }
-
+            $this_xml_has_wayid{$id} = 1;
 	    $wayid_exists{$id} = 1;
+
+            my $use_this_way = 0;
 
 	    my @nodeid = map { $_->getAttribute("ref"); } $way->findnodes("nd");
 	    my $closed = (scalar(@nodeid)) > 2 && ($nodeid[0] == $nodeid[-1]);
@@ -321,22 +359,43 @@ sub draw_openstreetmap_maps {
 	    foreach my $tag (@tag) {
 		my $k = $tag->getAttribute("k");
 		my $v = $tag->getAttribute("v");
-		# k/v from xml
-		if (defined $k) {
-		    if ($k eq "bridge" and $v eq "yes") {
+                if (defined $k) {
+                    if ($way_use_k{$k}) {
+                        $use_this_way = 1;
+                    } elsif (defined $v && $way_use_kv{$k,$v}) {
+                        $use_this_way = 1;
+                    }
+
+                    # DON'T WORRY: a node cannot have two tags with the same key
+                    $result->{tags}->{$k} = $v if defined $v;
+
+		    if ($k eq "bridge" and defined $v and $v eq "yes") {
 			$bridge_wayid{$id} = 1;
 		    }
-		    if (defined $v) {
-			$result->{tags}->{$k} = $v;
-			if ($way_preindex_kv{$k,$v}) {
-			    push(@{$way_index_kv{$k, $v}}, $result);
-			}
-		    }
-		    if ($way_preindex_k{$k}) {
-			push(@{$way_index_k{$k}}, $result);
-		    }
-		}
+                }
 	    }
+
+            if ($use_this_way) {
+                push(@used_wayid, $id);
+                $used_wayid{$id} = 1;
+                push(@this_xml_used_wayid, $id);
+                foreach my $tag (@tag) {
+                    my $k = $tag->getAttribute("k");
+                    my $v = $tag->getAttribute("v");
+                    push(@{$used_way_tag_k{$k}}, $id);
+                    push(@{$used_way_tag_kv{$k,$v}}, $id);
+                }
+            } else {
+                push(@unused_wayid, $id);
+                $used_wayid{$id} = 0;
+                push(@this_xml_unused_wayid, $id);
+                foreach my $tag (@tag) {
+                    my $k = $tag->getAttribute("k");
+                    my $v = $tag->getAttribute("v");
+                    push(@{$unused_way_tag_k{$k}}, $id);
+                    push(@{$unused_way_tag_kv{$k,$v}}, $id);
+                }
+            }
 	}
 	$self->diag("done.\n");
 
@@ -347,7 +406,9 @@ sub draw_openstreetmap_maps {
 	    $self->diag("    Indexing for map area $area_name ... ");
 	    foreach my $way (@ways) {
 		my $id = $way->getAttribute("id");
-		next if $wayid_exclude{$id};
+                next unless $used_wayid{$id};
+                next if $this_xml_wayid_is_dup{$id};
+
 		my @nodeid = @{$ways{$id}{nodeid}};
 		my @points = map { $node_coords{$_}[$index] } @nodeid;
 		$ways{$id}{points}[$index] = \@points;
@@ -375,12 +436,11 @@ sub draw_openstreetmap_maps {
 		    foreach my $tag (@$tags) {
 			my $k = $tag->{k};
 			my $v = $tag->{v};
-			# k/v from osm_layers
 			if (defined $k) {
 			    if (defined $v) {
-				eval { push(@ways, @{$way_index_kv{$k, $v}}); };
+                                eval { push(@ways, @{$way_kv{$k,$v}}); };
 			    } else {
-				eval { push(@ways, @{$way_index_k{$k}}); };
+				eval { push(@ways, @{$way_k{$k}}); };
 			    }
 			}
 		    }
@@ -419,9 +479,6 @@ sub draw_openstreetmap_maps {
 			my $id3 = $map_area->{id_prefix} . "w" . $way->{id} . "_BRIDGE"; # bridge
 
 			my @append;
-
-                        $wayid_included{$wayid} = 1;
-                        $doc_wayid_included{$wayid} = 1;
 
 			if ($way->{closed}) {
 			    if ($is_bridge && $self->has_style_BRIDGE(class => $class)) {
@@ -477,12 +534,11 @@ sub draw_openstreetmap_maps {
 		    foreach my $tag (@$tags) {
 			my $k = $tag->{k};
 			my $v = $tag->{v};
-			# k/v from osm_layers
 			if (defined $k) {
 			    if (defined $v) {
-				eval { push(@nodes, @{$node_index_kv{$k, $v}}); };
+				eval { push(@nodes, @{$node_kv{$k, $v}}); };
 			    } else {
-				eval { push(@nodes, @{$node_index_k{$k}}); };
+				eval { push(@nodes, @{$node_k{$k}}); };
 			    }
 			}
 		    }
@@ -526,24 +582,6 @@ sub draw_openstreetmap_maps {
 
 	    $self->diag("\ndone.\n");
 	}
-
-	foreach my $k (keys(%way_index_k)) {
-	    my @unused = grep { !$_->{used} } @{$way_index_k{$k}};
-	    foreach my $v (map { $_->{tags}->{$k} } @unused) {
-		$unused{$k,$v} += 1;
-	    }
-	}
-
-        if ($self->{osm_features_not_included_filename}) {
-            my @doc_wayids_not_included =
-                grep { !exists $doc_wayid_included{$_} }
-                keys %doc_wayid_exists;
-            foreach my $wayid (@doc_wayids_not_included) {
-                my ($way_node) = $doc->findnodes('/osm/way[@id=' + $wayid + ']');
-                $way_node = $way_node->cloneNode(1);
-                $keep_ways{$wayid} = $way_node;
-            }
-        }
     }
 
     foreach my $deferred (@deferred) {
@@ -551,67 +589,63 @@ sub draw_openstreetmap_maps {
 	$parent->appendChild($child);
     }
 
-    if ($self->{osm_features_not_included_filename}) {
-        my @wayids_not_included =
-            grep { !exists $wayid_included{$_} }
-            keys %wayid_exists;
-        my @ways_not_included = map { $keep_ways{$_} } @wayids_not_included;
-        $self->write_features_not_included(@ways_not_included);
-    }
-
-    $self->write_objects_not_included(\%unused);
+    $self->write_objects_not_included(
+        \%unused_node_tag_k,
+        \%unused_node_tag_kv,
+        \%unused_way_tag_k,
+        \%unused_way_tag_kv,
+    );
 }
 
 sub write_objects_not_included {
-    my $self = shift;
-    my $unused = shift;         # hash
+    my ($self,
+        $unused_node_tag_k,
+        $unused_node_tag_kv,
+        $unused_way_tag_k,
+        $unused_way_tag_kv) = @_;
+
     my $filename = $self->{osm_objects_not_included_filename};
     if (!defined $filename) {
         return;
     }
-    if (!scalar keys %$unused) {
+    if (!scalar keys %$unused_node_tag_k &&
+            !scalar keys %$unused_node_tag_kv &&
+            !scalar keys %$unused_way_tag_k &&
+            !scalar keys %$unused_way_tag_kv) {
         if (!unlink($filename)) {
-            warn("cannot unlink $filename: $!\n");
+            CORE::warn("cannot unlink $filename: $!\n");
         }
         return;
     }
     my $fh;
     if (!open($fh, '>', $filename)) {
-        warn("cannot write $filename: $!\n");
-        return;
-    }
-    foreach my $kv (sort keys %$unused) {
-        my ($k, $v) = split($;, $kv);
-        my $n = $unused->{$kv};
-        printf $fh ("%8d %s %s\n", $n, $k, $v);
-    }
-    warn("Wrote $filename\n");
-}
-
-sub write_features_not_included {
-    my ($self, @ways_not_included) = @_;
-
-    my $filename = $self->{osm_features_not_included_filename};
-    if (!defined $filename) {
+        CORE::warn("cannot write $filename: $!\n");
         return;
     }
 
-    my $fh;
-    if (!open($fh, ">", $filename)) {
-        CORE::warn("Cannot write $filename: $!\n");
-        return;
-    };
-
-    my $doc = XML::LibXML::Document->new();
-    my $root = $doc->createElement("features-not-included");
-    $doc->setDocumentElement($root);
-
-    foreach my $way_not_included (@ways_not_included) {
-        $root->appendChild($way_not_included);
+    foreach my $key (nsort keys %$unused_node_tag_k) {
+        my $count = scalar @{$unused_node_tag_k->{$key}};
+        my $tagkey = $key;
+        printf $fh ("%8s NODE %-32s\n", $count, $tagkey);
+    }
+    foreach my $key (nsort keys %$unused_node_tag_kv) {
+        my $count = scalar @{$unused_node_tag_kv->{$key}};
+        my ($tagkey, $tagvalue) = split($;, $key);
+        printf $fh ("%8s NODE %-32s = %-32s\n", $count, $tagkey, $tagvalue);
+    }
+    foreach my $key (nsort keys %$unused_way_tag_k) {
+        my $count = scalar @{$unused_way_tag_k->{$key}};
+        my $tagkey = $key;
+        printf $fh ("%8s WAY %-32s\n", $count, $tagkey);
+    }
+    foreach my $key (nsort keys %$unused_way_tag_kv) {
+        my $count = scalar @{$unused_node_tag_kv->{$key}};
+        my ($tagkey, $tagvalue) = split($;, $key);
+        printf $fh ("%8s WAY %-32s = %-32s\n", $count, $tagkey, $tagvalue);
     }
 
-    $doc->toFH($fh, 1);
     close($fh);
+    CORE::warn("Wrote $filename\n");
 }
 
 1;
