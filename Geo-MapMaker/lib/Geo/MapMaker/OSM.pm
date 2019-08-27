@@ -227,10 +227,6 @@ sub draw_openstreetmap_maps {
     foreach my $filename (@{$self->{_osm_xml_filenames}}) {
 	$xml_file_number += 1;
 
-        if ($ENV{PERFORMANCE}) {
-            exit 0 if $xml_file_number >= 16;
-        }
-
 	$self->diag("($xml_file_number/$num_xml_files) Parsing $filename ... ");
 
         my $doc;
