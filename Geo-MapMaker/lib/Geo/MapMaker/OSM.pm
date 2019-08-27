@@ -253,36 +253,22 @@ sub draw_openstreetmap_maps {
             @nodeElements = $doc->findnodes("/osm/node");
         }
 
-        # each <node> element's coordinates for each map area
-        #
-        # %node_coords is a multi-level hash
-        # first key <node> id; second key <map area index>
-        # each value is an array:
-        #     [<x>, <y>, <xzone>, <yzone>]
-        #     where <x> and <y> are in px
-        #     and <xzone> is -1 if west of bounds,
-        #                     0 if in bounds, or
-        #                     1 if east of bounds
-        #     and <yzone> is -1 if north of bounds,
-        #                     0 if in bounds, or
-        #                     1 if south of bounds
-	my %node_coords;
+        # data for each <node> element
+	my %nodes;
 
+        # data for each <way> element
+        my %ways;
+
+        # list nodes/ways by key, key/value
         my %node_k;
         my %node_kv;
 	my %way_k;
 	my %way_kv;
-        my %ways;
 
         # lists of <node> and <way> ids to exclude for this XML file
         # due to being duplicated from earlier XML files
 	my %this_xml_nodeid_is_dup;
 	my %this_xml_wayid_is_dup;
-
-        my @this_xml_used_nodeid;   # array of nodeids
-        my @this_xml_used_wayid;    # array of wayids
-        my @this_xml_unused_nodeid; # array of nodeids
-        my @this_xml_unused_wayid;  # array of wayids
 
 	$self->diag(scalar(@nodeElements) . " <node> elements found; indexing ...\n");
 
@@ -318,7 +304,7 @@ sub draw_openstreetmap_maps {
 		my $xzone = ($svgx < $west_svg)  ? -1 : ($svgx > $east_svg)  ? 1 : 0;
 		my $yzone = ($svgy < $north_svg) ? -1 : ($svgy > $south_svg) ? 1 : 0;
 		my $result = [$svgx, $svgy, $xzone, $yzone];
-		$node_coords{$nodeId}[$index] = $result;
+		$nodes{$nodeId}[$index] = $result;
 	    }
 	}
 	$self->diag("done.\n");
@@ -379,14 +365,12 @@ sub draw_openstreetmap_maps {
 	    }
 
             if ($use_this_node) {
-                push(@this_xml_used_nodeid, $nodeId);
                 foreach my $tag (@tag) {
                     my ($k, $v) = @$tag;
                     $used_node_tag_k{$k} += 1;
                     $used_node_tag_kv{$k,$v} += 1;
                 }
             } else {
-                push(@this_xml_unused_nodeid, $nodeId);
                 foreach my $tag (@tag) {
                     my ($k, $v) = @$tag;
                     $unused_node_tag_k{$k} += 1;
@@ -489,14 +473,12 @@ sub draw_openstreetmap_maps {
 	    }
 
             if ($use_this_way) {
-                push(@this_xml_used_wayid, $wayId);
                 foreach my $tag (@tag) {
                     my ($k, $v) = @$tag;
                     $used_way_tag_k{$k} += 1;
                     $used_way_tag_kv{$k,$v} += 1;
                 }
             } else {
-                push(@this_xml_unused_wayid, $wayId);
                 foreach my $tag (@tag) {
                     my ($k, $v) = @$tag;
                     $unused_way_tag_k{$k} += 1;
@@ -523,7 +505,7 @@ sub draw_openstreetmap_maps {
                     }
                     next if $this_xml_wayid_is_dup{$wayId};
                     my @nodeid = @{$ways{$wayId}{nodeid}};
-                    my @points = map { $node_coords{$_}[$index] } @nodeid;
+                    my @points = map { $nodes{$_}[$index] } @nodeid;
                     $ways{$wayId}{points}[$index] = \@points;
                 }
                 $self->diag("done.\n");
@@ -664,7 +646,7 @@ sub draw_openstreetmap_maps {
                             my $cssClass = $info->{text_class};
                             foreach my $node (@nodes) {
                                 $node->{used} = 1;
-                                my $coords = $node_coords{$node->{id}}[$index];
+                                my $coords = $nodes{$node->{id}}[$index];
                                 my ($x, $y) = @$coords;
                                 # don't care about if out of bounds i guess
                                 my $text = $node->{tags}->{name};
@@ -680,7 +662,7 @@ sub draw_openstreetmap_maps {
                             my $r = $self->get_style_property(class => $cssClass, property => "r");
                             foreach my $node (@nodes) {
                                 $node->{used} = 1;
-                                my $coords = $node_coords{$node->{id}}[$index];
+                                my $coords = $nodes{$node->{id}}[$index];
                                 my ($x, $y) = @$coords;
                                 # don't care about if out of bounds i guess
                                 my $cssId  = $map_area->{id_prefix} . "cn" . $node->{id};
