@@ -141,19 +141,39 @@ sub draw_openstreetmap_maps {
 	}
     }
 
+    my $num_xml_files = scalar(@{$self->{_osm_xml_filenames}});
+
+    # dispaly counter through XML files
+    my $xml_file_number = 0;
+
     my %unused;
-    my $num_maps = scalar(@{$self->{_osm_xml_filenames}});
-    my $map_number = 0;
+
+    my %unused_node_k;
+    my %unused_node_kv;
+    my %unused_way_k;
+    my %unused_way_kv;
+
     my %wayid_exists;
+
+    # keep track of which <node> ids we've iterated through
+    # because they can be duplicated across different XML files
     my %nodeid_exists;
+
     my %wayid_included;
+
     my %keep_ways;              # cloned DOM <way> nodes
 
+    # track which keys and key-value pairs we're looking for
+    # when searching through <way> elements and <node> elements
     my %way_preindex_k;
     my %node_preindex_k;
     my %way_preindex_kv;
     my %node_preindex_kv;
-    
+
+    my %bridge_wayid;
+
+    my @deferred;
+
     foreach my $info (@{$self->{osm_layers}}) {
 	my $tags = $info->{tags};
 	my $type = $info->{type} // "way"; # 'way' or 'node'
@@ -172,29 +192,46 @@ sub draw_openstreetmap_maps {
 	}
     }
 
-    my %bridge_wayid;
-    my @deferred;
-
     foreach my $filename (@{$self->{_osm_xml_filenames}}) {
-	$map_number += 1;
+	$xml_file_number += 1;
 
-	$self->diag("($map_number/$num_maps) Parsing $filename ... ");
+	$self->diag("($xml_file_number/$num_xml_files) Parsing $filename ... ");
 	my $doc = $self->{_parser}->parse_file($filename);
 	$self->diag("done.\n");
 
 	$self->diag("  Finding <node> elements ... ");
 	my @nodes = $doc->findnodes("/osm/node");
 
+        # multi-level hash
+        # first key <node> id; second key <map area index>
+        # each value is an array:
+        #     [<x>, <y>, <xzone>, <yzone>]
+        #     where <x> and <y> are in px
+        #     and <xzone> is -1 if west of bounds,
+        #                     0 if in bounds, or
+        #                     1 if east of bounds
+        #     and <yzone> is -1 if north of bounds,
+        #                     0 if in bounds, or
+        #                     1 if south of bounds
 	my %node_coords;
+
 	my %node_info;
+
+        # {<tagkey>} => [ { id => <id>, tags => { } }, ... ]
 	my %node_index_k;
+
+        # {<tagkey>,<tagvalue>} => [ { id => <id>, tags => { } }, ... ]
 	my %node_index_kv;
+
+        # list of <node> ids to exclude for this XML file due to being
+        # duplicated from earlier XML files
 	my %nodeid_exclude;
 
         my %doc_wayid_exists;
         my %doc_wayid_included;
 
-	$self->diag(scalar(@nodes) . " elements found.\n");
+	$self->diag(scalar(@nodes) . " node elements found.\n");
+
 	foreach my $map_area (@{$self->{_map_areas}}) {
 	    $self->update_scale($map_area);
 	    my $index = $map_area->{index};
@@ -237,11 +274,11 @@ sub draw_openstreetmap_maps {
 			$result->{tags}->{$k} = $v;
 			if ($node_preindex_kv{$k,$v}) {
 			    push(@{$node_index_kv{$k, $v}}, $result);
-			}
+                        }
 		    }
 		    if ($node_preindex_k{$k}) {
 			push(@{$node_index_k{$k}}, $result);
-		    }
+                    }
 		}
 	    }
 	}
