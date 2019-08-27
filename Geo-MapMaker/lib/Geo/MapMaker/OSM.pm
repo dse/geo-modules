@@ -212,7 +212,7 @@ sub draw_openstreetmap_maps {
 	$self->diag("done.\n");
 
 	$self->diag("  Finding <node> elements ... ");
-	my @nodes = $doc->findnodes("/osm/node");
+	my @nodeElements = $doc->findnodes("/osm/node");
 
         # each <node> element's coordinates for each map area
         #
@@ -240,15 +240,12 @@ sub draw_openstreetmap_maps {
 	my %this_xml_nodeid_is_dup;
 	my %this_xml_wayid_is_dup;
 
-        my %this_xml_has_nodeid;
-        my %this_xml_has_wayid;
-
         my @this_xml_used_nodeid;        # array of nodeids
         my @this_xml_used_wayid;         # array of wayids
         my @this_xml_unused_nodeid;      # array of nodeids
         my @this_xml_unused_wayid;       # array of wayids
 
-	$self->diag(scalar(@nodes) . " <node> elements found; indexing ...\n");
+	$self->diag(scalar(@nodeElements) . " <node> elements found; indexing ...\n");
 
 	foreach my $map_area (@{$self->{_map_areas}}) {
 	    $self->update_scale($map_area);
@@ -259,33 +256,32 @@ sub draw_openstreetmap_maps {
 	    my $east_svg  = $self->east_outer_map_boundary_svg;
 	    my $north_svg = $self->north_outer_map_boundary_svg;
 	    my $south_svg = $self->south_outer_map_boundary_svg;
-	    foreach my $node (@nodes) {
-		my $id  = $node->getAttribute("id");
-		my $lat_deg = 0 + $node->getAttribute("lat");
-		my $lon_deg = 0 + $node->getAttribute("lon");
+	    foreach my $nodeElement (@nodeElements) {
+		my $nodeId = $nodeElement->getAttribute("id");
+		my $lat_deg = 0 + $nodeElement->getAttribute("lat");
+		my $lon_deg = 0 + $nodeElement->getAttribute("lon");
 		my ($svgx, $svgy) = $self->{converter}->lon_lat_deg_to_x_y_px($lon_deg, $lat_deg);
 		my $xzone = ($svgx <= $west_svg)  ? -1 : ($svgx >= $east_svg)  ? 1 : 0;
 		my $yzone = ($svgy <= $north_svg) ? -1 : ($svgy >= $south_svg) ? 1 : 0;
 		my $result = [$svgx, $svgy, $xzone, $yzone];
-		$node_coords{$id}[$index] = $result;
+		$node_coords{$nodeId}[$index] = $result;
 	    }
 	}
 	$self->diag("done.\n");
 
-	foreach my $node (@nodes) {
-	    my $id = $node->getAttribute("id");
-	    if ($nodeid_exists{$id}) { # for all split-up areas
-		$this_xml_nodeid_is_dup{$id} = 1; # for this split-up area
+	foreach my $nodeElement (@nodeElements) {
+	    my $nodeId = $nodeElement->getAttribute("id");
+	    if ($nodeid_exists{$nodeId}) { # for all split-up areas
+		$this_xml_nodeid_is_dup{$nodeId} = 1; # for this split-up area
 		next;
 	    }
-            $this_xml_has_nodeid{$id} = 1;
-	    $nodeid_exists{$id} = 1;
+	    $nodeid_exists{$nodeId} = 1;
 
             my $use_this_node = 0;
 
-	    my $result = { id => $id, tags => {} };
+	    my $result = { id => $nodeId, tags => {} };
 
-	    my @tag = $node->findnodes("tag");
+	    my @tag = $nodeElement->findnodes("tag");
 	    foreach my $tag (@tag) {
 		my $k = $tag->getAttribute("k");
 		my $v = $tag->getAttribute("v");
@@ -305,57 +301,56 @@ sub draw_openstreetmap_maps {
 	    }
 
             if ($use_this_node) {
-                push(@used_nodeid, $id);
-                $used_nodeid{$id} = 1;
-                push(@this_xml_used_nodeid, $id);
+                push(@used_nodeid, $nodeId);
+                $used_nodeid{$nodeId} = 1;
+                push(@this_xml_used_nodeid, $nodeId);
                 foreach my $tag (@tag) {
                     my $k = $tag->getAttribute("k");
                     my $v = $tag->getAttribute("v");
-                    push(@{$used_node_tag_k{$k}}, $id);
-                    push(@{$used_node_tag_kv{$k,$v}}, $id);
+                    push(@{$used_node_tag_k{$k}}, $nodeId);
+                    push(@{$used_node_tag_kv{$k,$v}}, $nodeId);
                 }
             } else {
-                push(@unused_nodeid, $id);
-                $used_nodeid{$id} = 0;
-                push(@this_xml_unused_nodeid, $id);
+                push(@unused_nodeid, $nodeId);
+                $used_nodeid{$nodeId} = 0;
+                push(@this_xml_unused_nodeid, $nodeId);
                 foreach my $tag (@tag) {
                     my $k = $tag->getAttribute("k");
                     my $v = $tag->getAttribute("v");
-                    push(@{$unused_node_tag_k{$k}}, $id);
-                    push(@{$unused_node_tag_kv{$k,$v}}, $id);
+                    push(@{$unused_node_tag_k{$k}}, $nodeId);
+                    push(@{$unused_node_tag_kv{$k,$v}}, $nodeId);
                 }
             }
 	}
 	$self->diag("done.\n");
 
 	$self->diag("  Finding <way> elements ... ");
-	my @ways = $doc->findnodes("/osm/way");
+	my @wayElements = $doc->findnodes("/osm/way");
 
-	$self->diag(scalar(@ways) . " <way> elements found; indexing ... ");
-	foreach my $way (@ways) {
-	    my $id = $way->getAttribute("id");
-	    if ($wayid_exists{$id}) { # for all split-up areas
-		$this_xml_wayid_is_dup{$id} = 1; # for this split-up area
+	$self->diag(scalar(@wayElements) . " <way> elements found; indexing ... ");
+	foreach my $wayElement (@wayElements) {
+	    my $wayId = $wayElement->getAttribute("id");
+	    if ($wayid_exists{$wayId}) { # for all split-up areas
+		$this_xml_wayid_is_dup{$wayId} = 1; # for this split-up area
 		next;
 	    }
-            $this_xml_has_wayid{$id} = 1;
-	    $wayid_exists{$id} = 1;
+	    $wayid_exists{$wayId} = 1;
 
             my $use_this_way = 0;
 
-	    my @nodeid = map { $_->getAttribute("ref"); } $way->findnodes("nd");
+	    my @nodeid = map { $_->getAttribute("ref"); } $wayElement->findnodes("nd");
 	    my $closed = (scalar(@nodeid)) > 2 && ($nodeid[0] == $nodeid[-1]);
 	    pop(@nodeid) if $closed;
 
-	    my $result = { id     => $id,
+	    my $result = { id     => $wayId,
 			   nodeid => \@nodeid,
 			   closed => $closed,
 			   points => [],
 			   tags   => {}
 			  };
-	    $ways{$id} = $result;
+	    $ways{$wayId} = $result;
 
-	    my @tag = $way->findnodes("tag");
+	    my @tag = $wayElement->findnodes("tag");
 	    foreach my $tag (@tag) {
 		my $k = $tag->getAttribute("k");
 		my $v = $tag->getAttribute("v");
@@ -370,30 +365,30 @@ sub draw_openstreetmap_maps {
                     $result->{tags}->{$k} = $v if defined $v;
 
 		    if ($k eq "bridge" and defined $v and $v eq "yes") {
-			$bridge_wayid{$id} = 1;
+			$bridge_wayid{$wayId} = 1;
 		    }
                 }
 	    }
 
             if ($use_this_way) {
-                push(@used_wayid, $id);
-                $used_wayid{$id} = 1;
-                push(@this_xml_used_wayid, $id);
+                push(@used_wayid, $wayId);
+                $used_wayid{$wayId} = 1;
+                push(@this_xml_used_wayid, $wayId);
                 foreach my $tag (@tag) {
                     my $k = $tag->getAttribute("k");
                     my $v = $tag->getAttribute("v");
-                    push(@{$used_way_tag_k{$k}}, $id);
-                    push(@{$used_way_tag_kv{$k,$v}}, $id);
+                    push(@{$used_way_tag_k{$k}}, $wayId);
+                    push(@{$used_way_tag_kv{$k,$v}}, $wayId);
                 }
             } else {
-                push(@unused_wayid, $id);
-                $used_wayid{$id} = 0;
-                push(@this_xml_unused_wayid, $id);
+                push(@unused_wayid, $wayId);
+                $used_wayid{$wayId} = 0;
+                push(@this_xml_unused_wayid, $wayId);
                 foreach my $tag (@tag) {
                     my $k = $tag->getAttribute("k");
                     my $v = $tag->getAttribute("v");
-                    push(@{$unused_way_tag_k{$k}}, $id);
-                    push(@{$unused_way_tag_kv{$k,$v}}, $id);
+                    push(@{$unused_way_tag_k{$k}}, $wayId);
+                    push(@{$unused_way_tag_kv{$k,$v}}, $wayId);
                 }
             }
 	}
@@ -404,14 +399,14 @@ sub draw_openstreetmap_maps {
 	    my $index = $map_area->{index};
 	    my $area_name = $map_area->{name};
 	    $self->diag("    Indexing for map area $area_name ... ");
-	    foreach my $way (@ways) {
-		my $id = $way->getAttribute("id");
-                next unless $used_wayid{$id};
-                next if $this_xml_wayid_is_dup{$id};
+	    foreach my $wayElement (@wayElements) {
+		my $wayId = $wayElement->getAttribute("id");
+                next unless $used_wayid{$wayId};
+                next if $this_xml_wayid_is_dup{$wayId};
 
-		my @nodeid = @{$ways{$id}{nodeid}};
+		my @nodeid = @{$ways{$wayId}{nodeid}};
 		my @points = map { $node_coords{$_}[$index] } @nodeid;
-		$ways{$id}{points}[$index] = \@points;
+		$ways{$wayId}{points}[$index] = \@points;
 	    }
 	    $self->diag("done.\n");
 	}
@@ -430,7 +425,7 @@ sub draw_openstreetmap_maps {
 
 		if ($type eq "way") {
 
-		    my $class = $info->{class};
+		    my $cssClass = $info->{class};
 
 		    my @ways;
 		    foreach my $tag (@$tags) {
@@ -474,47 +469,47 @@ sub draw_openstreetmap_maps {
 			if (all { $_->[POINT_Y_ZONE] == -1 } @$points) { next; }
 			if (all { $_->[POINT_Y_ZONE] ==  1 } @$points) { next; }
 
-			my $id  = $map_area->{id_prefix} . "w" . $way->{id};
-			my $id2 = $map_area->{id_prefix} . "w" . $way->{id} . "_2";
-			my $id3 = $map_area->{id_prefix} . "w" . $way->{id} . "_BRIDGE"; # bridge
+			my $cssId  = $map_area->{id_prefix} . "w" . $way->{id};
+			my $cssId2 = $map_area->{id_prefix} . "w" . $way->{id} . "_2";
+			my $cssId3 = $map_area->{id_prefix} . "w" . $way->{id} . "_BRIDGE"; # bridge
 
 			my @append;
 
 			if ($way->{closed}) {
-			    if ($is_bridge && $self->has_style_BRIDGE(class => $class)) {
+			    if ($is_bridge && $self->has_style_BRIDGE(class => $cssClass)) {
 				my $polygon_BRIDGE = $self->polygon(points => $points,
 								    class => $closed_class_BRIDGE,
-								    id => $id3);
+								    id => $cssId3);
 				push(@append, [ $group, $polygon_BRIDGE ]);
 				$defer = 1 if $is_bridge;
 			    }
 			    my $polygon = $self->polygon(points => $points,
 							 class => $closed_class,
-							 id => $id);
+							 id => $cssId);
 			    push(@append, [ $group, $polygon ]);
-			    if ($self->has_style_2(class => $class)) {
+			    if ($self->has_style_2(class => $cssClass)) {
 				my $polygon_2 = $self->polygon(points => $points,
 							       class => $closed_class_2,
-							       id => $id2);
+							       id => $cssId2);
 				push(@append, [ $group, $polygon_2 ]);
 				$defer = 1 if $is_bridge;
 			    }
 			} else {
-			    if ($is_bridge && $self->has_style_BRIDGE(class => $class)) {
+			    if ($is_bridge && $self->has_style_BRIDGE(class => $cssClass)) {
 				my $polyline_BRIDGE = $self->polyline(points => $points,
 								      class => $open_class_BRIDGE,
-								      id => $id3);
+								      id => $cssId3);
 				push(@append, [ $group, $polyline_BRIDGE ]);
 				$defer = 1 if $is_bridge;
 			    }
 			    my $polyline = $self->polyline(points => $points,
 							   class => $open_class,
-							   id => $id);
+							   id => $cssId);
 			    push(@append, [ $group, $polyline ]);
-			    if ($self->has_style_2(class => $class)) {
+			    if ($self->has_style_2(class => $cssClass)) {
 				my $polyline_2 = $self->polyline(points => $points,
 								 class => $open_class_2,
-								 id => $id2);
+								 id => $cssId2);
 				push(@append, [ $group, $polyline_2 ]);
 				$defer = 1 if $is_bridge;
 			    }
@@ -548,31 +543,31 @@ sub draw_openstreetmap_maps {
 		      if $self->{debug}->{countobjectsbygroup} or $self->{verbose} >= 2;
 
 		    if ($info->{output_text}) {
-			my $class = $info->{text_class};
+			my $cssClass = $info->{text_class};
 			foreach my $node (@nodes) {
 			    $node->{used} = 1;
 			    my $coords = $node_coords{$node->{id}}[$index];
 			    my ($x, $y) = @$coords;
 			    # don't care about if out of bounds i guess
 			    my $text = $node->{tags}->{name};
-			    my $id  = $map_area->{id_prefix} . "tn" . $node->{id};
+			    my $cssId  = $map_area->{id_prefix} . "tn" . $node->{id};
 			    my $text_node = $self->text_node(x => $x, y => $y, text => $text,
-							     class => $class, id => $id);
+							     class => $cssClass, id => $cssId);
 			    $group->appendChild($text_node);
 			}
 		    }
 
 		    if ($info->{output_dot}) {
-			my $class = $info->{dot_class};
-			my $r = $self->get_style_property(class => $class, property => "r");
+			my $cssClass = $info->{dot_class};
+			my $r = $self->get_style_property(class => $cssClass, property => "r");
 			foreach my $node (@nodes) {
 			    $node->{used} = 1;
 			    my $coords = $node_coords{$node->{id}}[$index];
 			    my ($x, $y) = @$coords;
 			    # don't care about if out of bounds i guess
-			    my $id  = $map_area->{id_prefix} . "cn" . $node->{id};
+			    my $cssId  = $map_area->{id_prefix} . "cn" . $node->{id};
 			    my $circle = $self->circle_node(x => $x, y => $y, r => $r,
-							    class => $class, id => $id);
+							    class => $cssClass, id => $cssId);
 			    $group->appendChild($circle);
 			}
 		    }
