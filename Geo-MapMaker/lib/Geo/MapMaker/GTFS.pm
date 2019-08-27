@@ -490,9 +490,16 @@ sub draw_transit_routes {
 
     my %route_group_by_name;
     $self->add_indexes_to_array($self->{transit_route_groups});
-    foreach my $group (@{$self->{transit_route_groups}}) {
-	$route_group_by_name{$group->{name}} = $group if defined $group->{name};
-	$route_group_by_name{$group->{id}}   = $group if defined $group->{id};
+    if (eval { scalar @{$self->{transit_route_groups}} }) {
+        foreach my $group (@{$self->{transit_route_groups}}) {
+            $route_group_by_name{$group->{name}} = $group if defined $group->{name};
+            $route_group_by_name{$group->{id}}   = $group if defined $group->{id};
+        }
+    } else {
+        $route_group_by_name{'Routes'} = {
+            name => 'Routes',
+            class => 'transit-route'
+        };
     }
 
     my $exceptions_group_name = eval { $self->{transit_trip_exceptions}->{group} };
@@ -574,8 +581,12 @@ sub draw_transit_routes {
 		  if $self->{debug}->{routegroup} or $self->{verbose} >= 2;
 	    }
 
+            $route_group_name //= 'Routes';
+
 	    my $route_group = $route_group_by_name{$route_group_name};
+            CORE::warn("$route_group\n");
 	    next unless $route_group;
+
 	    $route_group{$agency_route} = $route_group;
 
 	    foreach my $map_area (@{$self->{_map_areas}}) {
