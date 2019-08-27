@@ -227,6 +227,10 @@ sub draw_openstreetmap_maps {
     foreach my $filename (@{$self->{_osm_xml_filenames}}) {
 	$xml_file_number += 1;
 
+        if ($ENV{PERFORMANCE}) {
+            exit 0 if $xml_file_number >= 16;
+        }
+
 	$self->diag("($xml_file_number/$num_xml_files) Parsing $filename ... ");
 
         my $doc;
@@ -347,27 +351,26 @@ sub draw_openstreetmap_maps {
 
 	    my $result = { id => $nodeId, tags => {} };
 
+            my @tagElements;
+            if (USE_XML_FAST) {
+                @tagElements = eval { @{$nodeElement->{tag}} };
+            } elsif (USE_XML_BARE) {
+                @tagElements = eval { @{$nodeElement->{tag}} };
+            } else {
+                @tagElements = $nodeElement->findnodes("tag");
+            }
+
             my @tag;
             if (USE_XML_FAST) {
-                @tag = eval { @{$nodeElement->{tag}} };
+                @tag = map { [$_->{-k}, $_->{-v}] } @tagElements;
             } elsif (USE_XML_BARE) {
-                @tag = eval { @{$nodeElement->{tag}} };
+                @tag = map { [$_->{k}->{value}, $_->{v}->{value}] } @tagElements;
             } else {
-                @tag = $nodeElement->findnodes("tag");
+                @tag = map { [$_->getAttribute('k'), $_->getAttribute('v')] } @tagElements;
             }
 
 	    foreach my $tag (@tag) {
-                my ($k, $v);
-                if (USE_XML_FAST) {
-                    $k = $tag->{-k};
-                    $v = $tag->{-v};
-                } elsif (USE_XML_BARE) {
-                    $k = $tag->{k}->{value};
-                    $v = $tag->{v}->{value};
-                } else {
-                    $k = $tag->getAttribute("k");
-                    $v = $tag->getAttribute("v");
-                }
+                my ($k, $v) = @$tag;
                 if (defined $k) {
                     if ($node_use_k{$k}) {
                         $use_this_node = 1;
@@ -388,17 +391,7 @@ sub draw_openstreetmap_maps {
                 $used_nodeid{$nodeId} = 1;
                 push(@this_xml_used_nodeid, $nodeId);
                 foreach my $tag (@tag) {
-                    my ($k, $v);
-                    if (USE_XML_FAST) {
-                        $k = $tag->{-k};
-                        $v = $tag->{-v};
-                    } elsif (USE_XML_BARE) {
-                        $k = $tag->{k}->{value};
-                        $v = $tag->{v}->{value};
-                    } else {
-                        $k = $tag->getAttribute("k");
-                        $v = $tag->getAttribute("v");
-                    }
+                    my ($k, $v) = @$tag;
                     $used_node_tag_k{$k} += 1;
                     $used_node_tag_kv{$k,$v} += 1;
                 }
@@ -407,17 +400,7 @@ sub draw_openstreetmap_maps {
                 $used_nodeid{$nodeId} = 0;
                 push(@this_xml_unused_nodeid, $nodeId);
                 foreach my $tag (@tag) {
-                    my ($k, $v);
-                    if (USE_XML_FAST) {
-                        $k = $tag->{-k};
-                        $v = $tag->{-v};
-                    } elsif (USE_XML_BARE) {
-                        $k = $tag->{k}->{value};
-                        $v = $tag->{v}->{value};
-                    } else {
-                        $k = $tag->getAttribute("k");
-                        $v = $tag->getAttribute("v");
-                    }
+                    my ($k, $v) = @$tag;
                     $unused_node_tag_k{$k} += 1;
                     $unused_node_tag_kv{$k,$v} += 1;
                 }
@@ -478,28 +461,27 @@ sub draw_openstreetmap_maps {
                        };
 	    $ways{$wayId} = $result;
 
-            my @tag;
+            my @tagElements;
             if (USE_XML_FAST) {
-                @tag = eval { @{$wayElement->{tag}} };
+                @tagElements = eval { @{$wayElement->{tag}} };
             } elsif (USE_XML_BARE) {
                 my $tag = eval { $wayElement->{tag} };
-                @tag = (ref $tag eq 'ARRAY') ? @$tag : $tag ? ($tag) : ();
+                @tagElements = (ref $tag eq 'ARRAY') ? @$tag : $tag ? ($tag) : ();
             } else {
-                @tag = $wayElement->findnodes("tag");
+                @tagElements = $wayElement->findnodes("tag");
+            }
+
+            my @tag;
+            if (USE_XML_FAST) {
+                @tag = map { [$_->{-k}, $_->{-v}] } @tagElements;
+            } elsif (USE_XML_BARE) {
+                @tag = map { [$_->{k}->{value}, $_->{v}->{value}] } @tagElements;
+            } else {
+                @tag = map { [$_->getAttribute('k'), $_->getAttribute('v')] } @tagElements;
             }
 
 	    foreach my $tag (@tag) {
-                my ($k, $v);
-                if (USE_XML_FAST) {
-                    $k = $tag->{-k};
-                    $v = $tag->{-v};
-                } elsif (USE_XML_BARE) {
-                    $k = $tag->{k}->{value};
-                    $v = $tag->{v}->{value};
-                } else {
-                    $k = $tag->getAttribute("k");
-                    $v = $tag->getAttribute("v");
-                }
+                my ($k, $v) = @$tag;
                 if (defined $k) {
                     if ($way_use_k{$k}) {
                         $use_this_way = 1;
@@ -523,17 +505,7 @@ sub draw_openstreetmap_maps {
                 $used_wayid{$wayId} = 1;
                 push(@this_xml_used_wayid, $wayId);
                 foreach my $tag (@tag) {
-                    my ($k, $v);
-                    if (USE_XML_FAST) {
-                        $k = $tag->{-k};
-                        $v = $tag->{-v};
-                    } elsif (USE_XML_BARE) {
-                        $k = $tag->{k}->{value};
-                        $v = $tag->{v}->{value};
-                    } else {
-                        $k = $tag->getAttribute("k");
-                        $v = $tag->getAttribute("v");
-                    }
+                    my ($k, $v) = @$tag;
                     $used_way_tag_k{$k} += 1;
                     $used_way_tag_kv{$k,$v} += 1;
                 }
@@ -542,17 +514,7 @@ sub draw_openstreetmap_maps {
                 $used_wayid{$wayId} = 0;
                 push(@this_xml_unused_wayid, $wayId);
                 foreach my $tag (@tag) {
-                    my ($k, $v);
-                    if (USE_XML_FAST) {
-                        $k = $tag->{-k};
-                        $v = $tag->{-v};
-                    } elsif (USE_XML_BARE) {
-                        $k = $tag->{k}->{value};
-                        $v = $tag->{v}->{value};
-                    } else {
-                        $k = $tag->getAttribute("k");
-                        $v = $tag->getAttribute("v");
-                    }
+                    my ($k, $v) = @$tag;
                     $unused_way_tag_k{$k} += 1;
                     $unused_way_tag_kv{$k,$v} += 1;
                 }
@@ -560,193 +522,195 @@ sub draw_openstreetmap_maps {
 	}
 	$self->diag("done.\n");
 
-	foreach my $map_area (@{$self->{_map_areas}}) {
-	    $self->update_scale($map_area);
-	    my $index = $map_area->{index};
-	    my $area_name = $map_area->{name};
-	    $self->diag("    Indexing for map area $area_name ... ");
-	    foreach my $wayElement (@wayElements) {
-                my $wayId;
-                if (USE_XML_FAST) {
-                    $wayId = $wayElement->{-id};
-                } elsif (USE_XML_BARE) {
-                    $wayId = $wayElement->{id}->{value};
-                } else {
-                    $wayId = $wayElement->getAttribute("id");
+        if (!$ENV{COUNT_UNUSED_ONLY}) {
+            foreach my $map_area (@{$self->{_map_areas}}) {
+                $self->update_scale($map_area);
+                my $index = $map_area->{index};
+                my $area_name = $map_area->{name};
+                $self->diag("    Indexing for map area $area_name ... ");
+                foreach my $wayElement (@wayElements) {
+                    my $wayId;
+                    if (USE_XML_FAST) {
+                        $wayId = $wayElement->{-id};
+                    } elsif (USE_XML_BARE) {
+                        $wayId = $wayElement->{id}->{value};
+                    } else {
+                        $wayId = $wayElement->getAttribute("id");
+                    }
+
+                    next unless $used_wayid{$wayId};
+                    next if $this_xml_wayid_is_dup{$wayId};
+                    my @nodeid = @{$ways{$wayId}{nodeid}};
+                    my @points = map { $node_coords{$_}[$index] } @nodeid;
+                    $ways{$wayId}{points}[$index] = \@points;
+                }
+                $self->diag("done.\n");
+            }
+
+            foreach my $map_area (@{$self->{_map_areas}}) {
+                $self->update_scale($map_area);
+                my $index = $map_area->{index};
+                my $area_name = $map_area->{name};
+                $self->diag("Adding objects for map area $area_name ...\n");
+
+                foreach my $info (@{$self->{osm_layers}}) {
+                    my $name = $info->{name};
+                    my $tags = $info->{tags};
+                    my $group = $info->{_map_area_group}[$index];
+                    my $type = $info->{type} // "way"; # 'way' or 'node'
+
+                    if ($type eq "way") {
+
+                        my $cssClass = $info->{class};
+
+                        my @ways;
+                        foreach my $tag (@$tags) {
+                            my $k = $tag->{k};
+                            my $v = $tag->{v};
+                            if (defined $k) {
+                                if (defined $v) {
+                                    eval { push(@ways, @{$way_kv{$k,$v}}); };
+                                } else {
+                                    eval { push(@ways, @{$way_k{$k}}); };
+                                }
+                            }
+                        }
+                        @ways = uniq @ways;
+
+                        $self->warnf("  %s (%d objects) ...\n", $name, scalar(@ways))
+                            if $self->{debug}->{countobjectsbygroup} or $self->{verbose} >= 2;
+
+                        my $options = {};
+                        if ($map_area->{scale_stroke_width} && exists $map_area->{zoom}) {
+                            $options->{scale} = $map_area->{zoom};
+                        }
+
+                        my $open_class          = "OPEN " . $info->{class};
+                        my $closed_class        =           $info->{class};
+                        my $open_class_2        = "OPEN " . $info->{class} . "_2";
+                        my $closed_class_2      =           $info->{class} . "_2";
+                        my $open_class_BRIDGE   = "OPEN " . $info->{class} . "_BRIDGE";
+                        my $closed_class_BRIDGE =           $info->{class} . "_BRIDGE";
+
+                        foreach my $way (@ways) {
+                            my $wayid = $way->{id};
+                            my $is_bridge = $bridge_wayid{$wayid};
+                            my $defer = 0;
+
+                            $way->{used} = 1;
+                            my $points = $way->{points}[$index];
+
+                            if (all { $_->[POINT_X_ZONE] == -1 } @$points) { next; }
+                            if (all { $_->[POINT_X_ZONE] ==  1 } @$points) { next; }
+                            if (all { $_->[POINT_Y_ZONE] == -1 } @$points) { next; }
+                            if (all { $_->[POINT_Y_ZONE] ==  1 } @$points) { next; }
+
+                            my $cssId  = $map_area->{id_prefix} . "w" . $way->{id};
+                            my $cssId2 = $map_area->{id_prefix} . "w" . $way->{id} . "_2";
+                            my $cssId3 = $map_area->{id_prefix} . "w" . $way->{id} . "_BRIDGE"; # bridge
+
+                            my @append;
+
+                            if ($way->{closed}) {
+                                if ($is_bridge && $self->has_style_BRIDGE(class => $cssClass)) {
+                                    my $polygon_BRIDGE = $self->polygon(points => $points,
+                                                                        class => $closed_class_BRIDGE,
+                                                                        id => $cssId3);
+                                    push(@append, [ $group, $polygon_BRIDGE ]);
+                                    $defer = 1 if $is_bridge;
+                                }
+                                my $polygon = $self->polygon(points => $points,
+                                                             class => $closed_class,
+                                                             id => $cssId);
+                                push(@append, [ $group, $polygon ]);
+                                if ($self->has_style_2(class => $cssClass)) {
+                                    my $polygon_2 = $self->polygon(points => $points,
+                                                                   class => $closed_class_2,
+                                                                   id => $cssId2);
+                                    push(@append, [ $group, $polygon_2 ]);
+                                    $defer = 1 if $is_bridge;
+                                }
+                            } else {
+                                if ($is_bridge && $self->has_style_BRIDGE(class => $cssClass)) {
+                                    my $polyline_BRIDGE = $self->polyline(points => $points,
+                                                                          class => $open_class_BRIDGE,
+                                                                          id => $cssId3);
+                                    push(@append, [ $group, $polyline_BRIDGE ]);
+                                    $defer = 1 if $is_bridge;
+                                }
+                                my $polyline = $self->polyline(points => $points,
+                                                               class => $open_class,
+                                                               id => $cssId);
+                                push(@append, [ $group, $polyline ]);
+                                if ($self->has_style_2(class => $cssClass)) {
+                                    my $polyline_2 = $self->polyline(points => $points,
+                                                                     class => $open_class_2,
+                                                                     id => $cssId2);
+                                    push(@append, [ $group, $polyline_2 ]);
+                                    $defer = 1 if $is_bridge;
+                                }
+                            }
+
+                            if ($defer) {
+                                push(@deferred, @append);
+                            } else {
+                                foreach my $append (@append) {
+                                    my ($parent, $child) = @$append;
+                                    $parent->appendChild($child);
+                                }
+                            }
+                        }
+                    } elsif ($type eq "node") {
+                        my @nodes;
+                        foreach my $tag (@$tags) {
+                            my $k = $tag->{k};
+                            my $v = $tag->{v};
+                            if (defined $k) {
+                                if (defined $v) {
+                                    eval { push(@nodes, @{$node_kv{$k, $v}}); };
+                                } else {
+                                    eval { push(@nodes, @{$node_k{$k}}); };
+                                }
+                            }
+                        }
+                        @nodes = uniq @nodes;
+
+                        $self->warnf("  %s (%d objects) ...\n", $name, scalar(@nodes))
+                            if $self->{debug}->{countobjectsbygroup} or $self->{verbose} >= 2;
+
+                        if ($info->{output_text}) {
+                            my $cssClass = $info->{text_class};
+                            foreach my $node (@nodes) {
+                                $node->{used} = 1;
+                                my $coords = $node_coords{$node->{id}}[$index];
+                                my ($x, $y) = @$coords;
+                                # don't care about if out of bounds i guess
+                                my $text = $node->{tags}->{name};
+                                my $cssId  = $map_area->{id_prefix} . "tn" . $node->{id};
+                                my $text_node = $self->text_node(x => $x, y => $y, text => $text,
+                                                                 class => $cssClass, id => $cssId);
+                                $group->appendChild($text_node);
+                            }
+                        }
+
+                        if ($info->{output_dot}) {
+                            my $cssClass = $info->{dot_class};
+                            my $r = $self->get_style_property(class => $cssClass, property => "r");
+                            foreach my $node (@nodes) {
+                                $node->{used} = 1;
+                                my $coords = $node_coords{$node->{id}}[$index];
+                                my ($x, $y) = @$coords;
+                                # don't care about if out of bounds i guess
+                                my $cssId  = $map_area->{id_prefix} . "cn" . $node->{id};
+                                my $circle = $self->circle_node(x => $x, y => $y, r => $r,
+                                                                class => $cssClass, id => $cssId);
+                                $group->appendChild($circle);
+                            }
+                        }
+                    }
                 }
 
-                next unless $used_wayid{$wayId};
-                next if $this_xml_wayid_is_dup{$wayId};
-		my @nodeid = @{$ways{$wayId}{nodeid}};
-		my @points = map { $node_coords{$_}[$index] } @nodeid;
-		$ways{$wayId}{points}[$index] = \@points;
-	    }
-	    $self->diag("done.\n");
-	}
-
-	foreach my $map_area (@{$self->{_map_areas}}) {
-	    $self->update_scale($map_area);
-	    my $index = $map_area->{index};
-	    my $area_name = $map_area->{name};
-	    $self->diag("Adding objects for map area $area_name ...\n");
-
-	    foreach my $info (@{$self->{osm_layers}}) {
-		my $name = $info->{name};
-		my $tags = $info->{tags};
-		my $group = $info->{_map_area_group}[$index];
-		my $type = $info->{type} // "way"; # 'way' or 'node'
-
-		if ($type eq "way") {
-
-		    my $cssClass = $info->{class};
-
-		    my @ways;
-		    foreach my $tag (@$tags) {
-			my $k = $tag->{k};
-			my $v = $tag->{v};
-			if (defined $k) {
-			    if (defined $v) {
-                                eval { push(@ways, @{$way_kv{$k,$v}}); };
-			    } else {
-				eval { push(@ways, @{$way_k{$k}}); };
-			    }
-			}
-		    }
-		    @ways = uniq @ways;
-
-		    $self->warnf("  %s (%d objects) ...\n", $name, scalar(@ways))
-                        if $self->{debug}->{countobjectsbygroup} or $self->{verbose} >= 2;
-
-		    my $options = {};
-		    if ($map_area->{scale_stroke_width} && exists $map_area->{zoom}) {
-			$options->{scale} = $map_area->{zoom};
-		    }
-
-		    my $open_class          = "OPEN " . $info->{class};
-		    my $closed_class        =           $info->{class};
-		    my $open_class_2        = "OPEN " . $info->{class} . "_2";
-		    my $closed_class_2      =           $info->{class} . "_2";
-		    my $open_class_BRIDGE   = "OPEN " . $info->{class} . "_BRIDGE";
-		    my $closed_class_BRIDGE =           $info->{class} . "_BRIDGE";
-
-		    foreach my $way (@ways) {
-			my $wayid = $way->{id};
-			my $is_bridge = $bridge_wayid{$wayid};
-			my $defer = 0;
-
-			$way->{used} = 1;
-			my $points = $way->{points}[$index];
-
-			if (all { $_->[POINT_X_ZONE] == -1 } @$points) { next; }
-			if (all { $_->[POINT_X_ZONE] ==  1 } @$points) { next; }
-			if (all { $_->[POINT_Y_ZONE] == -1 } @$points) { next; }
-			if (all { $_->[POINT_Y_ZONE] ==  1 } @$points) { next; }
-
-			my $cssId  = $map_area->{id_prefix} . "w" . $way->{id};
-			my $cssId2 = $map_area->{id_prefix} . "w" . $way->{id} . "_2";
-			my $cssId3 = $map_area->{id_prefix} . "w" . $way->{id} . "_BRIDGE"; # bridge
-
-			my @append;
-
-			if ($way->{closed}) {
-			    if ($is_bridge && $self->has_style_BRIDGE(class => $cssClass)) {
-				my $polygon_BRIDGE = $self->polygon(points => $points,
-								    class => $closed_class_BRIDGE,
-								    id => $cssId3);
-				push(@append, [ $group, $polygon_BRIDGE ]);
-				$defer = 1 if $is_bridge;
-			    }
-			    my $polygon = $self->polygon(points => $points,
-							 class => $closed_class,
-							 id => $cssId);
-			    push(@append, [ $group, $polygon ]);
-			    if ($self->has_style_2(class => $cssClass)) {
-				my $polygon_2 = $self->polygon(points => $points,
-							       class => $closed_class_2,
-							       id => $cssId2);
-				push(@append, [ $group, $polygon_2 ]);
-				$defer = 1 if $is_bridge;
-			    }
-			} else {
-			    if ($is_bridge && $self->has_style_BRIDGE(class => $cssClass)) {
-				my $polyline_BRIDGE = $self->polyline(points => $points,
-								      class => $open_class_BRIDGE,
-								      id => $cssId3);
-				push(@append, [ $group, $polyline_BRIDGE ]);
-				$defer = 1 if $is_bridge;
-			    }
-			    my $polyline = $self->polyline(points => $points,
-							   class => $open_class,
-							   id => $cssId);
-			    push(@append, [ $group, $polyline ]);
-			    if ($self->has_style_2(class => $cssClass)) {
-				my $polyline_2 = $self->polyline(points => $points,
-								 class => $open_class_2,
-								 id => $cssId2);
-				push(@append, [ $group, $polyline_2 ]);
-				$defer = 1 if $is_bridge;
-			    }
-			}
-
-			if ($defer) {
-			    push(@deferred, @append);
-			} else {
-			    foreach my $append (@append) {
-				my ($parent, $child) = @$append;
-				$parent->appendChild($child);
-			    }
-			}
-		    }
-		} elsif ($type eq "node") {
-		    my @nodes;
-		    foreach my $tag (@$tags) {
-			my $k = $tag->{k};
-			my $v = $tag->{v};
-			if (defined $k) {
-			    if (defined $v) {
-				eval { push(@nodes, @{$node_kv{$k, $v}}); };
-			    } else {
-				eval { push(@nodes, @{$node_k{$k}}); };
-			    }
-			}
-		    }
-		    @nodes = uniq @nodes;
-
-		    $self->warnf("  %s (%d objects) ...\n", $name, scalar(@nodes))
-                        if $self->{debug}->{countobjectsbygroup} or $self->{verbose} >= 2;
-
-		    if ($info->{output_text}) {
-			my $cssClass = $info->{text_class};
-			foreach my $node (@nodes) {
-			    $node->{used} = 1;
-			    my $coords = $node_coords{$node->{id}}[$index];
-			    my ($x, $y) = @$coords;
-			    # don't care about if out of bounds i guess
-			    my $text = $node->{tags}->{name};
-			    my $cssId  = $map_area->{id_prefix} . "tn" . $node->{id};
-			    my $text_node = $self->text_node(x => $x, y => $y, text => $text,
-							     class => $cssClass, id => $cssId);
-			    $group->appendChild($text_node);
-			}
-		    }
-
-		    if ($info->{output_dot}) {
-			my $cssClass = $info->{dot_class};
-			my $r = $self->get_style_property(class => $cssClass, property => "r");
-			foreach my $node (@nodes) {
-			    $node->{used} = 1;
-			    my $coords = $node_coords{$node->{id}}[$index];
-			    my ($x, $y) = @$coords;
-			    # don't care about if out of bounds i guess
-			    my $cssId  = $map_area->{id_prefix} . "cn" . $node->{id};
-			    my $circle = $self->circle_node(x => $x, y => $y, r => $r,
-							    class => $cssClass, id => $cssId);
-			    $group->appendChild($circle);
-			}
-		    }
-		}
-	    }
-
+            }
 	    $self->diag("\ndone.\n");
 	}
     }
@@ -793,22 +757,28 @@ sub write_objects_not_included {
     foreach my $key (nsort keys %$unused_node_tag_k) {
         my $count = $unused_node_tag_k->{$key};
         my $tagkey = $key;
+        $tagkey //= '(undef)';
         printf $fh ("%8s NODE %-32s\n", $count, $tagkey);
     }
     foreach my $key (nsort keys %$unused_node_tag_kv) {
         my $count = $unused_node_tag_kv->{$key};
         my ($tagkey, $tagvalue) = split($;, $key);
-        printf $fh ("%8s NODE %-32s = %-32s\n", $count, $tagkey, $tagvalue);
+        $tagkey //= '(undef)';
+        $tagvalue //= '(undef)';
+        printf $fh ("%8d NODE %-32s = %-32s\n", $count, $tagkey, $tagvalue);
     }
     foreach my $key (nsort keys %$unused_way_tag_k) {
         my $count = $unused_way_tag_k->{$key};
         my $tagkey = $key;
-        printf $fh ("%8s WAY %-32s\n", $count, $tagkey);
+        $tagkey //= '(undef)';
+        printf $fh ("%8d WAY %-32s\n", $count, $tagkey);
     }
     foreach my $key (nsort keys %$unused_way_tag_kv) {
         my $count = $unused_node_tag_kv->{$key};
         my ($tagkey, $tagvalue) = split($;, $key);
-        printf $fh ("%8s WAY %-32s = %-32s\n", $count, $tagkey, $tagvalue);
+        $tagkey //= '(undef)';
+        $tagvalue //= '(undef)';
+        printf $fh ("%8d WAY %-32s = %-32s\n", $count, $tagkey, $tagvalue);
     }
 
     close($fh);
