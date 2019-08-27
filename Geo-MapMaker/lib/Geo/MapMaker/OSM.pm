@@ -174,18 +174,10 @@ sub draw_openstreetmap_maps {
 
     # track the same but for determining whether to use each node or
     # way.  NOTE: $..._use_kv{$k,$v} does not imply $..._use_k{$k}
-    my %way_use_k;
-    my %way_use_kv;
-    my %node_use_k;
-    my %node_use_kv;
-
-    # track used and unused <node> and <way> ids
-    my @used_nodeid;            # array of nodeids
-    my @used_wayid;             # array of wayids
-    my @unused_nodeid;          # array of nodeids
-    my @unused_wayid;           # array of wayids
-    my %used_nodeid;
-    my %used_wayid;
+    my %way_use_k;              # used
+    my %way_use_kv;             # used
+    my %node_use_k;             # used
+    my %node_use_kv;            # used
 
     my %used_node_tag_k; # track keys of used nodes' tags, value = arrayref of node ids
     my %used_node_tag_kv; # track key-values of used nodes' tags, value = arrayref of node ids
@@ -387,8 +379,6 @@ sub draw_openstreetmap_maps {
 	    }
 
             if ($use_this_node) {
-                push(@used_nodeid, $nodeId);
-                $used_nodeid{$nodeId} = 1;
                 push(@this_xml_used_nodeid, $nodeId);
                 foreach my $tag (@tag) {
                     my ($k, $v) = @$tag;
@@ -396,8 +386,6 @@ sub draw_openstreetmap_maps {
                     $used_node_tag_kv{$k,$v} += 1;
                 }
             } else {
-                push(@unused_nodeid, $nodeId);
-                $used_nodeid{$nodeId} = 0;
                 push(@this_xml_unused_nodeid, $nodeId);
                 foreach my $tag (@tag) {
                     my ($k, $v) = @$tag;
@@ -501,8 +489,6 @@ sub draw_openstreetmap_maps {
 	    }
 
             if ($use_this_way) {
-                push(@used_wayid, $wayId);
-                $used_wayid{$wayId} = 1;
                 push(@this_xml_used_wayid, $wayId);
                 foreach my $tag (@tag) {
                     my ($k, $v) = @$tag;
@@ -510,8 +496,6 @@ sub draw_openstreetmap_maps {
                     $used_way_tag_kv{$k,$v} += 1;
                 }
             } else {
-                push(@unused_wayid, $wayId);
-                $used_wayid{$wayId} = 0;
                 push(@this_xml_unused_wayid, $wayId);
                 foreach my $tag (@tag) {
                     my ($k, $v) = @$tag;
@@ -537,8 +521,6 @@ sub draw_openstreetmap_maps {
                     } else {
                         $wayId = $wayElement->getAttribute("id");
                     }
-
-                    next unless $used_wayid{$wayId};
                     next if $this_xml_wayid_is_dup{$wayId};
                     my @nodeid = @{$ways{$wayId}{nodeid}};
                     my @points = map { $node_coords{$_}[$index] } @nodeid;
