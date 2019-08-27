@@ -1,12 +1,14 @@
 package Geo::MapMaker::OSM;
 use warnings;
 use strict;
+use v5.10.0;
 
 # heh, this package is actually a mixin.  ;-)
 
 package Geo::MapMaker;
 use warnings;
 use strict;
+use v5.10.0;
 
 use Geo::MapMaker::Constants qw(:all);
 
@@ -16,6 +18,26 @@ use fields qw(_osm_xml_filenames
 use LWP::Simple;                # RC_NOT_MODIFIED
 use List::MoreUtils qw(all uniq);
 use Sort::Naturally;
+use Data::Dumper qw(Dumper);
+
+use File::Slurper qw(read_text);
+use Path::Tiny;
+use Encode;
+
+use constant USE_XML_FAST => 1;
+use constant USE_XML_BARE => 0;
+
+BEGIN {
+    if (USE_XML_FAST) {
+        require XML::Fast;
+        import XML::Fast qw();
+    }
+    if (USE_XML_BARE) {
+        require XML::Bare;
+        import XML::Bare qw();
+    }
+}
+
 
 sub update_openstreetmap {
     my ($self, $force) = @_;
@@ -50,10 +72,10 @@ sub _update_openstreetmap {
 	$self->_update_openstreetmap($force, $west_deg,   $center_lat, $center_lon, $north_deg);
 	$self->_update_openstreetmap($force, $center_lon, $center_lat, $east_deg,   $north_deg);
     } elsif (-e $xml_filename && !$force) {
-	CORE::warn("Not updating $xml_filename\n") if $self->{verbose};
+	CORE::warn("Not updating $xml_filename\n    $url\n") if $self->{verbose};
 	push(@{$self->{_osm_xml_filenames}}, $xml_filename);
     } elsif (-e $xml_filename && $force && -M $xml_filename < 1) {
-	CORE::warn("Not updating $xml_filename (force in effect but less than 1 day old)\n") if $self->{verbose};
+	CORE::warn("Not updating $xml_filename\n    $url\n    (force in effect but less than 1 day old)\n") if $self->{verbose};
 	push(@{$self->{_osm_xml_filenames}}, $xml_filename);
     } else {
 	my $ua = LWP::UserAgent->new();
@@ -63,7 +85,7 @@ sub _update_openstreetmap {
 	printf STDERR ("%s\n", $response->status_line());
 	my $rc = $response->code();
 	if ($rc == RC_NOT_MODIFIED) {
-	    push(@{$self->{_osm_xml_filenames}}, $xml_filename);
+            push(@{$self->{_osm_xml_filenames}}, $xml_filename);
 	    # ok then
 	} elsif ($rc == 400) {	# Bad Request
 	    file_put_contents($txt_filename, "split-up");
@@ -74,7 +96,7 @@ sub _update_openstreetmap {
 	    $self->_update_openstreetmap($force, $west_deg,   $center_lat, $center_lon, $north_deg);
 	    $self->_update_openstreetmap($force, $center_lon, $center_lat, $east_deg,   $north_deg);
 	} elsif (is_success($rc)) {
-	    push(@{$self->{_osm_xml_filenames}}, $xml_filename);
+            push(@{$self->{_osm_xml_filenames}}, $xml_filename);
 	    # ok then
 	} elsif ($rc == 509) {	# Bandwidth Exceeded
 	    CORE::warn("Waiting 30 seconds...\n");
@@ -158,10 +180,10 @@ sub draw_openstreetmap_maps {
     my %node_use_kv;
 
     # track used and unused <node> and <way> ids
-    my @used_nodeid;           # array of nodeids
-    my @used_wayid;            # array of wayids
-    my @unused_nodeid;         # array of nodeids
-    my @unused_wayid;          # array of wayids
+    my @used_nodeid;            # array of nodeids
+    my @used_wayid;             # array of wayids
+    my @unused_nodeid;          # array of nodeids
+    my @unused_wayid;           # array of wayids
     my %used_nodeid;
     my %used_wayid;
 
@@ -205,12 +227,39 @@ sub draw_openstreetmap_maps {
     foreach my $filename (@{$self->{_osm_xml_filenames}}) {
 	$xml_file_number += 1;
 
+        if ($ENV{PERFORMANCE}) {
+            exit 0 if $xml_file_number >= 16;
+        }
+
 	$self->diag("($xml_file_number/$num_xml_files) Parsing $filename ... ");
-	my $doc = $self->{_parser}->parse_file($filename);
+
+        my $doc;
+        my $bareObject;
+        my $bareTree;
+        my $docHash;
+        if (USE_XML_FAST) {
+            my $xml = path($filename)->slurp();
+            $docHash = xml2hash(Encode::encode_utf8($xml), array => 1);
+        } elsif (USE_XML_BARE) {
+            $bareObject = XML::Bare->new(file => $filename);
+            $bareTree = $bareObject->parse();
+        } else {
+            $doc = $self->{_parser}->parse_file($filename);
+        }
+
 	$self->diag("done.\n");
 
 	$self->diag("  Finding <node> elements ... ");
-	my @nodeElements = $doc->findnodes("/osm/node");
+
+        my @nodeElements;
+        if (USE_XML_FAST) {
+            @nodeElements = @{$docHash->{osm}->[0]->{node}};
+        } elsif (USE_XML_BARE) {
+            my $node = $bareTree->{osm}->{node};
+            @nodeElements = (ref $node eq 'ARRAY') ? @$node : $node ? ($node) : ();
+        } else {
+            @nodeElements = $doc->findnodes("/osm/node");
+        }
 
         # each <node> element's coordinates for each map area
         #
@@ -238,10 +287,10 @@ sub draw_openstreetmap_maps {
 	my %this_xml_nodeid_is_dup;
 	my %this_xml_wayid_is_dup;
 
-        my @this_xml_used_nodeid;        # array of nodeids
-        my @this_xml_used_wayid;         # array of wayids
-        my @this_xml_unused_nodeid;      # array of nodeids
-        my @this_xml_unused_wayid;       # array of wayids
+        my @this_xml_used_nodeid;   # array of nodeids
+        my @this_xml_used_wayid;    # array of wayids
+        my @this_xml_unused_nodeid; # array of nodeids
+        my @this_xml_unused_wayid;  # array of wayids
 
 	$self->diag(scalar(@nodeElements) . " <node> elements found; indexing ...\n");
 
@@ -257,9 +306,22 @@ sub draw_openstreetmap_maps {
 	    my $north_svg = $self->north_outer_map_boundary_svg;
 	    my $south_svg = $self->south_outer_map_boundary_svg;
 	    foreach my $nodeElement (@nodeElements) {
-		my $nodeId = $nodeElement->getAttribute("id");
-		my $lat_deg = 0 + $nodeElement->getAttribute("lat");
-		my $lon_deg = 0 + $nodeElement->getAttribute("lon");
+                my $nodeId;
+                my $lat_deg;
+                my $lon_deg;
+                if (USE_XML_FAST) {
+                    $nodeId = $nodeElement->{-id};
+                    $lat_deg = 0 + $nodeElement->{-lat};
+                    $lon_deg = 0 + $nodeElement->{-lon};
+                } elsif (USE_XML_BARE) {
+                    $nodeId = $nodeElement->{id}->{value};
+                    $lat_deg = 0 + $nodeElement->{lat}->{value};
+                    $lon_deg = 0 + $nodeElement->{lon}->{value};
+                } else {
+                    $nodeId = $nodeElement->getAttribute("id");
+                    $lat_deg = 0 + $nodeElement->getAttribute("lat");
+                    $lon_deg = 0 + $nodeElement->getAttribute("lon");
+                }
 		my ($svgx, $svgy) = $converter->lon_lat_deg_to_x_y_px($lon_deg, $lat_deg);
 		my $xzone = ($svgx < $west_svg)  ? -1 : ($svgx > $east_svg)  ? 1 : 0;
 		my $yzone = ($svgy < $north_svg) ? -1 : ($svgy > $south_svg) ? 1 : 0;
@@ -270,8 +332,16 @@ sub draw_openstreetmap_maps {
 	$self->diag("done.\n");
 
 	foreach my $nodeElement (@nodeElements) {
-	    my $nodeId = $nodeElement->getAttribute("id");
-	    if ($nodeid_exists{$nodeId}) { # for all split-up areas
+            my $nodeId;
+            if (USE_XML_FAST) {
+                $nodeId = $nodeElement->{-id};
+            } elsif (USE_XML_BARE) {
+                $nodeId = $nodeElement->{id}->{value};
+            } else {
+                $nodeId = $nodeElement->getAttribute("id");
+            }
+
+	    if ($nodeid_exists{$nodeId}) {            # for all split-up areas
 		$this_xml_nodeid_is_dup{$nodeId} = 1; # for this split-up area
 		next;
 	    }
@@ -281,10 +351,27 @@ sub draw_openstreetmap_maps {
 
 	    my $result = { id => $nodeId, tags => {} };
 
-	    my @tag = $nodeElement->findnodes("tag");
+            my @tag;
+            if (USE_XML_FAST) {
+                @tag = eval { @{$nodeElement->{tag}} };
+            } elsif (USE_XML_BARE) {
+                @tag = eval { @{$nodeElement->{tag}} };
+            } else {
+                @tag = $nodeElement->findnodes("tag");
+            }
+
 	    foreach my $tag (@tag) {
-		my $k = $tag->getAttribute("k");
-		my $v = $tag->getAttribute("v");
+                my ($k, $v);
+                if (USE_XML_FAST) {
+                    $k = $tag->{-k};
+                    $v = $tag->{-v};
+                } elsif (USE_XML_BARE) {
+                    $k = $tag->{k}->{value};
+                    $v = $tag->{v}->{value};
+                } else {
+                    $k = $tag->getAttribute("k");
+                    $v = $tag->getAttribute("v");
+                }
                 if (defined $k) {
                     if ($node_use_k{$k}) {
                         $use_this_node = 1;
@@ -305,8 +392,17 @@ sub draw_openstreetmap_maps {
                 $used_nodeid{$nodeId} = 1;
                 push(@this_xml_used_nodeid, $nodeId);
                 foreach my $tag (@tag) {
-                    my $k = $tag->getAttribute("k");
-                    my $v = $tag->getAttribute("v");
+                    my ($k, $v);
+                    if (USE_XML_FAST) {
+                        $k = $tag->{-k};
+                        $v = $tag->{-v};
+                    } elsif (USE_XML_BARE) {
+                        $k = $tag->{k}->{value};
+                        $v = $tag->{v}->{value};
+                    } else {
+                        $k = $tag->getAttribute("k");
+                        $v = $tag->getAttribute("v");
+                    }
                     $used_node_tag_k{$k} += 1;
                     $used_node_tag_kv{$k,$v} += 1;
                 }
@@ -315,8 +411,17 @@ sub draw_openstreetmap_maps {
                 $used_nodeid{$nodeId} = 0;
                 push(@this_xml_unused_nodeid, $nodeId);
                 foreach my $tag (@tag) {
-                    my $k = $tag->getAttribute("k");
-                    my $v = $tag->getAttribute("v");
+                    my ($k, $v);
+                    if (USE_XML_FAST) {
+                        $k = $tag->{-k};
+                        $v = $tag->{-v};
+                    } elsif (USE_XML_BARE) {
+                        $k = $tag->{k}->{value};
+                        $v = $tag->{v}->{value};
+                    } else {
+                        $k = $tag->getAttribute("k");
+                        $v = $tag->getAttribute("v");
+                    }
                     $unused_node_tag_k{$k} += 1;
                     $unused_node_tag_kv{$k,$v} += 1;
                 }
@@ -325,12 +430,29 @@ sub draw_openstreetmap_maps {
 	$self->diag("done.\n");
 
 	$self->diag("  Finding <way> elements ... ");
-	my @wayElements = $doc->findnodes("/osm/way");
+
+        my @wayElements;
+        if (USE_XML_FAST) {
+            @wayElements = @{$docHash->{osm}->[0]->{way}};
+        } elsif (USE_XML_BARE) {
+            my $way = $bareTree->{osm}->{way};
+            @wayElements = (ref $way eq 'ARRAY') ? @$way : $way ? ($way) : ();
+        } else {
+            @wayElements = $doc->findnodes("/osm/way");
+        }
 
 	$self->diag(scalar(@wayElements) . " <way> elements found; indexing ... ");
 	foreach my $wayElement (@wayElements) {
-	    my $wayId = $wayElement->getAttribute("id");
-	    if ($wayid_exists{$wayId}) { # for all split-up areas
+            my $wayId;
+            if (USE_XML_FAST) {
+                $wayId = $wayElement->{-id};
+            } elsif (USE_XML_BARE) {
+                $wayId = $wayElement->{id}->{value};
+            } else {
+                $wayId = $wayElement->getAttribute("id");
+            }
+
+	    if ($wayid_exists{$wayId}) {            # for all split-up areas
 		$this_xml_wayid_is_dup{$wayId} = 1; # for this split-up area
 		next;
 	    }
@@ -338,7 +460,17 @@ sub draw_openstreetmap_maps {
 
             my $use_this_way = 0;
 
-	    my @nodeid = map { $_->getAttribute("ref"); } $wayElement->findnodes("nd");
+            my @nodeid;
+            if (USE_XML_FAST) {
+                @nodeid = eval { map { $_->{-ref} } @{$wayElement->{nd}} };
+            } elsif (USE_XML_BARE) {
+                my $nd = $wayElement->{nd};
+                my @nd = (ref $nd eq 'ARRAY') ? @$nd : $nd ? ($nd) : ();
+                @nodeid = map { eval { $_->{ref}->{value} } } @nd;
+            } else {
+                @nodeid = map { $_->getAttribute("ref"); } $wayElement->findnodes("nd");
+            }
+
 	    my $closed = (scalar(@nodeid)) > 2 && ($nodeid[0] == $nodeid[-1]);
 	    pop(@nodeid) if $closed;
 
@@ -347,18 +479,38 @@ sub draw_openstreetmap_maps {
 			   closed => $closed,
 			   points => [],
 			   tags   => {}
-			  };
+                       };
 	    $ways{$wayId} = $result;
 
-	    my @tag = $wayElement->findnodes("tag");
+            my @tag;
+            if (USE_XML_FAST) {
+                @tag = eval { @{$wayElement->{tag}} };
+            } elsif (USE_XML_BARE) {
+                my $tag = eval { $wayElement->{tag} };
+                @tag = (ref $tag eq 'ARRAY') ? @$tag : $tag ? ($tag) : ();
+            } else {
+                @tag = $wayElement->findnodes("tag");
+            }
+
 	    foreach my $tag (@tag) {
-		my $k = $tag->getAttribute("k");
-		my $v = $tag->getAttribute("v");
+                my ($k, $v);
+                if (USE_XML_FAST) {
+                    $k = $tag->{-k};
+                    $v = $tag->{-v};
+                } elsif (USE_XML_BARE) {
+                    $k = $tag->{k}->{value};
+                    $v = $tag->{v}->{value};
+                } else {
+                    $k = $tag->getAttribute("k");
+                    $v = $tag->getAttribute("v");
+                }
                 if (defined $k) {
                     if ($way_use_k{$k}) {
                         $use_this_way = 1;
+                        push(@{$way_k{$k}}, $result);
                     } elsif (defined $v && $way_use_kv{$k,$v}) {
                         $use_this_way = 1;
+                        push(@{$way_kv{$k,$v}}, $result);
                     }
 
                     # DON'T WORRY: a node cannot have two tags with the same key
@@ -375,8 +527,17 @@ sub draw_openstreetmap_maps {
                 $used_wayid{$wayId} = 1;
                 push(@this_xml_used_wayid, $wayId);
                 foreach my $tag (@tag) {
-                    my $k = $tag->getAttribute("k");
-                    my $v = $tag->getAttribute("v");
+                    my ($k, $v);
+                    if (USE_XML_FAST) {
+                        $k = $tag->{-k};
+                        $v = $tag->{-v};
+                    } elsif (USE_XML_BARE) {
+                        $k = $tag->{k}->{value};
+                        $v = $tag->{v}->{value};
+                    } else {
+                        $k = $tag->getAttribute("k");
+                        $v = $tag->getAttribute("v");
+                    }
                     $used_way_tag_k{$k} += 1;
                     $used_way_tag_kv{$k,$v} += 1;
                 }
@@ -385,8 +546,17 @@ sub draw_openstreetmap_maps {
                 $used_wayid{$wayId} = 0;
                 push(@this_xml_unused_wayid, $wayId);
                 foreach my $tag (@tag) {
-                    my $k = $tag->getAttribute("k");
-                    my $v = $tag->getAttribute("v");
+                    my ($k, $v);
+                    if (USE_XML_FAST) {
+                        $k = $tag->{-k};
+                        $v = $tag->{-v};
+                    } elsif (USE_XML_BARE) {
+                        $k = $tag->{k}->{value};
+                        $v = $tag->{v}->{value};
+                    } else {
+                        $k = $tag->getAttribute("k");
+                        $v = $tag->getAttribute("v");
+                    }
                     $unused_way_tag_k{$k} += 1;
                     $unused_way_tag_kv{$k,$v} += 1;
                 }
@@ -400,10 +570,17 @@ sub draw_openstreetmap_maps {
 	    my $area_name = $map_area->{name};
 	    $self->diag("    Indexing for map area $area_name ... ");
 	    foreach my $wayElement (@wayElements) {
-		my $wayId = $wayElement->getAttribute("id");
+                my $wayId;
+                if (USE_XML_FAST) {
+                    $wayId = $wayElement->{-id};
+                } elsif (USE_XML_BARE) {
+                    $wayId = $wayElement->{id}->{value};
+                } else {
+                    $wayId = $wayElement->getAttribute("id");
+                }
+
                 next unless $used_wayid{$wayId};
                 next if $this_xml_wayid_is_dup{$wayId};
-
 		my @nodeid = @{$ways{$wayId}{nodeid}};
 		my @points = map { $node_coords{$_}[$index] } @nodeid;
 		$ways{$wayId}{points}[$index] = \@points;
@@ -442,7 +619,7 @@ sub draw_openstreetmap_maps {
 		    @ways = uniq @ways;
 
 		    $self->warnf("  %s (%d objects) ...\n", $name, scalar(@ways))
-		      if $self->{debug}->{countobjectsbygroup} or $self->{verbose} >= 2;
+                        if $self->{debug}->{countobjectsbygroup} or $self->{verbose} >= 2;
 
 		    my $options = {};
 		    if ($map_area->{scale_stroke_width} && exists $map_area->{zoom}) {
@@ -540,7 +717,7 @@ sub draw_openstreetmap_maps {
 		    @nodes = uniq @nodes;
 
 		    $self->warnf("  %s (%d objects) ...\n", $name, scalar(@nodes))
-		      if $self->{debug}->{countobjectsbygroup} or $self->{verbose} >= 2;
+                        if $self->{debug}->{countobjectsbygroup} or $self->{verbose} >= 2;
 
 		    if ($info->{output_text}) {
 			my $cssClass = $info->{text_class};
