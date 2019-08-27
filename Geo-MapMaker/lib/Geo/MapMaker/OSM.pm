@@ -179,15 +179,15 @@ sub draw_openstreetmap_maps {
     my %node_use_k;             # used
     my %node_use_kv;            # used
 
-    my %used_node_tag_k; # track keys of used nodes' tags, value = arrayref of node ids
-    my %used_node_tag_kv; # track key-values of used nodes' tags, value = arrayref of node ids
-    my %used_way_tag_k; # track keys of used nodes' tags, value = arrayref of node ids
-    my %used_way_tag_kv; # track key-values of used nodes' tags, value = arrayref of node ids
+    my %count_used_node_tag_k; # track keys of used nodes' tags, value = arrayref of node ids
+    my %count_used_node_tag_kv; # track key-values of used nodes' tags, value = arrayref of node ids
+    my %count_used_way_tag_k; # track keys of used nodes' tags, value = arrayref of node ids
+    my %count_used_way_tag_kv; # track key-values of used nodes' tags, value = arrayref of node ids
 
-    my %unused_node_tag_k; # track keys of unused nodes' tags, value = arrayref of node ids
-    my %unused_node_tag_kv; # track key-values of unused nodes' tags, value = arrayref of node ids
-    my %unused_way_tag_k; # track keys of unused nodes' tags, value = arrayref of node ids
-    my %unused_way_tag_kv; # track key-values of unused nodes' tags, value = arrayref of node ids
+    my %count_unused_node_tag_k; # track keys of unused nodes' tags, value = arrayref of node ids
+    my %count_unused_node_tag_kv; # track key-values of unused nodes' tags, value = arrayref of node ids
+    my %count_unused_way_tag_k; # track keys of unused nodes' tags, value = arrayref of node ids
+    my %count_unused_way_tag_kv; # track key-values of unused nodes' tags, value = arrayref of node ids
 
     my %bridge_wayid;
 
@@ -367,14 +367,14 @@ sub draw_openstreetmap_maps {
             if ($use_this_node) {
                 foreach my $tag (@tag) {
                     my ($k, $v) = @$tag;
-                    $used_node_tag_k{$k} += 1;
-                    $used_node_tag_kv{$k,$v} += 1;
+                    $count_used_node_tag_k{$k} += 1;
+                    $count_used_node_tag_kv{$k,$v} += 1;
                 }
             } else {
                 foreach my $tag (@tag) {
                     my ($k, $v) = @$tag;
-                    $unused_node_tag_k{$k} += 1;
-                    $unused_node_tag_kv{$k,$v} += 1;
+                    $count_unused_node_tag_k{$k} += 1;
+                    $count_unused_node_tag_kv{$k,$v} += 1;
                 }
             }
 	}
@@ -475,14 +475,14 @@ sub draw_openstreetmap_maps {
             if ($use_this_way) {
                 foreach my $tag (@tag) {
                     my ($k, $v) = @$tag;
-                    $used_way_tag_k{$k} += 1;
-                    $used_way_tag_kv{$k,$v} += 1;
+                    $count_used_way_tag_k{$k} += 1;
+                    $count_used_way_tag_kv{$k,$v} += 1;
                 }
             } else {
                 foreach my $tag (@tag) {
                     my ($k, $v) = @$tag;
-                    $unused_way_tag_k{$k} += 1;
-                    $unused_way_tag_kv{$k,$v} += 1;
+                    $count_unused_way_tag_k{$k} += 1;
+                    $count_unused_way_tag_kv{$k,$v} += 1;
                 }
             }
 	}
@@ -685,28 +685,28 @@ sub draw_openstreetmap_maps {
     }
 
     $self->write_objects_not_included(
-        \%unused_node_tag_k,
-        \%unused_node_tag_kv,
-        \%unused_way_tag_k,
-        \%unused_way_tag_kv,
+        \%count_unused_node_tag_k,
+        \%count_unused_node_tag_kv,
+        \%count_unused_way_tag_k,
+        \%count_unused_way_tag_kv,
     );
 }
 
 sub write_objects_not_included {
     my ($self,
-        $unused_node_tag_k,
-        $unused_node_tag_kv,
-        $unused_way_tag_k,
-        $unused_way_tag_kv) = @_;
+        $count_unused_node_tag_k,
+        $count_unused_node_tag_kv,
+        $count_unused_way_tag_k,
+        $count_unused_way_tag_kv) = @_;
 
     my $filename = $self->{osm_objects_not_included_filename};
     if (!defined $filename) {
         return;
     }
-    if (!scalar keys %$unused_node_tag_k &&
-            !scalar keys %$unused_node_tag_kv &&
-            !scalar keys %$unused_way_tag_k &&
-            !scalar keys %$unused_way_tag_kv) {
+    if (!scalar keys %$count_unused_node_tag_k &&
+            !scalar keys %$count_unused_node_tag_kv &&
+            !scalar keys %$count_unused_way_tag_k &&
+            !scalar keys %$count_unused_way_tag_kv) {
         if (!unlink($filename)) {
             CORE::warn("cannot unlink $filename: $!\n");
         }
@@ -718,27 +718,27 @@ sub write_objects_not_included {
         return;
     }
 
-    foreach my $key (nsort keys %$unused_node_tag_k) {
-        my $count = $unused_node_tag_k->{$key};
+    foreach my $key (nsort keys %$count_unused_node_tag_k) {
+        my $count = $count_unused_node_tag_k->{$key};
         my $tagkey = $key;
         $tagkey //= '(undef)';
         printf $fh ("%8s NODE %-32s\n", $count, $tagkey);
     }
-    foreach my $key (nsort keys %$unused_node_tag_kv) {
-        my $count = $unused_node_tag_kv->{$key};
+    foreach my $key (nsort keys %$count_unused_node_tag_kv) {
+        my $count = $count_unused_node_tag_kv->{$key};
         my ($tagkey, $tagvalue) = split($;, $key);
         $tagkey //= '(undef)';
         $tagvalue //= '(undef)';
         printf $fh ("%8d NODE %-32s = %-32s\n", $count, $tagkey, $tagvalue);
     }
-    foreach my $key (nsort keys %$unused_way_tag_k) {
-        my $count = $unused_way_tag_k->{$key};
+    foreach my $key (nsort keys %$count_unused_way_tag_k) {
+        my $count = $count_unused_way_tag_k->{$key};
         my $tagkey = $key;
         $tagkey //= '(undef)';
         printf $fh ("%8d WAY %-32s\n", $count, $tagkey);
     }
-    foreach my $key (nsort keys %$unused_way_tag_kv) {
-        my $count = $unused_node_tag_kv->{$key};
+    foreach my $key (nsort keys %$count_unused_way_tag_kv) {
+        my $count = $count_unused_node_tag_kv->{$key};
         my ($tagkey, $tagvalue) = split($;, $key);
         $tagkey //= '(undef)';
         $tagvalue //= '(undef)';
