@@ -172,22 +172,20 @@ sub draw_openstreetmap_maps {
     my %nodeid_exists;
     my %wayid_exists;
 
-    # track the same but for determining whether to use each node or
-    # way.  NOTE: $..._use_kv{$k,$v} does not imply $..._use_k{$k}
-    my %way_use_k;              # used
-    my %way_use_kv;             # used
-    my %node_use_k;             # used
-    my %node_use_kv;            # used
+    # flags by key/value for determining if nodes/ways are collected
+    my %way_use_k;
+    my %way_use_kv;
+    my %node_use_k;
+    my %node_use_kv;
 
-    my %count_used_node_tag_k; # track keys of used nodes' tags, value = arrayref of node ids
-    my %count_used_node_tag_kv; # track key-values of used nodes' tags, value = arrayref of node ids
-    my %count_used_way_tag_k; # track keys of used nodes' tags, value = arrayref of node ids
-    my %count_used_way_tag_kv; # track key-values of used nodes' tags, value = arrayref of node ids
-
-    my %count_unused_node_tag_k; # track keys of unused nodes' tags, value = arrayref of node ids
-    my %count_unused_node_tag_kv; # track key-values of unused nodes' tags, value = arrayref of node ids
-    my %count_unused_way_tag_k; # track keys of unused nodes' tags, value = arrayref of node ids
-    my %count_unused_way_tag_kv; # track key-values of unused nodes' tags, value = arrayref of node ids
+    my %count_used_node_tag_k;
+    my %count_used_node_tag_kv;
+    my %count_used_way_tag_k;
+    my %count_used_way_tag_kv;
+    my %count_unused_node_tag_k;
+    my %count_unused_node_tag_kv;
+    my %count_unused_way_tag_k;
+    my %count_unused_way_tag_kv;
 
     my %bridge_wayid;
 
