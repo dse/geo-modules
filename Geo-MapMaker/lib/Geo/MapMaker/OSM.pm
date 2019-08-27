@@ -169,25 +169,25 @@ sub draw_openstreetmap_maps {
 
     # keep track of which <node> and <way> ids we've iterated through
     # because they can be duplicated across different XML files
-    my %nodeid_exists;
-    my %wayid_exists;
+    my $nodeid_exists = {};
+    my $wayid_exists  = {};
 
     # flags by key/value for determining if nodes/ways are collected
-    my %way_use_k;
-    my %way_use_kv;
-    my %node_use_k;
-    my %node_use_kv;
+    my $way_use_k = {};
+    my $way_use_kv = {};
+    my $node_use_k = {};
+    my $node_use_kv = {};
 
-    my %count_used_node_tag_k;
-    my %count_used_node_tag_kv;
-    my %count_used_way_tag_k;
-    my %count_used_way_tag_kv;
-    my %count_unused_node_tag_k;
-    my %count_unused_node_tag_kv;
-    my %count_unused_way_tag_k;
-    my %count_unused_way_tag_kv;
+    my $count_used_node_tag_k = {};
+    my $count_used_node_tag_kv = {};
+    my $count_used_way_tag_k = {};
+    my $count_used_way_tag_kv = {};
+    my $count_unused_node_tag_k = {};
+    my $count_unused_node_tag_kv = {};
+    my $count_unused_way_tag_k = {};
+    my $count_unused_way_tag_kv = {};
 
-    my %bridge_wayid;
+    my $bridge_wayid = {};
 
     my @deferred;
 
@@ -199,15 +199,15 @@ sub draw_openstreetmap_maps {
             if (defined $k) {
                 if ($type eq 'way') {
                     if (defined $v) {
-                        $way_use_kv{$k,$v} = 1;
+                        $way_use_kv->{$k,$v} = 1;
                     } else {
-                        $way_use_k{$k} = 1;
+                        $way_use_k->{$k} = 1;
                     }
                 } elsif ($type eq 'node') {
                     if (defined $v) {
-                        $node_use_kv{$k,$v} = 1;
+                        $node_use_kv->{$k,$v} = 1;
                     } else {
-                        $node_use_k{$k} = 1;
+                        $node_use_k->{$k} = 1;
                     }
                 }
             }
@@ -241,37 +241,40 @@ sub draw_openstreetmap_maps {
 
 	$self->diag("  Finding <node> elements ... ");
 
-        my @nodeElements;
+        my $nodeElements = [];
+
         if (USE_XML_FAST) {
-            @nodeElements = @{$docHash->{osm}->[0]->{node}};
+            @$nodeElements = @{$docHash->{osm}->[0]->{node}};
         } elsif (USE_XML_BARE) {
             my $node = $bareTree->{osm}->{node};
-            @nodeElements = (ref $node eq 'ARRAY') ? @$node : $node ? ($node) : ();
+            @$nodeElements = (ref $node eq 'ARRAY') ? @$node : $node ? ($node) : ();
         } else {
-            @nodeElements = $doc->findnodes("/osm/node");
+            @$nodeElements = $doc->findnodes("/osm/node");
         }
 
         # data for each <node> element
-	my %nodes;
+        my $nodeData = {};
 
         # data for each <way> element
-        my %ways;
+        my $wayData = {};
 
         # list nodes/ways by key, key/value
-        my %node_k;
-        my %node_kv;
-	my %way_k;
-	my %way_kv;
+        my $node_k = {};
+        my $node_kv = {};
+	my $way_k = {};
+	my $way_kv = {};
 
         # lists of <node> and <way> ids to exclude for this XML file
         # due to being duplicated from earlier XML files
-	my %this_xml_nodeid_is_dup;
-	my %this_xml_wayid_is_dup;
+	my $this_xml_nodeid_is_dup = {};
+	my $this_xml_wayid_is_dup = {};
 
-	$self->diag(scalar(@nodeElements) . " <node> elements found; indexing ...\n");
+	$self->diag(scalar(@$nodeElements) . " <node> elements found; indexing ...\n");
 
         my $converter = $self->{converter};
 
+        # Collect *all* <node>s' coordinates.  Even if a <node> is not
+        # used directly, it could be used by a <way>.
 	foreach my $map_area (@{$self->{_map_areas}}) {
 	    $self->update_scale($map_area);
 	    my $index = $map_area->{index};
@@ -281,7 +284,7 @@ sub draw_openstreetmap_maps {
 	    my $east_svg  = $self->east_outer_map_boundary_svg;
 	    my $north_svg = $self->north_outer_map_boundary_svg;
 	    my $south_svg = $self->south_outer_map_boundary_svg;
-	    foreach my $nodeElement (@nodeElements) {
+	    foreach my $nodeElement (@$nodeElements) {
                 my $nodeId;
                 my $lat_deg;
                 my $lon_deg;
@@ -302,12 +305,12 @@ sub draw_openstreetmap_maps {
 		my $xzone = ($svgx < $west_svg)  ? -1 : ($svgx > $east_svg)  ? 1 : 0;
 		my $yzone = ($svgy < $north_svg) ? -1 : ($svgy > $south_svg) ? 1 : 0;
 		my $result = [$svgx, $svgy, $xzone, $yzone];
-		$nodes{$nodeId}[$index] = $result;
+		$nodeData->{$nodeId}[$index] = $result;
 	    }
 	}
 	$self->diag("done.\n");
 
-	foreach my $nodeElement (@nodeElements) {
+	foreach my $nodeElement (@$nodeElements) {
             my $nodeId;
             if (USE_XML_FAST) {
                 $nodeId = $nodeElement->{-id};
@@ -317,11 +320,11 @@ sub draw_openstreetmap_maps {
                 $nodeId = $nodeElement->getAttribute("id");
             }
 
-	    if ($nodeid_exists{$nodeId}) {            # for all split-up areas
-		$this_xml_nodeid_is_dup{$nodeId} = 1; # for this split-up area
+	    if ($nodeid_exists->{$nodeId}) {            # for all split-up areas
+		$this_xml_nodeid_is_dup->{$nodeId} = 1; # for this split-up area
 		next;
 	    }
-	    $nodeid_exists{$nodeId} = 1;
+	    $nodeid_exists->{$nodeId} = 1;
 
             my $use_this_node = 0;
 
@@ -348,13 +351,13 @@ sub draw_openstreetmap_maps {
 	    foreach my $tag (@tag) {
                 my ($k, $v) = @$tag;
                 if (defined $k) {
-                    if ($node_use_k{$k}) {
+                    if ($node_use_k->{$k}) {
                         $use_this_node = 1;
-                        push(@{$node_k{$k}}, $result);
+                        push(@{$node_k->{$k}}, $result);
                     }
-                    if (defined $v && $node_use_kv{$k,$v}) {
+                    if (defined $v && $node_use_kv->{$k,$v}) {
                         $use_this_node = 1;
-                        push(@{$node_kv{$k,$v}}, $result);
+                        push(@{$node_kv->{$k,$v}}, $result);
                     }
 
                     # DON'T WORRY: a node cannot have two tags with the same key
@@ -365,14 +368,14 @@ sub draw_openstreetmap_maps {
             if ($use_this_node) {
                 foreach my $tag (@tag) {
                     my ($k, $v) = @$tag;
-                    $count_used_node_tag_k{$k} += 1;
-                    $count_used_node_tag_kv{$k,$v} += 1;
+                    $count_used_node_tag_k->{$k} += 1;
+                    $count_used_node_tag_kv->{$k,$v} += 1;
                 }
             } else {
                 foreach my $tag (@tag) {
                     my ($k, $v) = @$tag;
-                    $count_unused_node_tag_k{$k} += 1;
-                    $count_unused_node_tag_kv{$k,$v} += 1;
+                    $count_unused_node_tag_k->{$k} += 1;
+                    $count_unused_node_tag_kv->{$k,$v} += 1;
                 }
             }
 	}
@@ -380,18 +383,19 @@ sub draw_openstreetmap_maps {
 
 	$self->diag("  Finding <way> elements ... ");
 
-        my @wayElements;
+        my $wayElements = [];
+
         if (USE_XML_FAST) {
-            @wayElements = @{$docHash->{osm}->[0]->{way}};
+            @$wayElements = @{$docHash->{osm}->[0]->{way}};
         } elsif (USE_XML_BARE) {
             my $way = $bareTree->{osm}->{way};
-            @wayElements = (ref $way eq 'ARRAY') ? @$way : $way ? ($way) : ();
+            @$wayElements = (ref $way eq 'ARRAY') ? @$way : $way ? ($way) : ();
         } else {
-            @wayElements = $doc->findnodes("/osm/way");
+            @$wayElements = $doc->findnodes("/osm/way");
         }
 
-	$self->diag(scalar(@wayElements) . " <way> elements found; indexing ... ");
-	foreach my $wayElement (@wayElements) {
+	$self->diag(scalar(@$wayElements) . " <way> elements found; indexing ... ");
+	foreach my $wayElement (@$wayElements) {
             my $wayId;
             if (USE_XML_FAST) {
                 $wayId = $wayElement->{-id};
@@ -401,11 +405,11 @@ sub draw_openstreetmap_maps {
                 $wayId = $wayElement->getAttribute("id");
             }
 
-	    if ($wayid_exists{$wayId}) {            # for all split-up areas
-		$this_xml_wayid_is_dup{$wayId} = 1; # for this split-up area
+	    if ($wayid_exists->{$wayId}) {            # for all split-up areas
+		$this_xml_wayid_is_dup->{$wayId} = 1; # for this split-up area
 		next;
 	    }
-	    $wayid_exists{$wayId} = 1;
+	    $wayid_exists->{$wayId} = 1;
 
             my $use_this_way = 0;
 
@@ -429,7 +433,7 @@ sub draw_openstreetmap_maps {
 			   points => [],
 			   tags   => {}
                        };
-	    $ways{$wayId} = $result;
+	    $wayData->{$wayId} = $result;
 
             my @tagElements;
             if (USE_XML_FAST) {
@@ -453,19 +457,19 @@ sub draw_openstreetmap_maps {
 	    foreach my $tag (@tag) {
                 my ($k, $v) = @$tag;
                 if (defined $k) {
-                    if ($way_use_k{$k}) {
+                    if ($way_use_k->{$k}) {
                         $use_this_way = 1;
-                        push(@{$way_k{$k}}, $result);
-                    } elsif (defined $v && $way_use_kv{$k,$v}) {
+                        push(@{$way_k->{$k}}, $result);
+                    } elsif (defined $v && $way_use_kv->{$k,$v}) {
                         $use_this_way = 1;
-                        push(@{$way_kv{$k,$v}}, $result);
+                        push(@{$way_kv->{$k,$v}}, $result);
                     }
 
                     # DON'T WORRY: a node cannot have two tags with the same key
                     $result->{tags}->{$k} = $v if defined $v;
 
 		    if ($k eq "bridge" and defined $v and $v eq "yes") {
-			$bridge_wayid{$wayId} = 1;
+			$bridge_wayid->{$wayId} = 1;
 		    }
                 }
 	    }
@@ -473,14 +477,14 @@ sub draw_openstreetmap_maps {
             if ($use_this_way) {
                 foreach my $tag (@tag) {
                     my ($k, $v) = @$tag;
-                    $count_used_way_tag_k{$k} += 1;
-                    $count_used_way_tag_kv{$k,$v} += 1;
+                    $count_used_way_tag_k->{$k} += 1;
+                    $count_used_way_tag_kv->{$k,$v} += 1;
                 }
             } else {
                 foreach my $tag (@tag) {
                     my ($k, $v) = @$tag;
-                    $count_unused_way_tag_k{$k} += 1;
-                    $count_unused_way_tag_kv{$k,$v} += 1;
+                    $count_unused_way_tag_k->{$k} += 1;
+                    $count_unused_way_tag_kv->{$k,$v} += 1;
                 }
             }
 	}
@@ -492,7 +496,7 @@ sub draw_openstreetmap_maps {
                 my $index = $map_area->{index};
                 my $area_name = $map_area->{name};
                 $self->diag("    Indexing for map area $area_name ... ");
-                foreach my $wayElement (@wayElements) {
+                foreach my $wayElement (@$wayElements) {
                     my $wayId;
                     if (USE_XML_FAST) {
                         $wayId = $wayElement->{-id};
@@ -501,10 +505,10 @@ sub draw_openstreetmap_maps {
                     } else {
                         $wayId = $wayElement->getAttribute("id");
                     }
-                    next if $this_xml_wayid_is_dup{$wayId};
-                    my @nodeid = @{$ways{$wayId}{nodeid}};
-                    my @points = map { $nodes{$_}[$index] } @nodeid;
-                    $ways{$wayId}{points}[$index] = \@points;
+                    next if $this_xml_wayid_is_dup->{$wayId};
+                    my @nodeid = @{$wayData->{$wayId}{nodeid}};
+                    my @points = map { $nodeData->{$_}[$index] } @nodeid;
+                    $wayData->{$wayId}{points}[$index] = \@points;
                 }
                 $self->diag("done.\n");
             }
@@ -531,9 +535,9 @@ sub draw_openstreetmap_maps {
                             my $v = $tag->{v};
                             if (defined $k) {
                                 if (defined $v) {
-                                    eval { push(@ways, @{$way_kv{$k,$v}}); };
+                                    eval { push(@ways, @{$way_kv->{$k,$v}}); };
                                 } else {
-                                    eval { push(@ways, @{$way_k{$k}}); };
+                                    eval { push(@ways, @{$way_k->{$k}}); };
                                 }
                             }
                         }
@@ -556,7 +560,7 @@ sub draw_openstreetmap_maps {
 
                         foreach my $way (@ways) {
                             my $wayid = $way->{id};
-                            my $is_bridge = $bridge_wayid{$wayid};
+                            my $is_bridge = $bridge_wayid->{$wayid};
                             my $defer = 0;
 
                             $way->{used} = 1;
@@ -629,9 +633,9 @@ sub draw_openstreetmap_maps {
                             my $v = $tag->{v};
                             if (defined $k) {
                                 if (defined $v) {
-                                    eval { push(@nodes, @{$node_kv{$k, $v}}); };
+                                    eval { push(@nodes, @{$node_kv->{$k, $v}}); };
                                 } else {
-                                    eval { push(@nodes, @{$node_k{$k}}); };
+                                    eval { push(@nodes, @{$node_k->{$k}}); };
                                 }
                             }
                         }
@@ -644,7 +648,7 @@ sub draw_openstreetmap_maps {
                             my $cssClass = $info->{text_class};
                             foreach my $node (@nodes) {
                                 $node->{used} = 1;
-                                my $coords = $nodes{$node->{id}}[$index];
+                                my $coords = $nodeData->{$node->{id}}[$index];
                                 my ($x, $y) = @$coords;
                                 # don't care about if out of bounds i guess
                                 my $text = $node->{tags}->{name};
@@ -660,7 +664,7 @@ sub draw_openstreetmap_maps {
                             my $r = $self->get_style_property(class => $cssClass, property => "r");
                             foreach my $node (@nodes) {
                                 $node->{used} = 1;
-                                my $coords = $nodes{$node->{id}}[$index];
+                                my $coords = $nodeData->{$node->{id}}[$index];
                                 my ($x, $y) = @$coords;
                                 # don't care about if out of bounds i guess
                                 my $cssId  = $map_area->{id_prefix} . "cn" . $node->{id};
@@ -683,10 +687,10 @@ sub draw_openstreetmap_maps {
     }
 
     $self->write_objects_not_included(
-        \%count_unused_node_tag_k,
-        \%count_unused_node_tag_kv,
-        \%count_unused_way_tag_k,
-        \%count_unused_way_tag_kv,
+        $count_unused_node_tag_k,
+        $count_unused_node_tag_kv,
+        $count_unused_way_tag_k,
+        $count_unused_way_tag_kv,
     );
 }
 
