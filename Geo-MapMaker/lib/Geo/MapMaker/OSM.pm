@@ -247,6 +247,8 @@ sub draw_openstreetmap_maps {
 
 	$self->diag(scalar(@nodeElements) . " <node> elements found; indexing ...\n");
 
+        my $converter = $self->{converter};
+
 	foreach my $map_area (@{$self->{_map_areas}}) {
 	    $self->update_scale($map_area);
 	    my $index = $map_area->{index};
@@ -260,9 +262,9 @@ sub draw_openstreetmap_maps {
 		my $nodeId = $nodeElement->getAttribute("id");
 		my $lat_deg = 0 + $nodeElement->getAttribute("lat");
 		my $lon_deg = 0 + $nodeElement->getAttribute("lon");
-		my ($svgx, $svgy) = $self->{converter}->lon_lat_deg_to_x_y_px($lon_deg, $lat_deg);
-		my $xzone = ($svgx <= $west_svg)  ? -1 : ($svgx >= $east_svg)  ? 1 : 0;
-		my $yzone = ($svgy <= $north_svg) ? -1 : ($svgy >= $south_svg) ? 1 : 0;
+		my ($svgx, $svgy) = $converter->lon_lat_deg_to_x_y_px($lon_deg, $lat_deg);
+		my $xzone = ($svgx < $west_svg)  ? -1 : ($svgx > $east_svg)  ? 1 : 0;
+		my $yzone = ($svgy < $north_svg) ? -1 : ($svgy > $south_svg) ? 1 : 0;
 		my $result = [$svgx, $svgy, $xzone, $yzone];
 		$node_coords{$nodeId}[$index] = $result;
 	    }
@@ -307,8 +309,8 @@ sub draw_openstreetmap_maps {
                 foreach my $tag (@tag) {
                     my $k = $tag->getAttribute("k");
                     my $v = $tag->getAttribute("v");
-                    push(@{$used_node_tag_k{$k}}, $nodeId);
-                    push(@{$used_node_tag_kv{$k,$v}}, $nodeId);
+                    $used_node_tag_k{$k} += 1;
+                    $used_node_tag_kv{$k,$v} += 1;
                 }
             } else {
                 push(@unused_nodeid, $nodeId);
@@ -317,8 +319,8 @@ sub draw_openstreetmap_maps {
                 foreach my $tag (@tag) {
                     my $k = $tag->getAttribute("k");
                     my $v = $tag->getAttribute("v");
-                    push(@{$unused_node_tag_k{$k}}, $nodeId);
-                    push(@{$unused_node_tag_kv{$k,$v}}, $nodeId);
+                    $unused_node_tag_k{$k} += 1;
+                    $unused_node_tag_kv{$k,$v} += 1;
                 }
             }
 	}
@@ -377,8 +379,8 @@ sub draw_openstreetmap_maps {
                 foreach my $tag (@tag) {
                     my $k = $tag->getAttribute("k");
                     my $v = $tag->getAttribute("v");
-                    push(@{$used_way_tag_k{$k}}, $wayId);
-                    push(@{$used_way_tag_kv{$k,$v}}, $wayId);
+                    $used_way_tag_k{$k} += 1;
+                    $used_way_tag_kv{$k,$v} += 1;
                 }
             } else {
                 push(@unused_wayid, $wayId);
@@ -387,8 +389,8 @@ sub draw_openstreetmap_maps {
                 foreach my $tag (@tag) {
                     my $k = $tag->getAttribute("k");
                     my $v = $tag->getAttribute("v");
-                    push(@{$unused_way_tag_k{$k}}, $wayId);
-                    push(@{$unused_way_tag_kv{$k,$v}}, $wayId);
+                    $unused_way_tag_k{$k} += 1;
+                    $unused_way_tag_kv{$k,$v} += 1;
                 }
             }
 	}
@@ -571,7 +573,6 @@ sub draw_openstreetmap_maps {
 			    $group->appendChild($circle);
 			}
 		    }
-
 		}
 	    }
 
@@ -619,22 +620,22 @@ sub write_objects_not_included {
     }
 
     foreach my $key (nsort keys %$unused_node_tag_k) {
-        my $count = scalar @{$unused_node_tag_k->{$key}};
+        my $count = $unused_node_tag_k->{$key};
         my $tagkey = $key;
         printf $fh ("%8s NODE %-32s\n", $count, $tagkey);
     }
     foreach my $key (nsort keys %$unused_node_tag_kv) {
-        my $count = scalar @{$unused_node_tag_kv->{$key}};
+        my $count = $unused_node_tag_kv->{$key};
         my ($tagkey, $tagvalue) = split($;, $key);
         printf $fh ("%8s NODE %-32s = %-32s\n", $count, $tagkey, $tagvalue);
     }
     foreach my $key (nsort keys %$unused_way_tag_k) {
-        my $count = scalar @{$unused_way_tag_k->{$key}};
+        my $count = $unused_way_tag_k->{$key};
         my $tagkey = $key;
         printf $fh ("%8s WAY %-32s\n", $count, $tagkey);
     }
     foreach my $key (nsort keys %$unused_way_tag_kv) {
-        my $count = scalar @{$unused_node_tag_kv->{$key}};
+        my $count = $unused_node_tag_kv->{$key};
         my ($tagkey, $tagvalue) = split($;, $key);
         printf $fh ("%8s WAY %-32s = %-32s\n", $count, $tagkey, $tagvalue);
     }
