@@ -13,7 +13,34 @@ use v5.10.0;
 use Geo::MapMaker::Constants qw(:all);
 
 use fields qw(_osm_xml_filenames
-              osm_layers);
+              osm_layers
+
+              _nodeid_exists
+              _wayid_exists
+              _way_use_k
+              _way_use_kv
+              _count_used_node_tag_k
+              _count_used_node_tag_kv
+              _count_used_way_tag_k
+              _count_used_way_tag_kv
+              _count_unused_node_tag_k
+              _count_unused_node_tag_kv
+              _count_unused_way_tag_k
+              _count_unused_way_tag_kv
+              _bridge_wayid
+              _deferreds
+              _nodeData
+              _wayData
+              _node_k
+              _node_kv
+              _way_k
+              _way_kv
+              _this_xml_nodeid_is_dup
+              _this_xml_wayid_is_dup
+              _nodeElements
+              _wayElements
+              _usedWayElements
+);
 
 use LWP::Simple;                # RC_NOT_MODIFIED
 use List::MoreUtils qw(all uniq);
@@ -384,6 +411,7 @@ sub draw_openstreetmap_maps {
 	$self->diag("  Finding <way> elements ... ");
 
         my $wayElements = [];
+        my $usedWayElements = [];
 
         if (USE_XML_FAST) {
             @$wayElements = @{$docHash->{osm}->[0]->{way}};
@@ -480,6 +508,7 @@ sub draw_openstreetmap_maps {
                     $count_used_way_tag_k->{$k} += 1;
                     $count_used_way_tag_kv->{$k,$v} += 1;
                 }
+                push(@$usedWayElements, $wayElement);
             } else {
                 foreach my $tag (@tag) {
                     my ($k, $v) = @$tag;
@@ -491,12 +520,13 @@ sub draw_openstreetmap_maps {
 	$self->diag("done.\n");
 
         if (!$ENV{COUNT_UNUSED_ONLY}) {
+
             foreach my $map_area (@{$self->{_map_areas}}) {
                 $self->update_scale($map_area);
                 my $index = $map_area->{index};
                 my $area_name = $map_area->{name};
                 $self->diag("    Indexing for map area $area_name ... ");
-                foreach my $wayElement (@$wayElements) {
+                foreach my $wayElement (@$usedWayElements) {
                     my $wayId;
                     if (USE_XML_FAST) {
                         $wayId = $wayElement->{-id};
@@ -505,7 +535,6 @@ sub draw_openstreetmap_maps {
                     } else {
                         $wayId = $wayElement->getAttribute("id");
                     }
-                    next if $this_xml_wayid_is_dup->{$wayId};
                     my @nodeid = @{$wayData->{$wayId}{nodeid}};
                     my @points = map { $nodeData->{$_}[$index] } @nodeid;
                     $wayData->{$wayId}{points}[$index] = \@points;
