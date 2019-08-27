@@ -137,6 +137,7 @@ BEGIN {
 		  bottom_point
 
                   osm_features_not_included_filename
+                  osm_objects_not_included_filename
 
                   _id_counter
                   _xml_debug_info
@@ -218,7 +219,7 @@ sub new {
 	my $mapmaker_yaml_filename = $self->mapmaker_yaml_filename($filename);
 	$self->load_mapmaker_yaml($mapmaker_yaml_filename);
     }
-    $self->{osm_features_not_included_filename} = undef;
+
     return $self;
 }
 
