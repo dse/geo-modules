@@ -10,10 +10,8 @@ use strict;
 
 use Geo::MapMaker::Constants qw(:all);
 
-use fields qw(
-		 _osm_xml_filenames
-		 osm_layers
-         );
+use fields qw(_osm_xml_filenames
+              osm_layers);
 
 use LWP::Simple;                # RC_NOT_MODIFIED
 use List::MoreUtils qw(all uniq);
