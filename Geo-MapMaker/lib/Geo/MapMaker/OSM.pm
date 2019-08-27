@@ -173,23 +173,23 @@ sub draw_openstreetmap_maps {
     my $wayid_exists  = {};
 
     # flags by key/value for determining if nodes/ways are collected
-    my $way_use_k = {};
-    my $way_use_kv = {};
-    my $node_use_k = {};
+    my $way_use_k   = {};
+    my $way_use_kv  = {};
+    my $node_use_k  = {};
     my $node_use_kv = {};
 
-    my $count_used_node_tag_k = {};
-    my $count_used_node_tag_kv = {};
-    my $count_used_way_tag_k = {};
-    my $count_used_way_tag_kv = {};
-    my $count_unused_node_tag_k = {};
+    my $count_used_node_tag_k    = {};
+    my $count_used_node_tag_kv   = {};
+    my $count_used_way_tag_k     = {};
+    my $count_used_way_tag_kv    = {};
+    my $count_unused_node_tag_k  = {};
     my $count_unused_node_tag_kv = {};
-    my $count_unused_way_tag_k = {};
-    my $count_unused_way_tag_kv = {};
+    my $count_unused_way_tag_k   = {};
+    my $count_unused_way_tag_kv  = {};
 
     my $bridge_wayid = {};
 
-    my @deferred;
+    my $deferreds = [];
 
     foreach my $info (@{$self->{osm_layers}}) {
 	my $tags = $info->{tags};
@@ -618,7 +618,7 @@ sub draw_openstreetmap_maps {
                             }
 
                             if ($defer) {
-                                push(@deferred, @append);
+                                push(@$deferreds, @append);
                             } else {
                                 foreach my $append (@append) {
                                     my ($parent, $child) = @$append;
@@ -681,7 +681,7 @@ sub draw_openstreetmap_maps {
 	}
     }
 
-    foreach my $deferred (@deferred) {
+    foreach my $deferred (@$deferreds) {
 	my ($parent, $child) = @$deferred;
 	$parent->appendChild($child);
     }
