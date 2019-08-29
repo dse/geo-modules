@@ -17,12 +17,27 @@ use fields qw(_osm_xml_filenames
               osm_layers
 
               _doc
+
               _nodeid_exists
               _wayid_exists
               _node_use_k
               _node_use_kv
               _way_use_k
               _way_use_kv
+              _node_elements
+              _way_elements
+              _used_way_elements
+              _nodeid_is_dup
+              _wayid_is_dup
+              _node_data
+              _way_data
+              _node_k
+              _node_kv
+              _way_k
+              _way_kv
+
+              _bridge_wayid
+
               _count_used_node_tag_k
               _count_used_node_tag_kv
               _count_used_way_tag_k
@@ -31,19 +46,8 @@ use fields qw(_osm_xml_filenames
               _count_unused_node_tag_kv
               _count_unused_way_tag_k
               _count_unused_way_tag_kv
-              _bridge_wayid
+
               _deferreds
-              _nodeData
-              _wayData
-              _node_k
-              _node_kv
-              _way_k
-              _way_kv
-              _this_xml_nodeid_is_dup
-              _this_xml_wayid_is_dup
-              _nodeElements
-              _wayElements
-              _usedWayElements
 );
 
 use LWP::Simple;                # RC_NOT_MODIFIED
@@ -245,10 +249,10 @@ sub draw_openstreetmap_maps {
         $self->diag("done.\n");
 
         # data for each <node> element
-        local $self->{_nodeData} = my $nodeData = {};
+        local $self->{_node_data} = my $node_data = {};
 
         # data for each <way> element
-        local $self->{_wayData} = my $wayData = {};
+        local $self->{_way_data} = my $way_data = {};
 
         # list nodes/ways by key, key/value
         local $self->{_node_k} = my $node_k = {};
@@ -258,10 +262,10 @@ sub draw_openstreetmap_maps {
 
         # lists of <node> and <way> ids to exclude for this XML file
         # due to being duplicated from earlier XML files
-        local $self->{_this_xml_nodeid_is_dup} = my $this_xml_nodeid_is_dup = {};
-        local $self->{_this_xml_wayid_is_dup}  = my $this_xml_wayid_is_dup = {};
+        local $self->{_nodeid_is_dup} = my $this_xml_nodeid_is_dup = {};
+        local $self->{_wayid_is_dup}  = my $this_xml_wayid_is_dup = {};
 
-        local $self->{_nodeElements}           = my $nodeElements = [];
+        local $self->{_node_elements}           = my $node_elements = [];
 
         my $converter = $self->{converter};
 
@@ -269,8 +273,8 @@ sub draw_openstreetmap_maps {
         $self->collect_node_coordinates();
         $self->collect_nodes();
 
-        local $self->{_wayElements}     = my $wayElements = [];
-        local $self->{_usedWayElements} = my $usedWayElements = [];
+        local $self->{_way_elements}     = my $way_elements = [];
+        local $self->{_used_way_elements} = my $used_way_elements = [];
 
         $self->set_way_elements();
         $self->collect_ways();
@@ -379,9 +383,9 @@ sub collect_k_v_flags {
 sub collect_nodes {
     my $self = shift;
 
-    my $nodeElements = $self->{_nodeElements};
+    my $node_elements = $self->{_node_elements};
     my $nodeid_exists = $self->{_nodeid_exists};
-    my $this_xml_nodeid_is_dup = $self->{_this_xml_nodeid_is_dup};
+    my $this_xml_nodeid_is_dup = $self->{_nodeid_is_dup};
     my $node_use_k = $self->{_node_use_k};
     my $node_use_kv = $self->{_node_use_kv};
     my $count_used_node_tag_k = $self->{_count_used_node_tag_k};
@@ -391,7 +395,7 @@ sub collect_nodes {
     my $node_k = $self->{_node_k};
     my $node_kv = $self->{_node_kv};
 
-    foreach my $nodeElement (@$nodeElements) {
+    foreach my $nodeElement (@$node_elements) {
         my $nodeId;
         if (USE_XML_FAST) {
             $nodeId = $nodeElement->{-id};
@@ -411,22 +415,22 @@ sub collect_nodes {
 
         my $result = { id => $nodeId, tags => {} };
 
-        my @tagElements;
+        my @tag_elements;
         if (USE_XML_FAST) {
-            @tagElements = eval { @{$nodeElement->{tag}} };
+            @tag_elements = eval { @{$nodeElement->{tag}} };
         } elsif (USE_XML_BARE) {
-            @tagElements = eval { @{$nodeElement->{tag}} };
+            @tag_elements = eval { @{$nodeElement->{tag}} };
         } else {
-            @tagElements = $nodeElement->findnodes("tag");
+            @tag_elements = $nodeElement->findnodes("tag");
         }
 
         my @tag;
         if (USE_XML_FAST) {
-            @tag = map { [$_->{-k}, $_->{-v}] } @tagElements;
+            @tag = map { [$_->{-k}, $_->{-v}] } @tag_elements;
         } elsif (USE_XML_BARE) {
-            @tag = map { [$_->{k}->{value}, $_->{v}->{value}] } @tagElements;
+            @tag = map { [$_->{k}->{value}, $_->{v}->{value}] } @tag_elements;
         } else {
-            @tag = map { [$_->getAttribute('k'), $_->getAttribute('v')] } @tagElements;
+            @tag = map { [$_->getAttribute('k'), $_->getAttribute('v')] } @tag_elements;
         }
 
         foreach my $tag (@tag) {
@@ -450,6 +454,7 @@ sub collect_nodes {
             foreach my $tag (@tag) {
                 my ($k, $v) = @$tag;
                 next if $k eq 'name';
+                next if $k eq 'ref';
                 $count_used_node_tag_k->{$k} += 1;
                 next if $k =~ m{:};
                 $count_used_node_tag_kv->{$k,$v} += 1;
@@ -458,6 +463,7 @@ sub collect_nodes {
             foreach my $tag (@tag) {
                 my ($k, $v) = @$tag;
                 next if $k eq 'name';
+                next if $k eq 'ref';
                 $count_unused_node_tag_k->{$k} += 1;
                 next if $k =~ m{:};
                 $count_unused_node_tag_kv->{$k,$v} += 1;
@@ -466,18 +472,38 @@ sub collect_nodes {
     }
 }
 
+our $IS_IDENTIFYING_TAG;
+BEGIN {
+    $IS_IDENTIFYING_TAG = {
+        name => 1,
+        ref => 1,
+        phone => 1,
+        website => 1,
+        opening_hours => 1,
+        brand => 1,
+        description => 1,
+        wikidata => 1,
+    };
+}
+
+sub is_identifying_tag {
+    my $self = shift;
+    my $tag = shift;
+    return if $IS_IDENTIFYING_TAG->{$tag};
+}
+
 sub set_way_elements {
     my $self = shift;
 
-    my $wayElements = $self->{_wayElements};
+    my $way_elements = $self->{_way_elements};
 
     if (USE_XML_FAST) {
-        @$wayElements = @{$self->{_doc}->{osm}->[0]->{way}};
+        @$way_elements = @{$self->{_doc}->{osm}->[0]->{way}};
     } elsif (USE_XML_BARE) {
         my $way = $self->{_doc}->{osm}->{way};
-        @$wayElements = (ref $way eq 'ARRAY') ? @$way : $way ? ($way) : ();
+        @$way_elements = (ref $way eq 'ARRAY') ? @$way : $way ? ($way) : ();
     } else {
-        @$wayElements = $self->{_doc}->findnodes("/osm/way");
+        @$way_elements = $self->{_doc}->findnodes("/osm/way");
     }
 }
 
@@ -494,12 +520,12 @@ sub collect_ways {
     my $bridge_wayid = $self->{_bridge_wayid};
     my $way_k = $self->{_way_k};
     my $way_kv = $self->{_way_kv};
-    my $this_xml_wayid_is_dup = $self->{_this_xml_wayid_is_dup};
-    my $wayElements = $self->{_wayElements};
-    my $usedWayElements = $self->{_usedWayElements};
-    my $wayData = $self->{_wayData};
+    my $this_xml_wayid_is_dup = $self->{_wayid_is_dup};
+    my $way_elements = $self->{_way_elements};
+    my $used_way_elements = $self->{_used_way_elements};
+    my $way_data = $self->{_way_data};
 
-    foreach my $wayElement (@$wayElements) {
+    foreach my $wayElement (@$way_elements) {
         my $wayId;
         if (USE_XML_FAST) {
             $wayId = $wayElement->{-id};
@@ -537,25 +563,25 @@ sub collect_ways {
                        points => [],
                        tags   => {}
                    };
-        $wayData->{$wayId} = $result;
+        $way_data->{$wayId} = $result;
 
-        my @tagElements;
+        my @tag_elements;
         if (USE_XML_FAST) {
-            @tagElements = eval { @{$wayElement->{tag}} };
+            @tag_elements = eval { @{$wayElement->{tag}} };
         } elsif (USE_XML_BARE) {
             my $tag = eval { $wayElement->{tag} };
-            @tagElements = (ref $tag eq 'ARRAY') ? @$tag : $tag ? ($tag) : ();
+            @tag_elements = (ref $tag eq 'ARRAY') ? @$tag : $tag ? ($tag) : ();
         } else {
-            @tagElements = $wayElement->findnodes("tag");
+            @tag_elements = $wayElement->findnodes("tag");
         }
 
         my @tag;
         if (USE_XML_FAST) {
-            @tag = map { [$_->{-k}, $_->{-v}] } @tagElements;
+            @tag = map { [$_->{-k}, $_->{-v}] } @tag_elements;
         } elsif (USE_XML_BARE) {
-            @tag = map { [$_->{k}->{value}, $_->{v}->{value}] } @tagElements;
+            @tag = map { [$_->{k}->{value}, $_->{v}->{value}] } @tag_elements;
         } else {
-            @tag = map { [$_->getAttribute('k'), $_->getAttribute('v')] } @tagElements;
+            @tag = map { [$_->getAttribute('k'), $_->getAttribute('v')] } @tag_elements;
         }
 
         foreach my $tag (@tag) {
@@ -582,15 +608,17 @@ sub collect_ways {
             foreach my $tag (@tag) {
                 my ($k, $v) = @$tag;
                 next if $k eq 'name';
+                next if $k eq 'ref';
                 $count_used_way_tag_k->{$k} += 1;
                 next if $k =~ m{:};
                 $count_used_way_tag_kv->{$k,$v} += 1;
             }
-            push(@$usedWayElements, $wayElement);
+            push(@$used_way_elements, $wayElement);
         } else {
             foreach my $tag (@tag) {
                 my ($k, $v) = @$tag;
                 next if $k eq 'name';
+                next if $k eq 'ref';
                 $count_unused_way_tag_k->{$k} += 1;
                 next if $k =~ m{:};
                 $count_unused_way_tag_kv->{$k,$v} += 1;
@@ -603,9 +631,9 @@ sub collect_ways {
 # used directly, it could be used by a <way>.
 sub collect_node_coordinates {
     my $self = shift;
-    my $nodeElements = $self->{_nodeElements};
+    my $node_elements = $self->{_node_elements};
     my $converter = $self->{converter};
-    my $nodeData = $self->{_nodeData};
+    my $node_data = $self->{_node_data};
     foreach my $map_area (@{$self->{_map_areas}}) {
         $self->update_scale($map_area);
         my $index = $map_area->{index};
@@ -615,7 +643,7 @@ sub collect_node_coordinates {
         my $east_svg  = $self->east_outer_map_boundary_svg;
         my $north_svg = $self->north_outer_map_boundary_svg;
         my $south_svg = $self->south_outer_map_boundary_svg;
-        foreach my $nodeElement (@$nodeElements) {
+        foreach my $nodeElement (@$node_elements) {
             my $nodeId;
             my $lat_deg;
             my $lon_deg;
@@ -636,22 +664,22 @@ sub collect_node_coordinates {
             my $xzone = ($svgx < $west_svg)  ? -1 : ($svgx > $east_svg)  ? 1 : 0;
             my $yzone = ($svgy < $north_svg) ? -1 : ($svgy > $south_svg) ? 1 : 0;
             my $result = [$svgx, $svgy, $xzone, $yzone];
-            $nodeData->{$nodeId}[$index] = $result;
+            $node_data->{$nodeId}[$index] = $result;
         }
     }
 }
 
 sub set_node_elements {
     my $self = shift;
-    my $nodeElements = $self->{_nodeElements};
-    if (!scalar @$nodeElements) {
+    my $node_elements = $self->{_node_elements};
+    if (!scalar @$node_elements) {
         if (USE_XML_FAST) {
-            @$nodeElements = @{$self->{_doc}->{osm}->[0]->{node}};
+            @$node_elements = @{$self->{_doc}->{osm}->[0]->{node}};
         } elsif (USE_XML_BARE) {
             my $node = $self->{_doc}->{osm}->{node};
-            @$nodeElements = (ref $node eq 'ARRAY') ? @$node : $node ? ($node) : ();
+            @$node_elements = (ref $node eq 'ARRAY') ? @$node : $node ? ($node) : ();
         } else {
-            @$nodeElements = $self->{_doc}->findnodes("/osm/node");
+            @$node_elements = $self->{_doc}->findnodes("/osm/node");
         }
     }
 }
@@ -659,15 +687,15 @@ sub set_node_elements {
 sub collect_way_coordinates {
     my $self = shift;
 
-    my $usedWayElements = $self->{_usedWayElements};
-    my $wayData = $self->{_wayData};
-    my $nodeData = $self->{_nodeData};
+    my $used_way_elements = $self->{_used_way_elements};
+    my $way_data = $self->{_way_data};
+    my $node_data = $self->{_node_data};
 
     foreach my $map_area (@{$self->{_map_areas}}) {
         $self->update_scale($map_area);
         my $index = $map_area->{index};
         my $area_name = $map_area->{name};
-        foreach my $wayElement (@$usedWayElements) {
+        foreach my $wayElement (@$used_way_elements) {
             my $wayId;
             if (USE_XML_FAST) {
                 $wayId = $wayElement->{-id};
@@ -676,9 +704,9 @@ sub collect_way_coordinates {
             } else {
                 $wayId = $wayElement->getAttribute("id");
             }
-            my @nodeid = @{$wayData->{$wayId}{nodeid}};
-            my @points = map { $nodeData->{$_}[$index] } @nodeid;
-            $wayData->{$wayId}{points}[$index] = \@points;
+            my @nodeid = @{$way_data->{$wayId}{nodeid}};
+            my @points = map { $node_data->{$_}[$index] } @nodeid;
+            $way_data->{$wayId}{points}[$index] = \@points;
         }
     }
 }
@@ -692,7 +720,7 @@ sub draw {
     my $deferreds = $self->{_deferreds};
     my $node_kv = $self->{_node_kv};
     my $node_k = $self->{_node_k};
-    my $nodeData = $self->{_nodeData};
+    my $node_data = $self->{_node_data};
 
     foreach my $map_area (@{$self->{_map_areas}}) {
         $self->update_scale($map_area);
@@ -839,7 +867,7 @@ sub draw {
                         my $attr = {};
                         $attr->{'data-name'} = $node->{tags}->{name} if defined $node->{tags}->{name};
 
-                        my $coords = $nodeData->{$node->{id}}[$index];
+                        my $coords = $node_data->{$node->{id}}[$index];
                         my ($x, $y) = @$coords;
                                 # don't care about if out of bounds i guess
                         my $text = $node->{tags}->{name};
@@ -857,7 +885,7 @@ sub draw {
                         my $attr = {};
                         $attr->{'data-name'} = $node->{tags}->{name} if defined $node->{tags}->{name};
 
-                        my $coords = $nodeData->{$node->{id}}[$index];
+                        my $coords = $node_data->{$node->{id}}[$index];
                         my ($x, $y) = @$coords;
                                 # don't care about if out of bounds i guess
                         my $cssId  = $map_area->{id_prefix} . "cn" . $node->{id};
