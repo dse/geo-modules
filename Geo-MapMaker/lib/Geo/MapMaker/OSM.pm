@@ -18,32 +18,47 @@ use fields qw(_osm_xml_filenames
 
               _doc
 
-              _node_id_exists
-              _way_id_exists
-              _node_use_k
-              _node_use_kv
-              _way_use_k
-              _way_use_kv
-              _node_elements
-              _way_elements
-              _way_elements_used
-              _nodeid_is_dup
-              _wayid_is_dup
               _node_data
-              _way_data
+              _node_elements
+              _node_id_exists
               _node_k
               _node_kv
+              _node_use_k
+              _node_use_kv
+              _nodeid_is_dup
+
+              _relation_data
+              _relation_elements
+              _relation_elements_used
+              _relation_id_exists
+              _relation_k
+              _relation_kv
+              _relation_use_k
+              _relation_use_kv
+              _relation_is_dup
+
+              _way_data
+              _way_elements
+              _way_elements_used
+              _way_id_exists
               _way_k
               _way_kv
+              _way_use_k
+              _way_use_kv
+              _wayid_is_dup
 
               _bridge_wayid
 
               _count_used_node_tag_k
               _count_used_node_tag_kv
-              _count_used_way_tag_k
-              _count_used_way_tag_kv
               _count_unused_node_tag_k
               _count_unused_node_tag_kv
+              _count_used_relation_tag_k
+              _count_used_relation_tag_kv
+              _count_unused_relation_tag_k
+              _count_unused_relation_tag_kv
+              _count_used_way_tag_k
+              _count_used_way_tag_kv
               _count_unused_way_tag_k
               _count_unused_way_tag_kv
 
@@ -202,22 +217,31 @@ sub draw_openstreetmap_maps {
     # dispaly counter through XML files
     my $xml_file_number = 0;
 
-    local $self->{_node_id_exists}            = my $node_id_exists = {};
-    local $self->{_way_id_exists}             = my $way_id_exists  = {};
-    local $self->{_way_use_k}                = my $way_use_k   = {};
-    local $self->{_way_use_kv}               = my $way_use_kv  = {};
-    local $self->{_node_use_k}               = my $node_use_k  = {};
-    local $self->{_node_use_kv}              = my $node_use_kv = {};
-    local $self->{_count_used_node_tag_k}    = my $count_used_node_tag_k    = {};
-    local $self->{_count_used_node_tag_kv}   = my $count_used_node_tag_kv   = {};
-    local $self->{_count_used_way_tag_k}     = my $count_used_way_tag_k     = {};
-    local $self->{_count_used_way_tag_kv}    = my $count_used_way_tag_kv    = {};
-    local $self->{_count_unused_node_tag_k}  = my $count_unused_node_tag_k  = {};
-    local $self->{_count_unused_node_tag_kv} = my $count_unused_node_tag_kv = {};
-    local $self->{_count_unused_way_tag_k}   = my $count_unused_way_tag_k   = {};
-    local $self->{_count_unused_way_tag_kv}  = my $count_unused_way_tag_kv  = {};
-    local $self->{_bridge_wayid}             = my $bridge_wayid = {};
-    local $self->{_deferreds}                = my $deferreds = [];
+    local $self->{_node_id_exists}               = my $node_id_exists               = {};
+    local $self->{_node_use_kv}                  = my $node_use_kv                  = {};
+    local $self->{_node_use_k}                   = my $node_use_k                   = {};
+    local $self->{_relation_id_exists}           = my $relation_id_exists           = {};
+    local $self->{_relation_use_kv}              = my $relation_use_kv              = {};
+    local $self->{_relation_use_k}               = my $relation_use_k               = {};
+    local $self->{_way_id_exists}                = my $way_id_exists                = {};
+    local $self->{_way_use_kv}                   = my $way_use_kv                   = {};
+    local $self->{_way_use_k}                    = my $way_use_k                    = {};
+
+    local $self->{_count_used_node_tag_k}        = my $count_used_node_tag_k        = {};
+    local $self->{_count_used_node_tag_kv}       = my $count_used_node_tag_kv       = {};
+    local $self->{_count_unused_node_tag_k}      = my $count_unused_node_tag_k      = {};
+    local $self->{_count_unused_node_tag_kv}     = my $count_unused_node_tag_kv     = {};
+    local $self->{_count_used_relation_tag_k}    = my $count_used_relation_tag_k    = {};
+    local $self->{_count_used_relation_tag_kv}   = my $count_used_relation_tag_kv   = {};
+    local $self->{_count_unused_relation_tag_k}  = my $count_unused_relation_tag_k  = {};
+    local $self->{_count_unused_relation_tag_kv} = my $count_unused_relation_tag_kv = {};
+    local $self->{_count_used_way_tag_k}         = my $count_used_way_tag_k         = {};
+    local $self->{_count_used_way_tag_kv}        = my $count_used_way_tag_kv        = {};
+    local $self->{_count_unused_way_tag_k}       = my $count_unused_way_tag_k       = {};
+    local $self->{_count_unused_way_tag_kv}      = my $count_unused_way_tag_kv      = {};
+
+    local $self->{_bridge_wayid}                 = my $bridge_wayid                 = {};
+    local $self->{_deferreds}                    = my $deferreds                    = [];
 
     $self->collect_k_v_flags();
 
@@ -248,34 +272,31 @@ sub draw_openstreetmap_maps {
 
         $self->diag("done.\n");
 
-        # data for each <node> element
-        local $self->{_node_data} = my $node_data = {};
+        local $self->{_node_data}              = my $node_data              = {};
+        local $self->{_node_k}                 = my $node_k                 = {};
+        local $self->{_node_kv}                = my $node_kv                = {};
+        local $self->{_nodeid_is_dup}          = my $nodeid_is_dup          = {};
+        local $self->{_node_elements}          = my $node_elements          = [];
 
-        # data for each <way> element
-        local $self->{_way_data} = my $way_data = {};
+        local $self->{_relation_data}          = my $relation_data          = {};
+        local $self->{_relation_k}             = my $relation_k             = {};
+        local $self->{_relation_kv}            = my $relation_kv            = {};
+        local $self->{_relationid_is_dup}      = my $relationid_is_dup      = {};
+        local $self->{_relation_elements}      = my $relation_elements      = [];
+        local $self->{_relation_elements_used} = my $relation_elements_used = [];
 
-        # list nodes/ways by key, key/value
-        local $self->{_node_k} = my $node_k = {};
-        local $self->{_node_kv} = my $node_kv = {};
-        local $self->{_way_k} = my $way_k = {};
-        local $self->{_way_kv} = my $way_kv = {};
-
-        # lists of <node> and <way> ids to exclude for this XML file
-        # due to being duplicated from earlier XML files
-        local $self->{_nodeid_is_dup} = my $this_xml_nodeid_is_dup = {};
-        local $self->{_wayid_is_dup}  = my $this_xml_wayid_is_dup = {};
-
-        local $self->{_node_elements}           = my $node_elements = [];
+        local $self->{_way_data}               = my $way_data               = {};
+        local $self->{_way_k}                  = my $way_k                  = {};
+        local $self->{_way_kv}                 = my $way_kv                 = {};
+        local $self->{_wayid_is_dup}           = my $wayid_is_dup           = {};
+        local $self->{_way_elements}           = my $way_elements           = [];
+        local $self->{_way_elements_used}      = my $way_elements_used      = [];
 
         my $converter = $self->{converter};
 
         $self->set_node_elements();
         $self->collect_node_coordinates();
         $self->collect_nodes();
-
-        local $self->{_way_elements}     = my $way_elements = [];
-        local $self->{_way_elements_used} = my $way_elements_used = [];
-
         $self->set_way_elements();
         $self->collect_ways();
 
@@ -352,27 +373,39 @@ sub write_objects_not_included {
 
 sub collect_k_v_flags {
     my $self = shift;
-    my $node_use_k  = $self->{_node_use_k};
-    my $node_use_kv = $self->{_node_use_kv};
-    my $way_use_k   = $self->{_way_use_k};
-    my $way_use_kv  = $self->{_way_use_kv};
+    my $node_use_k      = $self->{_node_use_k};
+    my $node_use_kv     = $self->{_node_use_kv};
+    my $relation_use_k  = $self->{_relation_use_k};
+    my $relation_use_kv = $self->{_relation_use_kv};
+    my $way_use_k       = $self->{_way_use_k};
+    my $way_use_kv      = $self->{_way_use_kv};
     foreach my $info (@{$self->{osm_layers}}) {
         my $tags = $info->{tags};
-        my $type = $info->{type} // "way"; # 'way' or 'node'
+        my $type = $info->{type} // "way,relation";
+        my @types = split(/\s*,\s*|\s+/, $type);
+        my %types = map { ($_ => 1) } @types;
         foreach my $tag (@$tags) {
             my ($k, $v) = @{$tag}{qw(k v)};
             if (defined $k) {
-                if ($type eq 'way') {
-                    if (defined $v) {
-                        $way_use_kv->{$k,$v} = 1;
-                    } else {
-                        $way_use_k->{$k} = 1;
-                    }
-                } elsif ($type eq 'node') {
+                if ($types{node}) {
                     if (defined $v) {
                         $node_use_kv->{$k,$v} = 1;
                     } else {
                         $node_use_k->{$k} = 1;
+                    }
+                }
+                if ($types{relation}) {
+                    if (defined $v) {
+                        $relation_use_kv->{$k,$v} = 1;
+                    } else {
+                        $relation_use_k->{$k} = 1;
+                    }
+                }
+                if ($types{way}) {
+                    if (defined $v) {
+                        $way_use_kv->{$k,$v} = 1;
+                    } else {
+                        $way_use_k->{$k} = 1;
                     }
                 }
             }
@@ -385,7 +418,7 @@ sub collect_nodes {
 
     my $node_elements = $self->{_node_elements};
     my $node_id_exists = $self->{_node_id_exists};
-    my $this_xml_nodeid_is_dup = $self->{_nodeid_is_dup};
+    my $nodeid_is_dup = $self->{_nodeid_is_dup};
     my $node_use_k = $self->{_node_use_k};
     my $node_use_kv = $self->{_node_use_kv};
     my $count_used_node_tag_k = $self->{_count_used_node_tag_k};
@@ -406,7 +439,7 @@ sub collect_nodes {
         }
 
         if ($node_id_exists->{$nodeId}) { # for all split-up areas
-            $this_xml_nodeid_is_dup->{$nodeId} = 1; # for this split-up area
+            $nodeid_is_dup->{$nodeId} = 1; # for this split-up area
             next;
         }
         $node_id_exists->{$nodeId} = 1;
@@ -520,7 +553,7 @@ sub collect_ways {
     my $bridge_wayid = $self->{_bridge_wayid};
     my $way_k = $self->{_way_k};
     my $way_kv = $self->{_way_kv};
-    my $this_xml_wayid_is_dup = $self->{_wayid_is_dup};
+    my $wayid_is_dup = $self->{_wayid_is_dup};
     my $way_elements = $self->{_way_elements};
     my $way_elements_used = $self->{_way_elements_used};
     my $way_data = $self->{_way_data};
@@ -536,7 +569,7 @@ sub collect_ways {
         }
 
         if ($way_id_exists->{$wayId}) {                # for all split-up areas
-            $this_xml_wayid_is_dup->{$wayId} = 1;     # for this split-up area
+            $wayid_is_dup->{$wayId} = 1;     # for this split-up area
             next;
         }
         $way_id_exists->{$wayId} = 1;
