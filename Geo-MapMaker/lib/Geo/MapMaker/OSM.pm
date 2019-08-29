@@ -198,22 +198,22 @@ sub draw_openstreetmap_maps {
     # dispaly counter through XML files
     my $xml_file_number = 0;
 
-    local $self->{_nodeid_exists} = my $nodeid_exists = {};
-    local $self->{_wayid_exists} = my $wayid_exists  = {};
-    local $self->{_way_use_k} = my $way_use_k   = {};
-    local $self->{_way_use_kv} = my $way_use_kv  = {};
-    local $self->{_node_use_k} = my $node_use_k  = {};
-    local $self->{_node_use_kv} = my $node_use_kv = {};
-    local $self->{_count_used_node_tag_k} = my $count_used_node_tag_k    = {};
-    local $self->{_count_used_node_tag_kv} = my $count_used_node_tag_kv   = {};
-    local $self->{_count_used_way_tag_k} = my $count_used_way_tag_k     = {};
-    local $self->{_count_used_way_tag_kv} = my $count_used_way_tag_kv    = {};
-    local $self->{_count_unused_node_tag_k} = my $count_unused_node_tag_k  = {};
+    local $self->{_nodeid_exists}            = my $nodeid_exists = {};
+    local $self->{_wayid_exists}             = my $wayid_exists  = {};
+    local $self->{_way_use_k}                = my $way_use_k   = {};
+    local $self->{_way_use_kv}               = my $way_use_kv  = {};
+    local $self->{_node_use_k}               = my $node_use_k  = {};
+    local $self->{_node_use_kv}              = my $node_use_kv = {};
+    local $self->{_count_used_node_tag_k}    = my $count_used_node_tag_k    = {};
+    local $self->{_count_used_node_tag_kv}   = my $count_used_node_tag_kv   = {};
+    local $self->{_count_used_way_tag_k}     = my $count_used_way_tag_k     = {};
+    local $self->{_count_used_way_tag_kv}    = my $count_used_way_tag_kv    = {};
+    local $self->{_count_unused_node_tag_k}  = my $count_unused_node_tag_k  = {};
     local $self->{_count_unused_node_tag_kv} = my $count_unused_node_tag_kv = {};
-    local $self->{_count_unused_way_tag_k} = my $count_unused_way_tag_k   = {};
-    local $self->{_count_unused_way_tag_kv} = my $count_unused_way_tag_kv  = {};
-    local $self->{_bridge_wayid} = my $bridge_wayid = {};
-    local $self->{_deferreds} = my $deferreds = [];
+    local $self->{_count_unused_way_tag_k}   = my $count_unused_way_tag_k   = {};
+    local $self->{_count_unused_way_tag_kv}  = my $count_unused_way_tag_kv  = {};
+    local $self->{_bridge_wayid}             = my $bridge_wayid = {};
+    local $self->{_deferreds}                = my $deferreds = [];
 
     $self->collect_k_v_flags();
 
@@ -234,7 +234,7 @@ sub draw_openstreetmap_maps {
         my $docHash;
         if (USE_XML_FAST) {
             my $xml = path($filename)->slurp();
-            $self->{_doc} = $docHash = xml2hash(Encode::encode_utf8($xml), array => 1);
+            $self->{_doc} = $docHash = xml2hash($xml, array => 1);
         } elsif (USE_XML_BARE) {
             $bareObject = XML::Bare->new(file => $filename);
             $self->{_doc} = $bareTree = $bareObject->parse();
@@ -285,21 +285,16 @@ sub draw_openstreetmap_maps {
 
     $self->draw_deferred();
 
-
-    $self->write_objects_not_included(
-        $count_unused_node_tag_k,
-        $count_unused_node_tag_kv,
-        $count_unused_way_tag_k,
-        $count_unused_way_tag_kv,
-    );
+    $self->write_objects_not_included();
 }
 
 sub write_objects_not_included {
-    my ($self,
-        $count_unused_node_tag_k,
-        $count_unused_node_tag_kv,
-        $count_unused_way_tag_k,
-        $count_unused_way_tag_kv) = @_;
+    my ($self) = @_;
+
+    my $count_unused_node_tag_k = $self->{_count_unused_node_tag_k};
+    my $count_unused_node_tag_kv = $self->{_count_unused_node_tag_kv};
+    my $count_unused_way_tag_k = $self->{_count_unused_way_tag_k};
+    my $count_unused_way_tag_kv = $self->{_count_unused_way_tag_kv};
 
     my $filename = $self->{osm_objects_not_included_filename};
     if (!defined $filename) {
@@ -340,7 +335,7 @@ sub write_objects_not_included {
         printf $fh ("%8d WAY %-32s\n", $count, $tagkey);
     }
     foreach my $key (nsort keys %$count_unused_way_tag_kv) {
-        my $count = $count_unused_node_tag_kv->{$key};
+        my $count = $count_unused_way_tag_kv->{$key};
         my ($tagkey, $tagvalue) = split($;, $key);
         $tagkey //= '(undef)';
         $tagvalue //= '(undef)';
@@ -455,12 +450,14 @@ sub collect_nodes {
             foreach my $tag (@tag) {
                 my ($k, $v) = @$tag;
                 $count_used_node_tag_k->{$k} += 1;
+                next if $k =~ m{:};
                 $count_used_node_tag_kv->{$k,$v} += 1;
             }
         } else {
             foreach my $tag (@tag) {
                 my ($k, $v) = @$tag;
                 $count_unused_node_tag_k->{$k} += 1;
+                next if $k =~ m{:};
                 $count_unused_node_tag_kv->{$k,$v} += 1;
             }
         }
@@ -583,6 +580,7 @@ sub collect_ways {
             foreach my $tag (@tag) {
                 my ($k, $v) = @$tag;
                 $count_used_way_tag_k->{$k} += 1;
+                next if $k =~ m{:};
                 $count_used_way_tag_kv->{$k,$v} += 1;
             }
             push(@$usedWayElements, $wayElement);
@@ -590,6 +588,7 @@ sub collect_ways {
             foreach my $tag (@tag) {
                 my ($k, $v) = @$tag;
                 $count_unused_way_tag_k->{$k} += 1;
+                next if $k =~ m{:};
                 $count_unused_way_tag_kv->{$k,$v} += 1;
             }
         }
@@ -737,11 +736,13 @@ sub draw {
                 my $closed_class_BRIDGE =           $info->{class} . "_BRIDGE";
 
                 foreach my $way (@ways) {
+                    my $attr = {};
+                    $attr->{'data-name'} = $way->{tags}->{name} if defined $way->{tags}->{name};
+
                     my $wayid = $way->{id};
                     my $is_bridge = $bridge_wayid->{$wayid};
                     my $defer = 0;
 
-                    $way->{used} = 1;
                     my $points = $way->{points}[$index];
 
                     if (all { $_->[POINT_X_ZONE] == -1 } @$points) { next; }
@@ -759,17 +760,20 @@ sub draw {
                         if ($is_bridge && $self->has_style_BRIDGE(class => $cssClass)) {
                             my $polygon_BRIDGE = $self->polygon(points => $points,
                                                                 class => $closed_class_BRIDGE,
+                                                                attr => $attr,
                                                                 id => $cssId3);
                             push(@append, [ $group, $polygon_BRIDGE ]);
                             $defer = 1 if $is_bridge;
                         }
                         my $polygon = $self->polygon(points => $points,
                                                      class => $closed_class,
+                                                     attr => $attr,
                                                      id => $cssId);
                         push(@append, [ $group, $polygon ]);
                         if ($self->has_style_2(class => $cssClass)) {
                             my $polygon_2 = $self->polygon(points => $points,
                                                            class => $closed_class_2,
+                                                           attr => $attr,
                                                            id => $cssId2);
                             push(@append, [ $group, $polygon_2 ]);
                             $defer = 1 if $is_bridge;
@@ -778,17 +782,20 @@ sub draw {
                         if ($is_bridge && $self->has_style_BRIDGE(class => $cssClass)) {
                             my $polyline_BRIDGE = $self->polyline(points => $points,
                                                                   class => $open_class_BRIDGE,
+                                                                  attr => $attr,
                                                                   id => $cssId3);
                             push(@append, [ $group, $polyline_BRIDGE ]);
                             $defer = 1 if $is_bridge;
                         }
                         my $polyline = $self->polyline(points => $points,
                                                        class => $open_class,
+                                                       attr => $attr,
                                                        id => $cssId);
                         push(@append, [ $group, $polyline ]);
                         if ($self->has_style_2(class => $cssClass)) {
                             my $polyline_2 = $self->polyline(points => $points,
                                                              class => $open_class_2,
+                                                             attr => $attr,
                                                              id => $cssId2);
                             push(@append, [ $group, $polyline_2 ]);
                             $defer = 1 if $is_bridge;
@@ -825,14 +832,16 @@ sub draw {
                 if ($info->{output_text}) {
                     my $cssClass = $info->{text_class};
                     foreach my $node (@nodes) {
-                        $node->{used} = 1;
+                        my $attr = {};
+                        $attr->{'data-name'} = $node->{tags}->{name} if defined $node->{tags}->{name};
+
                         my $coords = $nodeData->{$node->{id}}[$index];
                         my ($x, $y) = @$coords;
                                 # don't care about if out of bounds i guess
                         my $text = $node->{tags}->{name};
                         my $cssId  = $map_area->{id_prefix} . "tn" . $node->{id};
                         my $text_node = $self->text_node(x => $x, y => $y, text => $text,
-                                                         class => $cssClass, id => $cssId);
+                                                         attr => $attr, class => $cssClass, id => $cssId);
                         $group->appendChild($text_node);
                     }
                 }
@@ -841,13 +850,15 @@ sub draw {
                     my $cssClass = $info->{dot_class};
                     my $r = $self->get_style_property(class => $cssClass, property => "r");
                     foreach my $node (@nodes) {
-                        $node->{used} = 1;
+                        my $attr = {};
+                        $attr->{'data-name'} = $node->{tags}->{name} if defined $node->{tags}->{name};
+
                         my $coords = $nodeData->{$node->{id}}[$index];
                         my ($x, $y) = @$coords;
                                 # don't care about if out of bounds i guess
                         my $cssId  = $map_area->{id_prefix} . "cn" . $node->{id};
                         my $circle = $self->circle_node(x => $x, y => $y, r => $r,
-                                                        class => $cssClass, id => $cssId);
+                                                        attr => $attr, class => $cssClass, id => $cssId);
                         $group->appendChild($circle);
                     }
                 }
