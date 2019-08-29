@@ -505,26 +505,6 @@ sub collect_nodes {
     }
 }
 
-our $IS_IDENTIFYING_TAG;
-BEGIN {
-    $IS_IDENTIFYING_TAG = {
-        name => 1,
-        ref => 1,
-        phone => 1,
-        website => 1,
-        opening_hours => 1,
-        brand => 1,
-        description => 1,
-        wikidata => 1,
-    };
-}
-
-sub is_identifying_tag {
-    my $self = shift;
-    my $tag = shift;
-    return if $IS_IDENTIFYING_TAG->{$tag};
-}
-
 sub set_way_elements {
     my $self = shift;
 
@@ -943,6 +923,26 @@ sub draw_deferred {
         my ($parent, $child) = @$deferred;
         $parent->appendChild($child);
     }
+}
+
+our $IS_IDENTIFYING_TAG;
+BEGIN {
+    $IS_IDENTIFYING_TAG = {
+        name => 1,
+        ref => 1,
+        phone => 1,
+        website => 1,
+        opening_hours => 1,
+        brand => 1,
+        description => 1,
+        wikidata => 1,
+    };
+}
+
+sub is_identifying_tag {
+    my $self = shift;
+    my $tag = shift;
+    return if $IS_IDENTIFYING_TAG->{$tag};
 }
 
 1;
