@@ -332,14 +332,14 @@ sub write_objects_not_included {
         my $count = $count_unused_way_tag_k->{$key};
         my $tagkey = $key;
         $tagkey //= '(undef)';
-        printf $fh ("%8d WAY %-32s\n", $count, $tagkey);
+        printf $fh ("%8d WAY  %-32s\n", $count, $tagkey);
     }
     foreach my $key (nsort keys %$count_unused_way_tag_kv) {
         my $count = $count_unused_way_tag_kv->{$key};
         my ($tagkey, $tagvalue) = split($;, $key);
         $tagkey //= '(undef)';
         $tagvalue //= '(undef)';
-        printf $fh ("%8d WAY %-32s = %-32s\n", $count, $tagkey, $tagvalue);
+        printf $fh ("%8d WAY  %-32s = %-32s\n", $count, $tagkey, $tagvalue);
     }
 
     close($fh);
@@ -449,6 +449,7 @@ sub collect_nodes {
         if ($use_this_node) {
             foreach my $tag (@tag) {
                 my ($k, $v) = @$tag;
+                next if $k eq 'name';
                 $count_used_node_tag_k->{$k} += 1;
                 next if $k =~ m{:};
                 $count_used_node_tag_kv->{$k,$v} += 1;
@@ -456,6 +457,7 @@ sub collect_nodes {
         } else {
             foreach my $tag (@tag) {
                 my ($k, $v) = @$tag;
+                next if $k eq 'name';
                 $count_unused_node_tag_k->{$k} += 1;
                 next if $k =~ m{:};
                 $count_unused_node_tag_kv->{$k,$v} += 1;
@@ -579,6 +581,7 @@ sub collect_ways {
         if ($use_this_way) {
             foreach my $tag (@tag) {
                 my ($k, $v) = @$tag;
+                next if $k eq 'name';
                 $count_used_way_tag_k->{$k} += 1;
                 next if $k =~ m{:};
                 $count_used_way_tag_kv->{$k,$v} += 1;
@@ -587,6 +590,7 @@ sub collect_ways {
         } else {
             foreach my $tag (@tag) {
                 my ($k, $v) = @$tag;
+                next if $k eq 'name';
                 $count_unused_way_tag_k->{$k} += 1;
                 next if $k =~ m{:};
                 $count_unused_way_tag_kv->{$k,$v} += 1;
