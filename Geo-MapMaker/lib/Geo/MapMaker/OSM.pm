@@ -18,8 +18,8 @@ use fields qw(_osm_xml_filenames
 
               _doc
 
-              _nodeid_exists
-              _wayid_exists
+              _node_id_exists
+              _way_id_exists
               _node_use_k
               _node_use_kv
               _way_use_k
@@ -202,8 +202,8 @@ sub draw_openstreetmap_maps {
     # dispaly counter through XML files
     my $xml_file_number = 0;
 
-    local $self->{_nodeid_exists}            = my $nodeid_exists = {};
-    local $self->{_wayid_exists}             = my $wayid_exists  = {};
+    local $self->{_node_id_exists}            = my $node_id_exists = {};
+    local $self->{_way_id_exists}             = my $way_id_exists  = {};
     local $self->{_way_use_k}                = my $way_use_k   = {};
     local $self->{_way_use_kv}               = my $way_use_kv  = {};
     local $self->{_node_use_k}               = my $node_use_k  = {};
@@ -384,7 +384,7 @@ sub collect_nodes {
     my $self = shift;
 
     my $node_elements = $self->{_node_elements};
-    my $nodeid_exists = $self->{_nodeid_exists};
+    my $node_id_exists = $self->{_node_id_exists};
     my $this_xml_nodeid_is_dup = $self->{_nodeid_is_dup};
     my $node_use_k = $self->{_node_use_k};
     my $node_use_kv = $self->{_node_use_kv};
@@ -405,11 +405,11 @@ sub collect_nodes {
             $nodeId = $nodeElement->getAttribute("id");
         }
 
-        if ($nodeid_exists->{$nodeId}) { # for all split-up areas
+        if ($node_id_exists->{$nodeId}) { # for all split-up areas
             $this_xml_nodeid_is_dup->{$nodeId} = 1; # for this split-up area
             next;
         }
-        $nodeid_exists->{$nodeId} = 1;
+        $node_id_exists->{$nodeId} = 1;
 
         my $use_this_node = 0;
 
@@ -510,7 +510,7 @@ sub set_way_elements {
 sub collect_ways {
     my $self = shift;
 
-    my $wayid_exists = $self->{_wayid_exists};
+    my $way_id_exists = $self->{_way_id_exists};
     my $way_use_k = $self->{_way_use_k};
     my $way_use_kv = $self->{_way_use_kv};
     my $count_used_way_tag_k = $self->{_count_used_way_tag_k};
@@ -535,11 +535,11 @@ sub collect_ways {
             $wayId = $wayElement->getAttribute("id");
         }
 
-        if ($wayid_exists->{$wayId}) {                # for all split-up areas
+        if ($way_id_exists->{$wayId}) {                # for all split-up areas
             $this_xml_wayid_is_dup->{$wayId} = 1;     # for this split-up area
             next;
         }
-        $wayid_exists->{$wayId} = 1;
+        $way_id_exists->{$wayId} = 1;
 
         my $use_this_way = 0;
 
