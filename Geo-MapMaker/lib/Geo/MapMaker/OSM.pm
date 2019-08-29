@@ -635,21 +635,6 @@ sub collect_ways {
     }
 }
 
-sub set_way_elements {
-    my $self = shift;
-
-    my $way_elements = $self->{_way_elements};
-
-    if (USE_XML_FAST) {
-        @$way_elements = @{$self->{_doc}->{osm}->[0]->{way}};
-    } elsif (USE_XML_BARE) {
-        my $way = $self->{_doc}->{osm}->{way};
-        @$way_elements = (ref $way eq 'ARRAY') ? @$way : $way ? ($way) : ();
-    } else {
-        @$way_elements = $self->{_doc}->findnodes("/osm/way");
-    }
-}
-
 sub set_node_elements {
     my $self = shift;
     my $node_elements = $self->{_node_elements};
@@ -662,6 +647,21 @@ sub set_node_elements {
         } else {
             @$node_elements = $self->{_doc}->findnodes("/osm/node");
         }
+    }
+}
+
+sub set_way_elements {
+    my $self = shift;
+
+    my $way_elements = $self->{_way_elements};
+
+    if (USE_XML_FAST) {
+        @$way_elements = @{$self->{_doc}->{osm}->[0]->{way}};
+    } elsif (USE_XML_BARE) {
+        my $way = $self->{_doc}->{osm}->{way};
+        @$way_elements = (ref $way eq 'ARRAY') ? @$way : $way ? ($way) : ();
+    } else {
+        @$way_elements = $self->{_doc}->findnodes("/osm/way");
     }
 }
 
