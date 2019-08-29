@@ -419,14 +419,16 @@ sub collect_nodes {
     my $node_elements = $self->{_node_elements};
     my $node_id_exists = $self->{_node_id_exists};
     my $nodeid_is_dup = $self->{_nodeid_is_dup};
+
     my $node_use_k = $self->{_node_use_k};
     my $node_use_kv = $self->{_node_use_kv};
+    my $node_k = $self->{_node_k};
+    my $node_kv = $self->{_node_kv};
+
     my $count_used_node_tag_k = $self->{_count_used_node_tag_k};
     my $count_used_node_tag_kv = $self->{_count_used_node_tag_kv};
     my $count_unused_node_tag_k = $self->{_count_unused_node_tag_k};
     my $count_unused_node_tag_kv = $self->{_count_unused_node_tag_kv};
-    my $node_k = $self->{_node_k};
-    my $node_kv = $self->{_node_kv};
 
     foreach my $node_element (@$node_elements) {
         my $nodeId;
@@ -446,7 +448,10 @@ sub collect_nodes {
 
         my $use_this_node = 0;
 
-        my $result = { id => $nodeId, tags => {} };
+        my $result = {
+            id => $nodeId,
+            tags => {},
+        };
 
         my @tag_elements;
         if (USE_XML_FAST) {
@@ -508,20 +513,23 @@ sub collect_nodes {
 sub collect_ways {
     my $self = shift;
 
-    my $way_id_exists = $self->{_way_id_exists};
+    my $way_elements = $self->{_way_elements};
+    my $way_elements_used = $self->{_way_elements_used};
+    my $wayid_is_dup = $self->{_wayid_is_dup};
+
     my $way_use_k = $self->{_way_use_k};
     my $way_use_kv = $self->{_way_use_kv};
+    my $way_k = $self->{_way_k};
+    my $way_kv = $self->{_way_kv};
+
+    my $way_id_exists = $self->{_way_id_exists};
+    my $bridge_wayid = $self->{_bridge_wayid};
+    my $way_data = $self->{_way_data};
+
     my $count_used_way_tag_k = $self->{_count_used_way_tag_k};
     my $count_used_way_tag_kv = $self->{_count_used_way_tag_kv};
     my $count_unused_way_tag_k = $self->{_count_unused_way_tag_k};
     my $count_unused_way_tag_kv = $self->{_count_unused_way_tag_kv};
-    my $bridge_wayid = $self->{_bridge_wayid};
-    my $way_k = $self->{_way_k};
-    my $way_kv = $self->{_way_kv};
-    my $wayid_is_dup = $self->{_wayid_is_dup};
-    my $way_elements = $self->{_way_elements};
-    my $way_elements_used = $self->{_way_elements_used};
-    my $way_data = $self->{_way_data};
 
     foreach my $way_element (@$way_elements) {
         my $wayId;
@@ -539,8 +547,6 @@ sub collect_ways {
         }
         $way_id_exists->{$wayId} = 1;
 
-        my $use_this_way = 0;
-
         my @nodeid;
         if (USE_XML_FAST) {
             @nodeid = eval { map { $_->{-ref} } @{$way_element->{nd}} };
@@ -555,12 +561,16 @@ sub collect_ways {
         my $closed = (scalar(@nodeid)) > 2 && ($nodeid[0] == $nodeid[-1]);
         pop(@nodeid) if $closed;
 
-        my $result = { id     => $wayId,
-                       nodeid => \@nodeid,
-                       closed => $closed,
-                       points => [],
-                       tags   => {}
-                   };
+        my $use_this_way = 0;
+
+        my $result = {
+            id => $wayId,
+            nodeid => \@nodeid,
+            closed => $closed,
+            points => [],
+            tags => {},
+        };
+
         $way_data->{$wayId} = $result;
 
         my @tag_elements;
