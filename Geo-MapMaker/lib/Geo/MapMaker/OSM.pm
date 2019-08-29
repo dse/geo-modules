@@ -395,14 +395,14 @@ sub collect_nodes {
     my $node_k = $self->{_node_k};
     my $node_kv = $self->{_node_kv};
 
-    foreach my $nodeElement (@$node_elements) {
+    foreach my $node_element (@$node_elements) {
         my $nodeId;
         if (USE_XML_FAST) {
-            $nodeId = $nodeElement->{-id};
+            $nodeId = $node_element->{-id};
         } elsif (USE_XML_BARE) {
-            $nodeId = $nodeElement->{id}->{value};
+            $nodeId = $node_element->{id}->{value};
         } else {
-            $nodeId = $nodeElement->getAttribute("id");
+            $nodeId = $node_element->getAttribute("id");
         }
 
         if ($node_id_exists->{$nodeId}) { # for all split-up areas
@@ -417,11 +417,11 @@ sub collect_nodes {
 
         my @tag_elements;
         if (USE_XML_FAST) {
-            @tag_elements = eval { @{$nodeElement->{tag}} };
+            @tag_elements = eval { @{$node_element->{tag}} };
         } elsif (USE_XML_BARE) {
-            @tag_elements = eval { @{$nodeElement->{tag}} };
+            @tag_elements = eval { @{$node_element->{tag}} };
         } else {
-            @tag_elements = $nodeElement->findnodes("tag");
+            @tag_elements = $node_element->findnodes("tag");
         }
 
         my @tag;
@@ -525,14 +525,14 @@ sub collect_ways {
     my $way_elements_used = $self->{_way_elements_used};
     my $way_data = $self->{_way_data};
 
-    foreach my $wayElement (@$way_elements) {
+    foreach my $way_element (@$way_elements) {
         my $wayId;
         if (USE_XML_FAST) {
-            $wayId = $wayElement->{-id};
+            $wayId = $way_element->{-id};
         } elsif (USE_XML_BARE) {
-            $wayId = $wayElement->{id}->{value};
+            $wayId = $way_element->{id}->{value};
         } else {
-            $wayId = $wayElement->getAttribute("id");
+            $wayId = $way_element->getAttribute("id");
         }
 
         if ($way_id_exists->{$wayId}) {                # for all split-up areas
@@ -545,13 +545,13 @@ sub collect_ways {
 
         my @nodeid;
         if (USE_XML_FAST) {
-            @nodeid = eval { map { $_->{-ref} } @{$wayElement->{nd}} };
+            @nodeid = eval { map { $_->{-ref} } @{$way_element->{nd}} };
         } elsif (USE_XML_BARE) {
-            my $nd = $wayElement->{nd};
+            my $nd = $way_element->{nd};
             my @nd = (ref $nd eq 'ARRAY') ? @$nd : $nd ? ($nd) : ();
             @nodeid = map { eval { $_->{ref}->{value} } } @nd;
         } else {
-            @nodeid = map { $_->getAttribute("ref"); } $wayElement->findnodes("nd");
+            @nodeid = map { $_->getAttribute("ref"); } $way_element->findnodes("nd");
         }
 
         my $closed = (scalar(@nodeid)) > 2 && ($nodeid[0] == $nodeid[-1]);
@@ -567,12 +567,12 @@ sub collect_ways {
 
         my @tag_elements;
         if (USE_XML_FAST) {
-            @tag_elements = eval { @{$wayElement->{tag}} };
+            @tag_elements = eval { @{$way_element->{tag}} };
         } elsif (USE_XML_BARE) {
-            my $tag = eval { $wayElement->{tag} };
+            my $tag = eval { $way_element->{tag} };
             @tag_elements = (ref $tag eq 'ARRAY') ? @$tag : $tag ? ($tag) : ();
         } else {
-            @tag_elements = $wayElement->findnodes("tag");
+            @tag_elements = $way_element->findnodes("tag");
         }
 
         my @tag;
@@ -613,7 +613,7 @@ sub collect_ways {
                 next if $k =~ m{:};
                 $count_used_way_tag_kv->{$k,$v} += 1;
             }
-            push(@$way_elements_used, $wayElement);
+            push(@$way_elements_used, $way_element);
         } else {
             foreach my $tag (@tag) {
                 my ($k, $v) = @$tag;
@@ -643,22 +643,22 @@ sub collect_node_coordinates {
         my $east_svg  = $self->east_outer_map_boundary_svg;
         my $north_svg = $self->north_outer_map_boundary_svg;
         my $south_svg = $self->south_outer_map_boundary_svg;
-        foreach my $nodeElement (@$node_elements) {
+        foreach my $node_element (@$node_elements) {
             my $nodeId;
             my $lat_deg;
             my $lon_deg;
             if (USE_XML_FAST) {
-                $nodeId = $nodeElement->{-id};
-                $lat_deg = 0 + $nodeElement->{-lat};
-                $lon_deg = 0 + $nodeElement->{-lon};
+                $nodeId = $node_element->{-id};
+                $lat_deg = 0 + $node_element->{-lat};
+                $lon_deg = 0 + $node_element->{-lon};
             } elsif (USE_XML_BARE) {
-                $nodeId = $nodeElement->{id}->{value};
-                $lat_deg = 0 + $nodeElement->{lat}->{value};
-                $lon_deg = 0 + $nodeElement->{lon}->{value};
+                $nodeId = $node_element->{id}->{value};
+                $lat_deg = 0 + $node_element->{lat}->{value};
+                $lon_deg = 0 + $node_element->{lon}->{value};
             } else {
-                $nodeId = $nodeElement->getAttribute("id");
-                $lat_deg = 0 + $nodeElement->getAttribute("lat");
-                $lon_deg = 0 + $nodeElement->getAttribute("lon");
+                $nodeId = $node_element->getAttribute("id");
+                $lat_deg = 0 + $node_element->getAttribute("lat");
+                $lon_deg = 0 + $node_element->getAttribute("lon");
             }
             my ($svgx, $svgy) = $converter->lon_lat_deg_to_x_y_px($lon_deg, $lat_deg);
             my $xzone = ($svgx < $west_svg)  ? -1 : ($svgx > $east_svg)  ? 1 : 0;
@@ -695,14 +695,14 @@ sub collect_way_coordinates {
         $self->update_scale($map_area);
         my $index = $map_area->{index};
         my $area_name = $map_area->{name};
-        foreach my $wayElement (@$way_elements_used) {
+        foreach my $way_element (@$way_elements_used) {
             my $wayId;
             if (USE_XML_FAST) {
-                $wayId = $wayElement->{-id};
+                $wayId = $way_element->{-id};
             } elsif (USE_XML_BARE) {
-                $wayId = $wayElement->{id}->{value};
+                $wayId = $way_element->{id}->{value};
             } else {
-                $wayId = $wayElement->getAttribute("id");
+                $wayId = $way_element->getAttribute("id");
             }
             my @nodeid = @{$way_data->{$wayId}{nodeid}};
             my @points = map { $node_data->{$_}[$index] } @nodeid;
