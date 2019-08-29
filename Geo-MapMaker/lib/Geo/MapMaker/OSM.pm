@@ -505,21 +505,6 @@ sub collect_nodes {
     }
 }
 
-sub set_way_elements {
-    my $self = shift;
-
-    my $way_elements = $self->{_way_elements};
-
-    if (USE_XML_FAST) {
-        @$way_elements = @{$self->{_doc}->{osm}->[0]->{way}};
-    } elsif (USE_XML_BARE) {
-        my $way = $self->{_doc}->{osm}->{way};
-        @$way_elements = (ref $way eq 'ARRAY') ? @$way : $way ? ($way) : ();
-    } else {
-        @$way_elements = $self->{_doc}->findnodes("/osm/way");
-    }
-}
-
 sub collect_ways {
     my $self = shift;
 
@@ -640,6 +625,36 @@ sub collect_ways {
     }
 }
 
+sub set_way_elements {
+    my $self = shift;
+
+    my $way_elements = $self->{_way_elements};
+
+    if (USE_XML_FAST) {
+        @$way_elements = @{$self->{_doc}->{osm}->[0]->{way}};
+    } elsif (USE_XML_BARE) {
+        my $way = $self->{_doc}->{osm}->{way};
+        @$way_elements = (ref $way eq 'ARRAY') ? @$way : $way ? ($way) : ();
+    } else {
+        @$way_elements = $self->{_doc}->findnodes("/osm/way");
+    }
+}
+
+sub set_node_elements {
+    my $self = shift;
+    my $node_elements = $self->{_node_elements};
+    if (!scalar @$node_elements) {
+        if (USE_XML_FAST) {
+            @$node_elements = @{$self->{_doc}->{osm}->[0]->{node}};
+        } elsif (USE_XML_BARE) {
+            my $node = $self->{_doc}->{osm}->{node};
+            @$node_elements = (ref $node eq 'ARRAY') ? @$node : $node ? ($node) : ();
+        } else {
+            @$node_elements = $self->{_doc}->findnodes("/osm/node");
+        }
+    }
+}
+
 # Collect *all* <node>s' coordinates.  Even if a <node> is not
 # used directly, it could be used by a <way>.
 sub collect_node_coordinates {
@@ -678,21 +693,6 @@ sub collect_node_coordinates {
             my $yzone = ($svgy < $north_svg) ? -1 : ($svgy > $south_svg) ? 1 : 0;
             my $result = [$svgx, $svgy, $xzone, $yzone];
             $node_data->{$nodeId}[$index] = $result;
-        }
-    }
-}
-
-sub set_node_elements {
-    my $self = shift;
-    my $node_elements = $self->{_node_elements};
-    if (!scalar @$node_elements) {
-        if (USE_XML_FAST) {
-            @$node_elements = @{$self->{_doc}->{osm}->[0]->{node}};
-        } elsif (USE_XML_BARE) {
-            my $node = $self->{_doc}->{osm}->{node};
-            @$node_elements = (ref $node eq 'ARRAY') ? @$node : $node ? ($node) : ();
-        } else {
-            @$node_elements = $self->{_doc}->findnodes("/osm/node");
         }
     }
 }
