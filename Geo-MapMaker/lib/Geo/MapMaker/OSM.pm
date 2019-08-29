@@ -26,7 +26,7 @@ use fields qw(_osm_xml_filenames
               _way_use_kv
               _node_elements
               _way_elements
-              _used_way_elements
+              _way_elements_used
               _nodeid_is_dup
               _wayid_is_dup
               _node_data
@@ -274,7 +274,7 @@ sub draw_openstreetmap_maps {
         $self->collect_nodes();
 
         local $self->{_way_elements}     = my $way_elements = [];
-        local $self->{_used_way_elements} = my $used_way_elements = [];
+        local $self->{_way_elements_used} = my $way_elements_used = [];
 
         $self->set_way_elements();
         $self->collect_ways();
@@ -522,7 +522,7 @@ sub collect_ways {
     my $way_kv = $self->{_way_kv};
     my $this_xml_wayid_is_dup = $self->{_wayid_is_dup};
     my $way_elements = $self->{_way_elements};
-    my $used_way_elements = $self->{_used_way_elements};
+    my $way_elements_used = $self->{_way_elements_used};
     my $way_data = $self->{_way_data};
 
     foreach my $wayElement (@$way_elements) {
@@ -613,7 +613,7 @@ sub collect_ways {
                 next if $k =~ m{:};
                 $count_used_way_tag_kv->{$k,$v} += 1;
             }
-            push(@$used_way_elements, $wayElement);
+            push(@$way_elements_used, $wayElement);
         } else {
             foreach my $tag (@tag) {
                 my ($k, $v) = @$tag;
@@ -687,7 +687,7 @@ sub set_node_elements {
 sub collect_way_coordinates {
     my $self = shift;
 
-    my $used_way_elements = $self->{_used_way_elements};
+    my $way_elements_used = $self->{_way_elements_used};
     my $way_data = $self->{_way_data};
     my $node_data = $self->{_node_data};
 
@@ -695,7 +695,7 @@ sub collect_way_coordinates {
         $self->update_scale($map_area);
         my $index = $map_area->{index};
         my $area_name = $map_area->{name};
-        foreach my $wayElement (@$used_way_elements) {
+        foreach my $wayElement (@$way_elements_used) {
             my $wayId;
             if (USE_XML_FAST) {
                 $wayId = $wayElement->{-id};
