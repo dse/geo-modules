@@ -26,7 +26,6 @@ use fields qw(_osm_xml_filenames
               _node_kv
               _node_use_k
               _node_use_kv
-              _node_is_dup
 
               _relation_data
               _relation_elements
@@ -36,7 +35,6 @@ use fields qw(_osm_xml_filenames
               _relation_kv
               _relation_use_k
               _relation_use_kv
-              _relation_is_dup
 
               _way_data
               _way_elements
@@ -46,7 +44,6 @@ use fields qw(_osm_xml_filenames
               _way_kv
               _way_use_k
               _way_use_kv
-              _way_is_dup
 
               _bridge_wayid
 
@@ -254,20 +251,17 @@ sub draw_openstreetmap_maps {
         local $self->{_node_data}              = my $node_data              = {};
         local $self->{_node_k}                 = my $node_k                 = {};
         local $self->{_node_kv}                = my $node_kv                = {};
-        local $self->{_node_is_dup}            = my $node_is_dup            = {};
         local $self->{_node_elements}          = my $node_elements          = [];
 
         local $self->{_relation_data}          = my $relation_data          = {};
         local $self->{_relation_k}             = my $relation_k             = {};
         local $self->{_relation_kv}            = my $relation_kv            = {};
-        local $self->{_relation_is_dup}        = my $relation_is_dup        = {};
         local $self->{_relation_elements}      = my $relation_elements      = [];
         local $self->{_relation_elements_used} = my $relation_elements_used = [];
 
         local $self->{_way_data}               = my $way_data               = {};
         local $self->{_way_k}                  = my $way_k                  = {};
         local $self->{_way_kv}                 = my $way_kv                 = {};
-        local $self->{_way_is_dup}             = my $way_is_dup             = {};
         local $self->{_way_elements}           = my $way_elements           = [];
         local $self->{_way_elements_used}      = my $way_elements_used      = [];
 
@@ -401,7 +395,6 @@ sub collect_nodes {
 
     my $node_elements = $self->{_node_elements};
     my $node_id_exists = $self->{_node_id_exists};
-    my $node_is_dup = $self->{_node_is_dup};
 
     my $node_use_k = $self->{_node_use_k};
     my $node_use_kv = $self->{_node_use_kv};
@@ -414,18 +407,18 @@ sub collect_nodes {
     my $count_unused_node_tag_kv = $self->{_count_unused_node_tag_kv};
 
     foreach my $node_element (@$node_elements) {
-        my $nodeId = $node_element->{-id};
+        my $node_id = $node_element->{-id};
 
-        if ($node_id_exists->{$nodeId}) { # for all split-up areas
-            $node_is_dup->{$nodeId} = 1; # for this split-up area
+        if ($node_id_exists->{$node_id}) { # for all split-up areas
+            $node_element->{is_duplicated} = 1;
             next;
         }
-        $node_id_exists->{$nodeId} = 1;
+        $node_id_exists->{$node_id} = 1;
 
         my $use_this_node = 0;
 
         my $result = {
-            id => $nodeId,
+            id => $node_id,
             tags => {},
         };
 
@@ -477,7 +470,6 @@ sub collect_relations {
 
     my $relation_elements = $self->{_relation_elements};
     my $relation_elements_used = $self->{_relation_elements_used};
-    my $relation_is_dup = $self->{_relation_is_dup};
 
     my $relation_use_k = $self->{_relation_use_k};
     my $relation_use_kv = $self->{_relation_use_kv};
@@ -493,13 +485,13 @@ sub collect_relations {
     my $count_unused_relation_tag_kv = $self->{_count_unused_relation_tag_kv};
 
     foreach my $relation_element (@$relation_elements) {
-        my $relationId = $relation_element->{-id};
+        my $relation_id = $relation_element->{-id};
 
-        if ($relation_id_exists->{$relationId}) {                # for all split-up areas
-            $relation_is_dup->{$relationId} = 1;     # for this split-up area
+        if ($relation_id_exists->{$relation_id}) {                # for all split-up areas
+            $relation_element->{is_duplicate} = 1;
             next;
         }
-        $relation_id_exists->{$relationId} = 1;
+        $relation_id_exists->{$relation_id} = 1;
 
         print Dumper $relation_element;
         exit 0;
@@ -507,11 +499,11 @@ sub collect_relations {
         my $use_this_relation = 0;
 
         my $result = {
-            id => $relationId,
+            id => $relation_id,
             tags => {},
         };
 
-        $relation_data->{$relationId} = $result;
+        $relation_data->{$relation_id} = $result;
 
         my @tag_elements = eval { @{$relation_element->{tag}} };
 
@@ -561,7 +553,6 @@ sub collect_ways {
 
     my $way_elements = $self->{_way_elements};
     my $way_elements_used = $self->{_way_elements_used};
-    my $way_is_dup = $self->{_way_is_dup};
 
     my $way_use_k = $self->{_way_use_k};
     my $way_use_kv = $self->{_way_use_kv};
@@ -578,13 +569,13 @@ sub collect_ways {
     my $count_unused_way_tag_kv = $self->{_count_unused_way_tag_kv};
 
     foreach my $way_element (@$way_elements) {
-        my $wayId = $way_element->{-id};
+        my $way_id = $way_element->{-id};
 
-        if ($way_id_exists->{$wayId}) {                # for all split-up areas
-            $way_is_dup->{$wayId} = 1;     # for this split-up area
+        if ($way_id_exists->{$way_id}) {                # for all split-up areas
+            $way_element->{is_duplicate} = 1;
             next;
         }
-        $way_id_exists->{$wayId} = 1;
+        $way_id_exists->{$way_id} = 1;
 
         my @nodeid = eval { map { $_->{-ref} } @{$way_element->{nd}} };
 
@@ -594,14 +585,14 @@ sub collect_ways {
         my $use_this_way = 0;
 
         my $result = {
-            id => $wayId,
+            id => $way_id,
             nodeid => \@nodeid,
             closed => $closed,
             points => [],
             tags => {},
         };
 
-        $way_data->{$wayId} = $result;
+        $way_data->{$way_id} = $result;
 
         my @tag_elements = eval { @{$way_element->{tag}} };
 
@@ -622,7 +613,7 @@ sub collect_ways {
                 $result->{tags}->{$k} = $v if defined $v;
 
                 if ($k eq "bridge" and defined $v and $v eq "yes") {
-                    $bridge_wayid->{$wayId} = 1;
+                    $bridge_wayid->{$way_id} = 1;
                 }
             }
         }
@@ -685,14 +676,14 @@ sub collect_node_coordinates {
         my $north_svg = $self->north_outer_map_boundary_svg;
         my $south_svg = $self->south_outer_map_boundary_svg;
         foreach my $node_element (@$node_elements) {
-            my $nodeId = $node_element->{-id};
+            my $node_id = $node_element->{-id};
             my $lat_deg = 0 + $node_element->{-lat};
             my $lon_deg = 0 + $node_element->{-lon};
             my ($svgx, $svgy) = $converter->lon_lat_deg_to_x_y_px($lon_deg, $lat_deg);
             my $xzone = ($svgx < $west_svg)  ? -1 : ($svgx > $east_svg)  ? 1 : 0;
             my $yzone = ($svgy < $north_svg) ? -1 : ($svgy > $south_svg) ? 1 : 0;
             my $result = [$svgx, $svgy, $xzone, $yzone];
-            $node_data->{$nodeId}[$index] = $result;
+            $node_data->{$node_id}[$index] = $result;
         }
     }
 }
@@ -709,10 +700,10 @@ sub collect_way_coordinates {
         my $index = $map_area->{index};
         my $area_name = $map_area->{name};
         foreach my $way_element (@$way_elements_used) {
-            my $wayId = $way_element->{-id};
-            my @nodeid = @{$way_data->{$wayId}{nodeid}};
+            my $way_id = $way_element->{-id};
+            my @nodeid = @{$way_data->{$way_id}{nodeid}};
             my @points = map { $node_data->{$_}[$index] } @nodeid;
-            $way_data->{$wayId}{points}[$index] = \@points;
+            $way_data->{$way_id}{points}[$index] = \@points;
         }
     }
 }
