@@ -18,6 +18,10 @@ use fields qw(_osm_xml_filenames
 
               _doc
 
+              _nodes_by_id
+              _relations_by_id
+              _ways_by_id
+
               _node_data
               _node_elements
               _node_elements_used
@@ -265,16 +269,30 @@ sub draw_openstreetmap_maps {
         local $self->{_way_elements}           = my $way_elements           = [];
         local $self->{_way_elements_used}      = my $way_elements_used      = [];
 
-        my $converter = $self->{converter};
+        local $self->{_nodes_by_id} = {};
+        local $self->{_relations_by_id} = {};
+        local $self->{_ways_by_id} = {};
 
         $self->set_node_elements();
+        $self->set_relation_elements();
+        $self->set_way_elements();
+
+        foreach my $node (@{$self->{_node_elements}}) {
+            my $id = $node->{-id};
+            $self->{_nodes_by_id}->{$id} = $node;
+        }
+        foreach my $relation (@{$self->{_relation_elements}}) {
+            my $id = $relation->{-id};
+            $self->{_relations_by_id}->{$id} = $relation;
+        }
+        foreach my $way (@{$self->{_way_elements}}) {
+            my $id = $way->{-id};
+            $self->{_ways_by_id}->{$id} = $way;
+        }
+
         $self->collect_node_coordinates();
         $self->collect_nodes();
-
-        $self->set_relation_elements();
         $self->collect_relations();
-
-        $self->set_way_elements();
         $self->collect_ways();
 
         $self->diag("done.\n");
