@@ -25,9 +25,12 @@ use Getopt::Long;
 my $shell = My::Shell->new();
 my $verbose = 0;
 my $debug = {};
+my $dry_run = 0;
+
 Getopt::Long::Configure("bundling", "gnu_compat");
 Getopt::Long::GetOptions("show-stack-traces" => sub { $SIG{__DIE__} = \&Carp::confess; },
 			 "v|verbose+" => \$verbose,
+                         "n|dry-run|no-edit" => \$dry_run,
 			 "D|debug=s" => sub {
 			     foreach (split(/[\s,]+/, $_[1])) {
 				 if (/=/) { my ($k, $v) = ($`, $');
@@ -41,6 +44,7 @@ Getopt::Long::GetOptions("show-stack-traces" => sub { $SIG{__DIE__} = \&Carp::co
 
 $shell->{verbose} = $verbose;
 $shell->{debug} = $debug;
+$shell->{dry_run} = $dry_run;
 $shell->run(@ARGV);
 
 package My::Shell;
@@ -152,6 +156,7 @@ sub cmd__map {
     my $mapmaker = Geo::MapMaker->new(filename => $mapname, $mapinfo ? %$mapinfo : ());
     $mapmaker->{verbose} = $self->{verbose};
     $mapmaker->{debug}   = $self->{debug};
+    $mapmaker->{no_edit} = $self->{dry_run};
     $self->{mapmaker} = $mapmaker;
     $self->$method(@args);
 }
