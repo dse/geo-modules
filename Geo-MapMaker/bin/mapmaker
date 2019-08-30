@@ -2,6 +2,8 @@
 use warnings;
 use strict;
 
+use open ':locale';
+
 BEGIN {
     foreach my $devdir ("$ENV{HOME}/git/dse.d/geo-modules/Geo-GTFS/lib",
 			"$ENV{HOME}/git/dse.d/geo-modules/Geo-MapMaker/lib") {
