@@ -142,7 +142,8 @@ BEGIN {
                   _id_counter
                   _xml_debug_info
                   disable_read_only
-		);
+
+                  no_edit);
 }
 use fields @_FIELDS;
 
@@ -1755,6 +1756,11 @@ sub find_chunks {
 
 sub save {
     my ($self, $filename) = @_;
+
+    if ($self->{no_edit}) {
+        $self->{_dirty_} = 0;
+        return;
+    }
 
     if (!defined $filename) {
 	if (!(defined($self->{_read_filename}) and
