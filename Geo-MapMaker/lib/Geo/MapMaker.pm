@@ -1939,6 +1939,12 @@ sub update_scale {
 
 ###############################################################################
 
+BEGIN {
+    my $select = select(STDERR);
+    $| = 1;
+    select($select);
+}
+
 sub diag {
     my ($self, @args) = @_;
     return unless $self->{verbose};
