@@ -49,7 +49,7 @@ use fields qw(_osm_xml_filenames
               _way_use_k
               _way_use_kv
 
-              _bridge_wayid
+              _bridge_way_id
 
               _count_used_node_tag_k
               _count_used_node_tag_kv
@@ -229,7 +229,7 @@ sub draw_openstreetmap_maps {
     local $self->{_count_unused_way_tag_k}       = my $count_unused_way_tag_k       = {};
     local $self->{_count_unused_way_tag_kv}      = my $count_unused_way_tag_kv      = {};
 
-    local $self->{_bridge_wayid}                 = my $bridge_wayid                 = {};
+    local $self->{_bridge_way_id}                 = my $bridge_way_id                 = {};
     local $self->{_deferreds}                    = my $deferreds                    = [];
 
     $self->collect_k_v_flags();
@@ -576,7 +576,7 @@ sub collect_ways {
     my $way_kv = $self->{_way_kv};
 
     my $way_id_exists = $self->{_way_id_exists};
-    my $bridge_wayid = $self->{_bridge_wayid};
+    my $bridge_way_id = $self->{_bridge_way_id};
     my $way_data = $self->{_way_data};
 
     my $count_used_way_tag_k = $self->{_count_used_way_tag_k};
@@ -593,16 +593,16 @@ sub collect_ways {
         }
         $way_id_exists->{$way_id} = 1;
 
-        my @nodeid = eval { map { $_->{-ref} } @{$way_element->{nd}} };
+        my @node_id = eval { map { $_->{-ref} } @{$way_element->{nd}} };
 
-        my $closed = (scalar(@nodeid)) > 2 && ($nodeid[0] == $nodeid[-1]);
-        pop(@nodeid) if $closed;
+        my $closed = (scalar(@node_id)) > 2 && ($node_id[0] == $node_id[-1]);
+        pop(@node_id) if $closed;
 
         my $use_this_way = 0;
 
         my $result = $way_element;
         $result->{id} = $way_id;
-        $result->{nodeid} = \@nodeid;
+        $result->{node_id} = \@node_id;
         $result->{closed} = $closed;
         $result->{points} = [];
         $result->{tags}   = {};
@@ -628,7 +628,7 @@ sub collect_ways {
                 $result->{tags}->{$k} = $v if defined $v;
 
                 if ($k eq "bridge" and defined $v and $v eq "yes") {
-                    $bridge_wayid->{$way_id} = 1;
+                    $bridge_way_id->{$way_id} = 1;
                 }
             }
         }
@@ -716,8 +716,8 @@ sub collect_way_coordinates {
         my $area_name = $map_area->{name};
         foreach my $way_element (@$way_elements_used) {
             my $way_id = $way_element->{-id};
-            my @nodeid = @{$way_data->{$way_id}{nodeid}};
-            my @points = map { $node_data->{$_}[$index] } @nodeid;
+            my @node_id = @{$way_data->{$way_id}{node_id}};
+            my @points = map { $node_data->{$_}[$index] } @node_id;
             $way_data->{$way_id}{points}[$index] = \@points;
         }
     }
@@ -728,7 +728,7 @@ sub draw {
 
     my $way_kv = $self->{_way_kv};
     my $way_k = $self->{_way_k};
-    my $bridge_wayid = $self->{_bridge_wayid};
+    my $bridge_way_id = $self->{_bridge_way_id};
     my $deferreds = $self->{_deferreds};
     my $node_kv = $self->{_node_kv};
     my $node_k = $self->{_node_k};
@@ -783,8 +783,8 @@ sub draw {
                     my $attr = {};
                     $attr->{'data-name'} = $way->{tags}->{name} if defined $way->{tags}->{name};
 
-                    my $wayid = $way->{id};
-                    my $is_bridge = $bridge_wayid->{$wayid};
+                    my $way_id = $way->{id};
+                    my $is_bridge = $bridge_way_id->{$way_id};
                     my $defer = 0;
 
                     my $points = $way->{points}[$index];
