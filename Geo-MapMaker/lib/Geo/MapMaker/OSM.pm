@@ -254,20 +254,20 @@ sub draw_openstreetmap_maps {
         local $self->{_node_data}              = my $node_data              = {};
         local $self->{_node_k}                 = my $node_k                 = {};
         local $self->{_node_kv}                = my $node_kv                = {};
-        local $self->{_node_is_dup}          = my $node_is_dup          = {};
+        local $self->{_node_is_dup}            = my $node_is_dup            = {};
         local $self->{_node_elements}          = my $node_elements          = [];
 
         local $self->{_relation_data}          = my $relation_data          = {};
         local $self->{_relation_k}             = my $relation_k             = {};
         local $self->{_relation_kv}            = my $relation_kv            = {};
-        local $self->{_relation_is_dup}      = my $relation_is_dup      = {};
+        local $self->{_relation_is_dup}        = my $relation_is_dup        = {};
         local $self->{_relation_elements}      = my $relation_elements      = [];
         local $self->{_relation_elements_used} = my $relation_elements_used = [];
 
         local $self->{_way_data}               = my $way_data               = {};
         local $self->{_way_k}                  = my $way_k                  = {};
         local $self->{_way_kv}                 = my $way_kv                 = {};
-        local $self->{_way_is_dup}           = my $way_is_dup           = {};
+        local $self->{_way_is_dup}             = my $way_is_dup             = {};
         local $self->{_way_elements}           = my $way_elements           = [];
         local $self->{_way_elements_used}      = my $way_elements_used      = [];
 
