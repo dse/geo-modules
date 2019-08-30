@@ -435,10 +435,9 @@ sub collect_nodes {
 
         my $use_this_node = 0;
 
-        my $result = {
-            id => $node_id,
-            tags => {},
-        };
+        my $result = $node_element;
+        $result->{id} = $node_id;
+        $result->{tags} = {};
 
         my @tag_elements = eval { @{$node_element->{tag}} };
 
@@ -516,10 +515,9 @@ sub collect_relations {
 
         my $use_this_relation = 0;
 
-        my $result = {
-            id => $relation_id,
-            tags => {},
-        };
+        my $result = $relation_element;
+        $result->{id} = $relation_id;
+        $result->{tags} = {};
 
         $relation_data->{$relation_id} = $result;
 
@@ -602,13 +600,12 @@ sub collect_ways {
 
         my $use_this_way = 0;
 
-        my $result = {
-            id => $way_id,
-            nodeid => \@nodeid,
-            closed => $closed,
-            points => [],
-            tags => {},
-        };
+        my $result = $way_element;
+        $result->{id} = $way_id;
+        $result->{nodeid} = \@nodeid;
+        $result->{closed} = $closed;
+        $result->{points} = [];
+        $result->{tags}   = {};
 
         $way_data->{$way_id} = $result;
 
