@@ -22,55 +22,21 @@ use fields qw(_osm_xml_filenames
               _relations_by_id
               _ways_by_id
 
-              _node_data
               _node_elements
-              _node_elements_used
               _node_id_exists
-              _node_k
-              _node_kv
-              _node_use_k
-              _node_use_kv
 
               _relation_data
               _relation_elements
-              _relation_elements_used
               _relation_id_exists
-              _relation_k
-              _relation_kv
-              _relation_use_k
-              _relation_use_kv
 
-              _way_data
               _way_elements
-              _way_elements_used
               _way_id_exists
-              _way_k
-              _way_kv
-              _way_use_k
-              _way_use_kv
-
-              _bridge_way_id
-
-              _count_used_node_tag_k
-              _count_used_node_tag_kv
-              _count_unused_node_tag_k
-              _count_unused_node_tag_kv
-              _count_used_relation_tag_k
-              _count_used_relation_tag_kv
-              _count_unused_relation_tag_k
-              _count_unused_relation_tag_kv
-              _count_used_way_tag_k
-              _count_used_way_tag_kv
-              _count_unused_way_tag_k
-              _count_unused_way_tag_kv
-
-              _deferreds
 );
 
 use LWP::Simple;                # RC_NOT_MODIFIED
 use List::MoreUtils qw(all uniq);
 use Sort::Naturally;
-use Data::Dumper qw(Dumper);
+use Geo::MapMaker::Dumper qw(Dumper);
 
 use File::Slurper qw(read_text);
 use Path::Tiny;
@@ -207,32 +173,22 @@ sub draw_openstreetmap_maps {
     my $xml_file_number = 0;
 
     local $self->{_node_id_exists}               = my $node_id_exists               = {};
-    local $self->{_node_use_kv}                  = my $node_use_kv                  = {};
-    local $self->{_node_use_k}                   = my $node_use_k                   = {};
     local $self->{_relation_id_exists}           = my $relation_id_exists           = {};
-    local $self->{_relation_use_kv}              = my $relation_use_kv              = {};
-    local $self->{_relation_use_k}               = my $relation_use_k               = {};
     local $self->{_way_id_exists}                = my $way_id_exists                = {};
-    local $self->{_way_use_kv}                   = my $way_use_kv                   = {};
-    local $self->{_way_use_k}                    = my $way_use_k                    = {};
 
-    local $self->{_count_used_node_tag_k}        = my $count_used_node_tag_k        = {};
-    local $self->{_count_used_node_tag_kv}       = my $count_used_node_tag_kv       = {};
-    local $self->{_count_unused_node_tag_k}      = my $count_unused_node_tag_k      = {};
-    local $self->{_count_unused_node_tag_kv}     = my $count_unused_node_tag_kv     = {};
-    local $self->{_count_used_relation_tag_k}    = my $count_used_relation_tag_k    = {};
-    local $self->{_count_used_relation_tag_kv}   = my $count_used_relation_tag_kv   = {};
-    local $self->{_count_unused_relation_tag_k}  = my $count_unused_relation_tag_k  = {};
-    local $self->{_count_unused_relation_tag_kv} = my $count_unused_relation_tag_kv = {};
-    local $self->{_count_used_way_tag_k}         = my $count_used_way_tag_k         = {};
-    local $self->{_count_used_way_tag_kv}        = my $count_used_way_tag_kv        = {};
-    local $self->{_count_unused_way_tag_k}       = my $count_unused_way_tag_k       = {};
-    local $self->{_count_unused_way_tag_kv}      = my $count_unused_way_tag_kv      = {};
-
-    local $self->{_bridge_way_id}                 = my $bridge_way_id                 = {};
-    local $self->{_deferreds}                    = my $deferreds                    = [];
-
-    $self->collect_k_v_flags();
+    foreach my $layer (@{$self->{osm_layers}}) {
+        $layer->{type} //= { way => 1 };
+        $layer->{index} = {};
+        foreach my $tag (@{$layer->{tags}}) {
+            my $k = $tag->{k};
+            my $v = $tag->{v};
+            if (defined $v) {
+                $layer->{index}->{$k,$v} = 1;
+            } else {
+                $layer->{index}->{$k} = 1;
+            }
+        }
+    }
 
     foreach my $filename (@{$self->{_osm_xml_filenames}}) {
         $xml_file_number += 1;
@@ -241,66 +197,34 @@ sub draw_openstreetmap_maps {
             exit 0 if $xml_file_number >= 16;
         }
 
-        $self->diag("($xml_file_number/$num_xml_files) Parsing $filename ... ");
+        $self->diag("($xml_file_number/$num_xml_files) Parsing $filename ...\n");
 
-        local $self->{_doc};
-
-        {
-            my $xml = path($filename)->slurp();
-            $self->{_doc} = xml2hash($xml, array => 1);
-        }
+        local $self->{_doc} = xml2hash(path($filename)->slurp(), array => 1);
 
         $self->diag("done.\n");
 
-        local $self->{_node_data}              = my $node_data              = {};
-        local $self->{_node_k}                 = my $node_k                 = {};
-        local $self->{_node_kv}                = my $node_kv                = {};
-        local $self->{_node_elements}          = my $node_elements          = [];
-
-        local $self->{_relation_data}          = my $relation_data          = {};
-        local $self->{_relation_k}             = my $relation_k             = {};
-        local $self->{_relation_kv}            = my $relation_kv            = {};
-        local $self->{_relation_elements}      = my $relation_elements      = [];
-        local $self->{_relation_elements_used} = my $relation_elements_used = [];
-
-        local $self->{_way_data}               = my $way_data               = {};
-        local $self->{_way_k}                  = my $way_k                  = {};
-        local $self->{_way_kv}                 = my $way_kv                 = {};
-        local $self->{_way_elements}           = my $way_elements           = [];
-        local $self->{_way_elements_used}      = my $way_elements_used      = [];
-
-        local $self->{_nodes_by_id} = {};
+        local $self->{_node_elements}     = my $node_elements          = [];
+        local $self->{_relation_elements} = my $relation_elements      = [];
+        local $self->{_way_elements}      = my $way_elements           = [];
+        local $self->{_nodes_by_id}     = {};
         local $self->{_relations_by_id} = {};
-        local $self->{_ways_by_id} = {};
+        local $self->{_ways_by_id}      = {};
 
-        $self->set_node_elements();
-        $self->set_relation_elements();
-        $self->set_way_elements();
-
-        foreach my $node (@{$self->{_node_elements}}) {
-            my $id = $node->{-id};
-            $self->{_nodes_by_id}->{$id} = $node;
-        }
-        foreach my $relation (@{$self->{_relation_elements}}) {
-            my $id = $relation->{-id};
-            $self->{_relations_by_id}->{$id} = $relation;
-        }
-        foreach my $way (@{$self->{_way_elements}}) {
-            my $id = $way->{-id};
-            $self->{_ways_by_id}->{$id} = $way;
+        foreach my $layer (@{$self->{osm_layers}}) {
+            $layer->{nodes}        = [];
+            $layer->{ways}         = [];
+            $layer->{relations}    = [];
+            $layer->{node_ids}     = {};
+            $layer->{way_ids}      = {};
+            $layer->{relation_ids} = {};
         }
 
-        $self->collect_node_coordinates();
-        $self->collect_nodes();
-        $self->collect_relations();
-        $self->collect_ways();
-
-        $self->diag("done.\n");
-
-        if (!$ENV{COUNT_UNUSED_ONLY}) {
-            $self->collect_way_coordinates();
-            $self->draw();
-        }
+        $self->set_elements();
+        $self->convert_tags();
+        $self->convert_node_coordinates();
+        $self->remove_duplicate_objects();
+        $self->collect_objects_into_layers();
+        $self->draw_map();
     }
 
     $self->draw_deferred();
@@ -308,384 +232,70 @@ sub draw_openstreetmap_maps {
     $self->write_objects_not_included();
 }
 
-sub write_objects_not_included {
-    my ($self) = @_;
-
-    my $count_unused_node_tag_k = $self->{_count_unused_node_tag_k};
-    my $count_unused_node_tag_kv = $self->{_count_unused_node_tag_kv};
-    my $count_unused_way_tag_k = $self->{_count_unused_way_tag_k};
-    my $count_unused_way_tag_kv = $self->{_count_unused_way_tag_kv};
-
-    my $filename = $self->{osm_objects_not_included_filename};
-    if (!defined $filename) {
-        return;
-    }
-    if (!scalar keys %$count_unused_node_tag_k &&
-            !scalar keys %$count_unused_node_tag_kv &&
-            !scalar keys %$count_unused_way_tag_k &&
-            !scalar keys %$count_unused_way_tag_kv) {
-        if (!unlink($filename)) {
-            CORE::warn("cannot unlink $filename: $!\n");
-        }
-        return;
-    }
-    my $fh;
-    if (!open($fh, '>', $filename)) {
-        CORE::warn("cannot write $filename: $!\n");
-        return;
-    }
-
-    foreach my $key (nsort keys %$count_unused_node_tag_k) {
-        my $count = $count_unused_node_tag_k->{$key};
-        my $tagkey = $key;
-        $tagkey //= '(undef)';
-        printf $fh ("%8s NODE %-32s\n", $count, $tagkey);
-    }
-    foreach my $key (nsort keys %$count_unused_node_tag_kv) {
-        my $count = $count_unused_node_tag_kv->{$key};
-        my ($tagkey, $tagvalue) = split($;, $key);
-        $tagkey //= '(undef)';
-        $tagvalue //= '(undef)';
-        printf $fh ("%8d NODE %-32s = %-32s\n", $count, $tagkey, $tagvalue);
-    }
-    foreach my $key (nsort keys %$count_unused_way_tag_k) {
-        my $count = $count_unused_way_tag_k->{$key};
-        my $tagkey = $key;
-        $tagkey //= '(undef)';
-        printf $fh ("%8d WAY  %-32s\n", $count, $tagkey);
-    }
-    foreach my $key (nsort keys %$count_unused_way_tag_kv) {
-        my $count = $count_unused_way_tag_kv->{$key};
-        my ($tagkey, $tagvalue) = split($;, $key);
-        $tagkey //= '(undef)';
-        $tagvalue //= '(undef)';
-        printf $fh ("%8d WAY  %-32s = %-32s\n", $count, $tagkey, $tagvalue);
-    }
-
-    close($fh);
-    CORE::warn("Wrote $filename\n");
-}
-
-sub collect_k_v_flags {
-    my $self = shift;
-    my $node_use_k      = $self->{_node_use_k};
-    my $node_use_kv     = $self->{_node_use_kv};
-    my $relation_use_k  = $self->{_relation_use_k};
-    my $relation_use_kv = $self->{_relation_use_kv};
-    my $way_use_k       = $self->{_way_use_k};
-    my $way_use_kv      = $self->{_way_use_kv};
-    foreach my $osm_layer_info (@{$self->{osm_layers}}) {
-        my $tags = $osm_layer_info->{tags};
-        my $type = $osm_layer_info->{type} // "way,relation";
-        my @types = split(/\s*,\s*|\s+/, $type);
-        my %types = map { ($_ => 1) } @types;
-        foreach my $tag (@$tags) {
-            my ($k, $v) = @{$tag}{qw(k v)};
-            if (defined $k) {
-                if ($types{node}) {
-                    if (defined $v) {
-                        $node_use_kv->{$k,$v} = 1;
-                    } else {
-                        $node_use_k->{$k} = 1;
-                    }
-                }
-                if ($types{relation}) {
-                    if (defined $v) {
-                        $relation_use_kv->{$k,$v} = 1;
-                    } else {
-                        $relation_use_k->{$k} = 1;
-                    }
-                }
-                if ($types{way}) {
-                    if (defined $v) {
-                        $way_use_kv->{$k,$v} = 1;
-                    } else {
-                        $way_use_k->{$k} = 1;
-                    }
-                }
-            }
-        }
-    }
-}
-
-sub collect_nodes {
-    my $self = shift;
-
-    my $node_elements = $self->{_node_elements};
-    my $node_id_exists = $self->{_node_id_exists};
-
-    my $node_use_k = $self->{_node_use_k};
-    my $node_use_kv = $self->{_node_use_kv};
-    my $node_k = $self->{_node_k};
-    my $node_kv = $self->{_node_kv};
-
-    my $count_used_node_tag_k = $self->{_count_used_node_tag_k};
-    my $count_used_node_tag_kv = $self->{_count_used_node_tag_kv};
-    my $count_unused_node_tag_k = $self->{_count_unused_node_tag_k};
-    my $count_unused_node_tag_kv = $self->{_count_unused_node_tag_kv};
-
-    foreach my $node_element (@$node_elements) {
-        my $node_id = $node_element->{-id};
-
-        if ($node_id_exists->{$node_id}) { # for all split-up areas
-            $node_element->{is_duplicated} = 1;
-            next;
-        }
-        $node_id_exists->{$node_id} = 1;
-
-        my $use_this_node = 0;
-
-        my $result = $node_element;
-        $result->{id} = $node_id;
-        $result->{tags} = {};
-
-        my @tag_elements = eval { @{$node_element->{tag}} };
-
-        my @tag = map { [$_->{-k}, $_->{-v}] } @tag_elements;
-
-        foreach my $tag (@tag) {
-            my ($k, $v) = @$tag;
-            if (defined $k) {
-                if ($node_use_k->{$k}) {
-                    $use_this_node = 1;
-                    push(@{$node_k->{$k}}, $result);
-                }
-                if (defined $v && $node_use_kv->{$k,$v}) {
-                    $use_this_node = 1;
-                    push(@{$node_kv->{$k,$v}}, $result);
-                }
-
-                # DON'T WORRY: a node cannot have two tags with the same key
-                $result->{tags}->{$k} = $v if defined $v;
-            }
-        }
-
-        if ($use_this_node) {
-            foreach my $tag (@tag) {
-                my ($k, $v) = @$tag;
-                next if $k eq 'name';
-                next if $k eq 'ref';
-                $count_used_node_tag_k->{$k} += 1;
-                next if $k =~ m{:};
-                $count_used_node_tag_kv->{$k,$v} += 1;
-            }
+sub index_tags {
+    my ($self, $object) = @_;
+    $object->{tags} = {};
+    $object->{index} = {};
+    foreach my $tag (@{$object->{tag}}) {
+        my $k = $tag->{-k};
+        next if index($k, ':') > -1;
+        next if $k eq 'name';
+        next if $k eq 'ref';
+        next if $k eq 'phone';
+        next if $k eq 'website';
+        next if $k eq 'opening_hours';
+        next if $k eq 'brand';
+        next if $k eq 'description';
+        next if $k eq 'wikidata';
+        my $v = $tag->{-v};
+        $object->{tags}->{$k} = $v;
+        if (defined $v) {
+            $object->{index}->{$k,$v} = 1;
         } else {
-            foreach my $tag (@tag) {
-                my ($k, $v) = @$tag;
-                next if $k eq 'name';
-                next if $k eq 'ref';
-                $count_unused_node_tag_k->{$k} += 1;
-                next if $k =~ m{:};
-                $count_unused_node_tag_kv->{$k,$v} += 1;
-            }
+            $object->{index}->{$k} = 1;
         }
     }
 }
 
-sub collect_relations {
+sub index_match {
     my $self = shift;
-
-    my $relation_elements = $self->{_relation_elements};
-    my $relation_elements_used = $self->{_relation_elements_used};
-
-    my $relation_use_k = $self->{_relation_use_k};
-    my $relation_use_kv = $self->{_relation_use_kv};
-    my $relation_k = $self->{_relation_k};
-    my $relation_kv = $self->{_relation_kv};
-
-    my $relation_id_exists = $self->{_relation_id_exists};
-    my $relation_data = $self->{_relation_data};
-
-    my $count_used_relation_tag_k = $self->{_count_used_relation_tag_k};
-    my $count_used_relation_tag_kv = $self->{_count_used_relation_tag_kv};
-    my $count_unused_relation_tag_k = $self->{_count_unused_relation_tag_k};
-    my $count_unused_relation_tag_kv = $self->{_count_unused_relation_tag_kv};
-
-    foreach my $relation_element (@$relation_elements) {
-        my $relation_id = $relation_element->{-id};
-
-        if ($relation_id_exists->{$relation_id}) {                # for all split-up areas
-            $relation_element->{is_duplicate} = 1;
-            next;
-        }
-        $relation_id_exists->{$relation_id} = 1;
-
-        print Dumper $relation_element;
-        exit 0;
-
-        my $use_this_relation = 0;
-
-        my $result = $relation_element;
-        $result->{id} = $relation_id;
-        $result->{tags} = {};
-
-        $relation_data->{$relation_id} = $result;
-
-        my @tag_elements = eval { @{$relation_element->{tag}} };
-
-        my @tag = map { [$_->{-k}, $_->{-v}] } @tag_elements;
-
-        foreach my $tag (@tag) {
-            my ($k, $v) = @$tag;
-            if (defined $k) {
-                if ($relation_use_k->{$k}) {
-                    $use_this_relation = 1;
-                    push(@{$relation_k->{$k}}, $result);
-                } elsif (defined $v && $relation_use_kv->{$k,$v}) {
-                    $use_this_relation = 1;
-                    push(@{$relation_kv->{$k,$v}}, $result);
-                }
-
-                # DON'T WORRY: a node cannot have two tags with the same key
-                $result->{tags}->{$k} = $v if defined $v;
-            }
-        }
-
-        if ($use_this_relation) {
-            foreach my $tag (@tag) {
-                my ($k, $v) = @$tag;
-                next if $k eq 'name';
-                next if $k eq 'ref';
-                $count_used_relation_tag_k->{$k} += 1;
-                next if $k =~ m{:};
-                $count_used_relation_tag_kv->{$k,$v} += 1;
-            }
-            push(@$relation_elements_used, $relation_element);
-        } else {
-            foreach my $tag (@tag) {
-                my ($k, $v) = @$tag;
-                next if $k eq 'name';
-                next if $k eq 'ref';
-                $count_unused_relation_tag_k->{$k} += 1;
-                next if $k =~ m{:};
-                $count_unused_relation_tag_kv->{$k,$v} += 1;
-            }
+    my $a = shift;
+    my $b = shift;
+    foreach my $k (keys %$a) {
+        if ($b->{$k}) {
+            return 1;
         }
     }
+    return 0;
 }
 
-sub collect_ways {
+sub set_elements {
     my $self = shift;
-
-    my $way_elements = $self->{_way_elements};
-    my $way_elements_used = $self->{_way_elements_used};
-
-    my $way_use_k = $self->{_way_use_k};
-    my $way_use_kv = $self->{_way_use_kv};
-    my $way_k = $self->{_way_k};
-    my $way_kv = $self->{_way_kv};
-
-    my $way_id_exists = $self->{_way_id_exists};
-    my $bridge_way_id = $self->{_bridge_way_id};
-    my $way_data = $self->{_way_data};
-
-    my $count_used_way_tag_k = $self->{_count_used_way_tag_k};
-    my $count_used_way_tag_kv = $self->{_count_used_way_tag_kv};
-    my $count_unused_way_tag_k = $self->{_count_unused_way_tag_k};
-    my $count_unused_way_tag_kv = $self->{_count_unused_way_tag_kv};
-
-    foreach my $way_element (@$way_elements) {
-        my $way_id = $way_element->{-id};
-
-        if ($way_id_exists->{$way_id}) {                # for all split-up areas
-            $way_element->{is_duplicate} = 1;
-            next;
-        }
-        $way_id_exists->{$way_id} = 1;
-
-        my @node_id = eval { map { $_->{-ref} } @{$way_element->{nd}} };
-
-        my $closed = (scalar(@node_id)) > 2 && ($node_id[0] == $node_id[-1]);
-        pop(@node_id) if $closed;
-
-        my $use_this_way = 0;
-
-        my $result = $way_element;
-        $result->{id} = $way_id;
-        $result->{node_id} = \@node_id;
-        $result->{closed} = $closed;
-        $result->{points} = [];
-        $result->{tags}   = {};
-
-        $way_data->{$way_id} = $result;
-
-        my @tag_elements = eval { @{$way_element->{tag}} };
-
-        my @tag = map { [$_->{-k}, $_->{-v}] } @tag_elements;
-
-        foreach my $tag (@tag) {
-            my ($k, $v) = @$tag;
-            if (defined $k) {
-                if ($way_use_k->{$k}) {
-                    $use_this_way = 1;
-                    push(@{$way_k->{$k}}, $result);
-                } elsif (defined $v && $way_use_kv->{$k,$v}) {
-                    $use_this_way = 1;
-                    push(@{$way_kv->{$k,$v}}, $result);
-                }
-
-                # DON'T WORRY: a node cannot have two tags with the same key
-                $result->{tags}->{$k} = $v if defined $v;
-
-                if ($k eq "bridge" and defined $v and $v eq "yes") {
-                    $bridge_way_id->{$way_id} = 1;
-                }
-            }
-        }
-
-        if ($use_this_way) {
-            foreach my $tag (@tag) {
-                my ($k, $v) = @$tag;
-                next if $k eq 'name';
-                next if $k eq 'ref';
-                $count_used_way_tag_k->{$k} += 1;
-                next if $k =~ m{:};
-                $count_used_way_tag_kv->{$k,$v} += 1;
-            }
-            push(@$way_elements_used, $way_element);
-        } else {
-            foreach my $tag (@tag) {
-                my ($k, $v) = @$tag;
-                next if $k eq 'name';
-                next if $k eq 'ref';
-                $count_unused_way_tag_k->{$k} += 1;
-                next if $k =~ m{:};
-                $count_unused_way_tag_kv->{$k,$v} += 1;
-            }
-        }
-    }
-}
-
-sub set_node_elements {
-    my $self = shift;
+    $self->diag("Running set_elements ...\n");
     my $node_elements = $self->{_node_elements};
     @$node_elements = @{$self->{_doc}->{osm}->[0]->{node}};
-}
-
-sub set_relation_elements {
-    my $self = shift;
     my $relation_elements = $self->{_relation_elements};
     @$relation_elements = @{$self->{_doc}->{osm}->[0]->{relation}};
-}
-
-sub set_way_elements {
-    my $self = shift;
     my $way_elements = $self->{_way_elements};
     @$way_elements = @{$self->{_doc}->{osm}->[0]->{way}};
+    $self->diag("Done.\n");
 }
 
 # Collect *all* <node>s' coordinates.  Even if a <node> is not
 # used directly, it could be used by a <way>.
-sub collect_node_coordinates {
+sub convert_node_coordinates {
     my $self = shift;
     my $node_elements = $self->{_node_elements};
     my $converter = $self->{converter};
-    my $node_data = $self->{_node_data};
+    my $count = scalar @$node_elements;
+    $self->diag("Converting coordinates for $count nodes ...\n");
+    foreach my $node_element (@$node_elements) {
+        $node_element->{svg_coords} = [];
+    }
     foreach my $map_area (@{$self->{_map_areas}}) {
         $self->update_scale($map_area);
         my $index = $map_area->{index};
         my $area_name = $map_area->{name};
-        $self->diag("    Indexing for map area $area_name ... ");
         my $west_svg  = $self->west_outer_map_boundary_svg;
         my $east_svg  = $self->east_outer_map_boundary_svg;
         my $north_svg = $self->north_outer_map_boundary_svg;
@@ -698,230 +308,92 @@ sub collect_node_coordinates {
             my $xzone = ($svgx < $west_svg)  ? -1 : ($svgx > $east_svg)  ? 1 : 0;
             my $yzone = ($svgy < $north_svg) ? -1 : ($svgy > $south_svg) ? 1 : 0;
             my $result = [$svgx, $svgy, $xzone, $yzone];
-            $node_data->{$node_id}[$index] = $result;
+            $node_element->{svg_coords}->[$index] = $result;
         }
+    }
+    $self->diag("Done.\n");
+}
+
+sub draw_map {
+    my $self = shift;
+    foreach my $map_area (@{$self->{_map_areas}}) {
+        $self->draw_map_area($map_area);
     }
 }
 
-sub collect_way_coordinates {
+sub draw_map_area {
     my $self = shift;
 
-    my $way_elements_used = $self->{_way_elements_used};
-    my $way_data = $self->{_way_data};
-    my $node_data = $self->{_node_data};
+    my $map_area = shift;
+    my $map_area_index = $map_area->{index};
+    my $map_area_name = $map_area->{name};
 
-    foreach my $map_area (@{$self->{_map_areas}}) {
-        $self->update_scale($map_area);
-        my $index = $map_area->{index};
-        my $area_name = $map_area->{name};
-        foreach my $way_element (@$way_elements_used) {
-            my $way_id = $way_element->{-id};
-            my @node_id = @{$way_data->{$way_id}{node_id}};
-            my @points = map { $node_data->{$_}[$index] } @node_id;
-            $way_data->{$way_id}{points}[$index] = \@points;
-        }
-    }
-}
+    $self->diag("Drawing map area [$map_area_name] ...\n");
 
-sub draw {
-    my $self = shift;
+    $self->update_scale($map_area);
 
-    my $way_kv = $self->{_way_kv};
-    my $way_k = $self->{_way_k};
-    my $bridge_way_id = $self->{_bridge_way_id};
-    my $deferreds = $self->{_deferreds};
-    my $node_kv = $self->{_node_kv};
-    my $node_k = $self->{_node_k};
-    my $node_data = $self->{_node_data};
+    foreach my $layer (@{$self->{osm_layers}}) {
+        next unless $layer->{objects};
 
-    foreach my $map_area (@{$self->{_map_areas}}) {
-        $self->update_scale($map_area);
-        my $index = $map_area->{index};
-        my $area_name = $map_area->{name};
-        $self->diag("Adding objects for map area $area_name ...\n");
+        my $layer_name = $layer->{name};
+        my $layer_group = $layer->{_map_area_group}[$map_area_index];
+        my $type = $layer->{type} // "way"; # 'way' or 'node'
 
-        foreach my $osm_layer_info (@{$self->{osm_layers}}) {
-            my $name = $osm_layer_info->{name};
-            my $tags = $osm_layer_info->{tags};
-            my $group = $osm_layer_info->{_map_area_group}[$index];
-            my $type = $osm_layer_info->{type} // "way"; # 'way' or 'node'
+        my $count = scalar @{$layer->{objects}};
 
-            if ($type eq "way") {
-
-                my $cssClass = $osm_layer_info->{class};
-
-                my @ways;
-                foreach my $tag (@$tags) {
-                    my $k = $tag->{k};
-                    my $v = $tag->{v};
-                    if (defined $k) {
-                        if (defined $v) {
-                            eval { push(@ways, @{$way_kv->{$k,$v}}); };
-                        } else {
-                            eval { push(@ways, @{$way_k->{$k}}); };
-                        }
-                    }
-                }
-                @ways = uniq @ways;
-
-                $self->warnf("  %s (%d objects) ...\n", $name, scalar(@ways))
-                    if $self->{debug}->{countobjectsbygroup} or $self->{verbose} >= 2;
-
-                my $options = {};
-                if ($map_area->{scale_stroke_width} && exists $map_area->{zoom}) {
-                    $options->{scale} = $map_area->{zoom};
-                }
-
-                my $open_class          = "OPEN " . $osm_layer_info->{class};
-                my $closed_class        =           $osm_layer_info->{class};
-                my $open_class_2        = "OPEN " . $osm_layer_info->{class} . "_2";
-                my $closed_class_2      =           $osm_layer_info->{class} . "_2";
-                my $open_class_BRIDGE   = "OPEN " . $osm_layer_info->{class} . "_BRIDGE";
-                my $closed_class_BRIDGE =           $osm_layer_info->{class} . "_BRIDGE";
-
-                foreach my $way (@ways) {
-                    my $attr = {};
-                    $attr->{'data-name'} = $way->{tags}->{name} if defined $way->{tags}->{name};
-
-                    my $way_id = $way->{id};
-                    my $is_bridge = $bridge_way_id->{$way_id};
-                    my $defer = 0;
-
-                    my $points = $way->{points}[$index];
-
-                    if (all { $_->[POINT_X_ZONE] == -1 } @$points) { next; }
-                    if (all { $_->[POINT_X_ZONE] ==  1 } @$points) { next; }
-                    if (all { $_->[POINT_Y_ZONE] == -1 } @$points) { next; }
-                    if (all { $_->[POINT_Y_ZONE] ==  1 } @$points) { next; }
-
-                    my $cssId  = $map_area->{id_prefix} . "w" . $way->{id};
-                    my $cssId2 = $map_area->{id_prefix} . "w" . $way->{id} . "_2";
-                    my $cssId3 = $map_area->{id_prefix} . "w" . $way->{id} . "_BRIDGE"; # bridge
-
-                    my @append;
-
-                    if ($way->{closed}) {
-                        if ($is_bridge && $self->has_style_BRIDGE(class => $cssClass)) {
-                            my $polygon_BRIDGE = $self->polygon(points => $points,
-                                                                class => $closed_class_BRIDGE,
-                                                                attr => $attr,
-                                                                id => $cssId3);
-                            push(@append, [ $group, $polygon_BRIDGE ]);
-                            $defer = 1 if $is_bridge;
-                        }
-                        my $polygon = $self->polygon(points => $points,
-                                                     class => $closed_class,
-                                                     attr => $attr,
-                                                     id => $cssId);
-                        push(@append, [ $group, $polygon ]);
-                        if ($self->has_style_2(class => $cssClass)) {
-                            my $polygon_2 = $self->polygon(points => $points,
-                                                           class => $closed_class_2,
-                                                           attr => $attr,
-                                                           id => $cssId2);
-                            push(@append, [ $group, $polygon_2 ]);
-                            $defer = 1 if $is_bridge;
-                        }
-                    } else {
-                        if ($is_bridge && $self->has_style_BRIDGE(class => $cssClass)) {
-                            my $polyline_BRIDGE = $self->polyline(points => $points,
-                                                                  class => $open_class_BRIDGE,
-                                                                  attr => $attr,
-                                                                  id => $cssId3);
-                            push(@append, [ $group, $polyline_BRIDGE ]);
-                            $defer = 1 if $is_bridge;
-                        }
-                        my $polyline = $self->polyline(points => $points,
-                                                       class => $open_class,
-                                                       attr => $attr,
-                                                       id => $cssId);
-                        push(@append, [ $group, $polyline ]);
-                        if ($self->has_style_2(class => $cssClass)) {
-                            my $polyline_2 = $self->polyline(points => $points,
-                                                             class => $open_class_2,
-                                                             attr => $attr,
-                                                             id => $cssId2);
-                            push(@append, [ $group, $polyline_2 ]);
-                            $defer = 1 if $is_bridge;
-                        }
-                    }
-
-                    if ($defer) {
-                        push(@$deferreds, @append);
-                    } else {
-                        foreach my $append (@append) {
-                            my ($parent, $child) = @$append;
-                            $parent->appendChild($child);
-                        }
-                    }
-                }
-            } elsif ($type eq "node") {
-                my @nodes;
-                foreach my $tag (@$tags) {
-                    my $k = $tag->{k};
-                    my $v = $tag->{v};
-                    if (defined $k) {
-                        if (defined $v) {
-                            eval { push(@nodes, @{$node_kv->{$k, $v}}); };
-                        } else {
-                            eval { push(@nodes, @{$node_k->{$k}}); };
-                        }
-                    }
-                }
-                @nodes = uniq @nodes;
-
-                $self->warnf("  %s (%d objects) ...\n", $name, scalar(@nodes))
-                    if $self->{debug}->{countobjectsbygroup} or $self->{verbose} >= 2;
-
-                if ($osm_layer_info->{output_text}) {
-                    my $cssClass = $osm_layer_info->{text_class};
-                    foreach my $node (@nodes) {
-                        my $attr = {};
-                        $attr->{'data-name'} = $node->{tags}->{name} if defined $node->{tags}->{name};
-
-                        my $coords = $node_data->{$node->{id}}[$index];
-                        my ($x, $y) = @$coords;
-                                # don't care about if out of bounds i guess
-                        my $text = $node->{tags}->{name};
-                        my $cssId  = $map_area->{id_prefix} . "tn" . $node->{id};
-                        my $text_node = $self->text_node(x => $x, y => $y, text => $text,
-                                                         attr => $attr, class => $cssClass, id => $cssId);
-                        $group->appendChild($text_node);
-                    }
-                }
-
-                if ($osm_layer_info->{output_dot}) {
-                    my $cssClass = $osm_layer_info->{dot_class};
-                    my $r = $self->get_style_property(class => $cssClass, property => "r");
-                    foreach my $node (@nodes) {
-                        my $attr = {};
-                        $attr->{'data-name'} = $node->{tags}->{name} if defined $node->{tags}->{name};
-
-                        my $coords = $node_data->{$node->{id}}[$index];
-                        my ($x, $y) = @$coords;
-                                # don't care about if out of bounds i guess
-                        my $cssId  = $map_area->{id_prefix} . "cn" . $node->{id};
-                        my $circle = $self->circle_node(x => $x, y => $y, r => $r,
-                                                        attr => $attr, class => $cssClass, id => $cssId);
-                        $group->appendChild($circle);
-                    }
-                }
+        if ($count) {
+            if ($self->{verbose} >= 2) {
+                $self->diag("  This map tile will add $count objects to layer '$layer_name'...\n");
             }
         }
 
+        foreach my $object (@{$layer->{objects}}) {
+            my $css_class = $layer->{class};
+
+            my $attr = {};
+            $attr->{'data-name'} = $object->{tags}->{name} if defined $object->{tags}->{name};
+
+            my $svg_coords;
+            if ($object->{type} eq 'way') {
+                $svg_coords = [
+                    map { $_->{svg_coords}->[$map_area_index] } @{$object->{node_elements}}
+                ];
+            } elsif ($object->{type} eq 'node') {
+                # not yet supported
+            } elsif ($object->{type} eq 'relation') {
+                # not yet supported
+            }
+
+            if (all { $_->[POINT_X_ZONE] == -1 } @$svg_coords) { next; }
+            if (all { $_->[POINT_X_ZONE] ==  1 } @$svg_coords) { next; }
+            if (all { $_->[POINT_Y_ZONE] == -1 } @$svg_coords) { next; }
+            if (all { $_->[POINT_Y_ZONE] ==  1 } @$svg_coords) { next; }
+
+            if ($object->{type} eq 'way') {
+                my $is_closed = scalar @{$object->{node_elements}} >= 3 && $object->{node_elements}->[0] eq $object->{node_elements}->[-1];
+                my $css_id = $map_area->{id_prefix} . "w" . $object->{id};
+                my $svg_object;
+                if ($is_closed) {
+                    $svg_object = $self->polygon(points => $svg_coords,
+                                                 class => $css_class . ' CLOSED',
+                                                 attr => $attr,
+                                                 id => $css_id);
+                } else {
+                    $svg_object = $self->polyline(points => $svg_coords,
+                                                  class => $css_class . ' CLOSED',
+                                                  attr => $attr,
+                                                  id => $css_id);
+                }
+                $layer_group->appendChild($svg_object);
+            } elsif ($object->{type} eq 'node') {
+                # not yet supported
+            } elsif ($object->{type} eq 'relation') {
+                # not yet supported
+            }
+        }
     }
-    $self->diag("\ndone.\n");
-}
 
-sub draw_deferred {
-    my $self = shift;
-
-    my $deferreds = $self->{_deferreds};
-
-    foreach my $deferred (@$deferreds) {
-        my ($parent, $child) = @$deferred;
-        $parent->appendChild($child);
-    }
+    $self->diag("Done.\n");
 }
 
 our $IS_IDENTIFYING_TAG;
@@ -942,6 +414,142 @@ sub is_identifying_tag {
     my $self = shift;
     my $tag = shift;
     return if $IS_IDENTIFYING_TAG->{$tag};
+}
+
+sub object_matches_layer {
+    my ($self, $object, $layer) = @_;
+    return 0 unless $layer->{type}->{$object->{type}};
+    return $self->index_match($object->{index}, $layer->{index});
+}
+
+sub convert_tags {
+    my $self = shift;
+    my $nc = scalar @{$self->{_node_elements}};
+    my $rc = scalar @{$self->{_relation_elements}};
+    my $wc = scalar @{$self->{_way_elements}};
+    $self->diag("Converting tags for $nc nodes ...\n");
+    foreach my $node (@{$self->{_node_elements}}) {
+        my $id = $node->{-id};
+        $self->{_nodes_by_id}->{$id} = $node;
+        $self->index_tags($node);
+        $node->{type} = 'node';
+    }
+    if (grep { $_->{relation} } map { $_->{type} } @{$self->{osm_layers}}) {
+        $self->diag("Converting tags for $rc relations ...\n");
+        foreach my $relation (@{$self->{_relation_elements}}) {
+            my $id = $relation->{-id};
+            $self->{_relations_by_id}->{$id} = $relation;
+            $self->index_tags($relation);
+            $relation->{type} = 'relation';
+        }
+    }
+    if (grep { $_->{way} } map { $_->{type} } @{$self->{osm_layers}}) {
+        $self->diag("Converting tags for $wc ways ...\n");
+        foreach my $way (@{$self->{_way_elements}}) {
+            my $id = $way->{-id};
+            $self->{_ways_by_id}->{$id} = $way;
+            $self->index_tags($way);
+            $way->{type} = 'way';
+        }
+    }
+    $self->diag("Done.\n");
+}
+
+sub remove_duplicate_objects {
+    my $self = shift;
+
+    $self->diag("Removing duplicate objects ...\n");
+
+    my $node_id_exists = $self->{_node_id_exists};
+    my $relation_id_exists = $self->{_relation_id_exists};
+    my $way_id_exists = $self->{_way_id_exists};
+    foreach my $node (@{$self->{_node_elements}}) {
+        my $node_id = $node->{-id};
+        if ($node_id_exists->{$node_id}) {
+            $node->{is_duplicated} = 1;
+            next;
+        }
+        $node_id_exists->{$node_id} = 1;
+    }
+    if (grep { $_->{relation} } map { $_->{type} } @{$self->{osm_layers}}) {
+        foreach my $relation (@{$self->{_relation_elements}}) {
+            my $relation_id = $relation->{-id};
+            if ($relation_id_exists->{$relation_id}) {
+                $relation->{is_duplicated} = 1;
+                next;
+            }
+            $relation_id_exists->{$relation_id} = 1;
+        }
+    }
+    if (grep { $_->{way} } map { $_->{type} } @{$self->{osm_layers}}) {
+        foreach my $way (@{$self->{_way_elements}}) {
+            my $way_id = $way->{-id};
+            if ($way_id_exists->{$way_id}) {
+                $way->{is_duplicated} = 1;
+                next;
+            }
+            $way_id_exists->{$way_id} = 1;
+        }
+    }
+    @{$self->{_node_elements}}     = grep { !$_->{is_duplicated} } @{$self->{_node_elements}};
+    @{$self->{_relation_elements}} = grep { !$_->{is_duplicated} } @{$self->{_relation_elements}};
+    @{$self->{_way_elements}}      = grep { !$_->{is_duplicated} } @{$self->{_way_elements}};
+
+    $self->diag("Done.\n");
+}
+
+sub collect_objects_into_layers {
+    my $self = shift;
+
+    $self->diag("Collecting objects into layers ...\n");
+
+    foreach my $layer (@{$self->{osm_layers}}) {
+        if ($layer->{type}->{node}) {
+            foreach my $object (@{$self->{_node_elements}}) {
+                next unless $self->index_match($layer->{index}, $object->{index});
+                push(@{$layer->{objects}}, $object);
+                push(@{$object->{layers}}, $layer);
+            }
+        }
+        if ($layer->{type}->{relation}) {
+            foreach my $object (@{$self->{_relation_elements}}) {
+                next unless $self->index_match($layer->{index}, $object->{index});
+                push(@{$layer->{objects}}, $object);
+                push(@{$object->{layers}}, $layer);
+            }
+        }
+        if ($layer->{type}->{way}) {
+            foreach my $object (@{$self->{_way_elements}}) {
+                next unless $self->index_match($layer->{index}, $object->{index});
+                push(@{$layer->{objects}}, $object);
+                push(@{$object->{layers}}, $layer);
+            }
+        }
+
+        # foreach my $object (@{$self->{_node_elements}},
+        #                     @{$self->{_relation_elements}},
+        #                     @{$self->{_way_elements}}) {
+        #     next unless $layer->{type}->{$object->{type}};
+        #     # say "L: " . Dumper $layer->{index};
+        #     # say "O: " . Dumper $object->{index};
+        #     # my $match = 0;
+        #     # foreach my $k (keys %{$layer->{index}}) {
+        #     #     if ($object->{index}->{$k}) {
+        #     #         $match = 1;
+        #     #         last;
+        #     #     }
+        #     # }
+        # }
+        my $layer_name = $layer->{name};
+        if ($layer->{objects}) {
+            my $count = scalar @{$layer->{objects}};
+            if ($self->{verbose} >= 2) {
+                $self->diag("  This map tile will add $count objects to layer '$layer_name'...\n");
+            }
+        }
+    }
+
+    $self->diag("Done.\n");
 }
 
 1;
