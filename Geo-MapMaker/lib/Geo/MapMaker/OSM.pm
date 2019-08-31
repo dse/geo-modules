@@ -415,7 +415,7 @@ sub draw {
                                                       attr => $attr,
                                                       id => $css_id);
                     }
-                    $layer_group->appendChild($svg_object);
+                    $parent->appendChild($svg_object);
                 }
             }
         }
