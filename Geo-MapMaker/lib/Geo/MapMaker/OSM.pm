@@ -284,7 +284,7 @@ sub index_tags {
         next if $k eq 'wikidata';
         my $v = $tag->{-v};
         $object->{tags}->{$k} = $v;
-        if (defined $v) {
+        if (defined $v && $v ne '') {
             $object->{index}->{$k,$v} = 1;
         } else {
             $object->{index}->{$k} = 1;
@@ -499,7 +499,7 @@ sub draw_map_area {
                 my @way_ids = @{$object->{way_ids}};
                 my @way_ids_not_found = grep { !$object->{ways_by_id}->{$_} } @way_ids;
                 if (scalar @way_ids_not_found) {
-                    warn("oh crap, $object->{-type} $object->{-id} way ids not found: @way_ids_not_found\n");
+                    warn("oh crap, $object->{type} $object->{-id} way ids not found: @way_ids_not_found\n");
                     next object;
                 }
                 my @ways = map { $object->{ways_by_id}->{$_} } @way_ids;
