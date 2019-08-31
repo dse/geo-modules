@@ -84,7 +84,6 @@ BEGIN {
 
 		  extra_defs
 
-
 		  _scale_px_per_er
 
 		  north_deg
@@ -304,6 +303,7 @@ sub include_mapmaker_yaml {
 
 sub DESTROY {
     my ($self) = @_;
+    warn("Geo::MapMaker::DESTROY\n");
     if ($self->{_dirty_}) {
 	$self->save();
     }
@@ -568,7 +568,9 @@ sub update_or_create_style_node {
     $contents .= <<'END';
 	.WHITE { fill: #fff; }
 	.MAP_BORDER { fill: none !important; stroke-linejoin: square !important; }
-	.OPEN { fill: none !important; stroke-linecap: round; stroke-linejoin: round; }
+        .AREA   { }
+        .CLOSED { stroke-linecap: round; stroke-linejoin: round; }
+	.OPEN   { fill: none !important; stroke-linecap: round; stroke-linejoin: round; }
 	.TEXT_NODE_BASE {
 		text-align: center;
 		text-anchor: middle;
@@ -1951,23 +1953,71 @@ BEGIN {
     select($select);
 }
 
+use File::Basename qw(basename);
+
+our $prepend;
+our $progname;
+our $prefix2;
+BEGIN {
+    $prepend = 1;
+    $progname = basename($0);
+    $prefix2 = '';
+}
+
+sub log_error {
+    my ($self, $format, @args) = @_;
+    return $self->log(LOG_ERROR, $format, @args);
+}
+sub log_warn {
+    my ($self, $format, @args) = @_;
+    return $self->log(LOG_WARN, $format, @args);
+}
+sub log_info {
+    my ($self, $format, @args) = @_;
+    return $self->log(LOG_INFO, $format, @args);
+}
+sub log_debug {
+    my ($self, $format, @args) = @_;
+    return $self->log(LOG_DEBUG, $format, @args);
+}
+sub log {
+    my ($self, $level, $format, @args) = @_;
+    return if $level > $self->{verbose};
+    my $string;
+    if (!defined $format) {
+        $string = join('', @args);
+    } else {
+        $string = sprintf($format, @args);
+    }
+    if ($prepend) {
+        if (defined $prefix2 && $prefix2 ne '') {
+            $string = $prefix2 . $string;
+        }
+        $string = "$progname: " . $string;
+    }
+    print STDERR $string;
+    if ($string =~ m{\n\z}) {
+        $prepend = 1;
+    } else {
+        $prepend = 0;
+    }
+}
+
 sub diag {
     my ($self, @args) = @_;
-    return unless $self->{verbose};
-    print STDERR (@args);
+    return $self->log_warn(undef, @args);
 }
 sub diagf {
     my ($self, $format, @args) = @_;
-    return unless $self->{verbose};
-    printf STDERR ($format, @args);
+    return $self->log_warn($format, @args);
 }
 sub warn {
     my ($self, @args) = @_;
-    print STDERR (@args);
+    return $self->log_error(undef, @args);
 }
 sub warnf {
     my ($self, $format, @args) = @_;
-    printf STDERR ($format, @args);
+    return $self->log_error(undef, @args);
 }
 
 ###############################################################################
