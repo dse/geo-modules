@@ -295,10 +295,9 @@ sub convert_object_tags {
         my $k = $tag->{-k};
         my $v = $tag->{-v};
         $object->{tags}->{$k} = $v;
+        $object->{index}->{$k} = 1; # incase of tags: { k: '...' } in a layer.
         if (defined $v && $v ne '') {
             $object->{index}->{$k,$v} = 1;
-        } else {
-            $object->{index}->{$k} = 1;
         }
     }
     delete $object->{tag};
