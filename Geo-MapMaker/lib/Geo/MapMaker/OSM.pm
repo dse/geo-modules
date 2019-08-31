@@ -15,34 +15,12 @@ use Geo::MapMaker::Constants qw(:all);
 
 use fields qw(_osm_xml_filenames
               osm_layers
-
-              _seek_object_id
-              _seek_map_tile_number
-
               _doc
-
-              _map_tile_nodes_by_id
-              _map_tile_relations_by_id
-              _map_tile_ways_by_id
-
-              _map_tile_node_elements
-              _map_node_id_exists
-
-              _relation_data
-              _map_tile_relation_elements
-
-              _map_relation_id_exists
-              _map_relations_by_id
-              _map_ways_by_id
-              _map_nodes_by_id
-
-              _map_relation_elements
-
+              _map_tile_nodes
+              _map_tile_ways
+              _map_tile_relations
               _map_tile_number
-              _map_tile_count
-
-              _map_tile_way_elements
-              _map_way_id_exists);
+              _map_tile_count);
 
 use LWP::Simple;                # RC_NOT_MODIFIED
 use List::MoreUtils qw(all uniq);
@@ -182,10 +160,6 @@ sub draw_openstreetmap_maps {
 
     my $num_xml_files = scalar(@{$self->{_osm_xml_filenames}});
 
-    local $self->{_map_node_id_exists}     = {};
-    local $self->{_map_relation_id_exists} = {};
-    local $self->{_map_way_id_exists}      = {};
-
     foreach my $layer (@{$self->{osm_layers}}) {
         $layer->{type} //= { way => 1 };
         $layer->{index} = {};
@@ -200,26 +174,12 @@ sub draw_openstreetmap_maps {
         }
     }
 
-    # local $self->{_seek_map_tile_number} = [117, 118, 120, 153, 154, 155];
-    # local $self->{_seek_object_id} = '3962892';
-
-    local $self->{_map_tile_node_elements};
-    local $self->{_map_tile_relation_elements};
-    local $self->{_map_tile_way_elements};
-    local $self->{_map_tile_nodes_by_id};
-    local $self->{_map_tile_relations_by_id};
-    local $self->{_map_tile_ways_by_id};
-    local $self->{_map_tile_count} = scalar @{$self->{_osm_xml_filenames}};
-    local $self->{_map_tile_number} = 0;
-
-    local $self->{_map_relation_elements} = [];
-    local $self->{_map_relations_by_id} = {};
-    local $self->{_map_ways_by_id} = {};
-    local $self->{_map_nodes_by_id} = {};
-
     foreach my $layer (@{$self->{osm_layers}}) {
-        $layer->{map_objects} = [];
+        $self->index_layer_tags($layer);
     }
+
+    local $self->{_map_tile_number} = 0;
+    local $self->{_map_tile_count} = scalar @{$self->{_osm_xml_filenames}};
 
     foreach my $filename (@{$self->{_osm_xml_filenames}}) {
         $self->{_map_tile_number} += 1;
@@ -227,61 +187,112 @@ sub draw_openstreetmap_maps {
             last if $self->{_map_tile_number} >= 16;
         }
 
-        if ($self->{_seek_map_tile_number}) {
-            if (ref $self->{_seek_map_tile_number} eq 'ARRAY') {
-                next unless grep { $_ == $self->{_map_tile_number} } @{$self->{_seek_map_tile_number}};
-            } else {
-                next unless $self->{_map_tile_number} == $self->{_seek_map_tile_number};
-            }
-        }
-
-        $self->{_map_tile_node_elements}     = [];
-        $self->{_map_tile_relation_elements} = [];
-        $self->{_map_tile_way_elements}      = [];
-        $self->{_map_tile_nodes_by_id}       = {};
-        $self->{_map_tile_relations_by_id}   = {};
-        $self->{_map_tile_ways_by_id}        = {};
-
-        $self->diag("($self->{_map_tile_number}/$self->{_map_tile_count}) Parsing $filename ...\n");
-
+        $self->twarn("Parsing %s ...\n", $filename);
         local $self->{_doc} = xml2hash(path($filename)->slurp(), array => 1);
+        $self->twarn("done.\n");
 
-        $self->diag("done.\n");
+        local $self->{_map_tile_nodes} = {};
+        local $self->{_map_tile_ways} = {};
+        local $self->{_map_tile_relations} = {};
 
-        foreach my $layer (@{$self->{osm_layers}}) {
-            $layer->{map_tile_objects} = [];
-        }
-
-        $self->set_elements();
-        $self->convert_tags();
-        $self->convert_node_coordinates();
-        $self->collect_relations_for_later();
-        $self->remove_duplicate_objects();
-        $self->collect_objects_into_layers();
-        if (!$self->{no_edit}) {
-            $self->draw_map_tile_objects();
-        }
+        $self->load_map_tile_objects();
+        $self->convert_map_tile_tags();
+        $self->collect_map_tile_layer_objects();
+        $self->link_map_tile_objects();
+        $self->convert_coordinates();
     }
+
+    $self->{_map_tile_number} = undef;
+    $self->{_map_tile_count} = undef;
+
     if (!$self->{no_edit}) {
-        $self->draw_map_objects();
+        $self->draw();
     }
+
+    warn("draw_openstreetmap_maps is done\n");
 }
 
-sub index_tags {
+sub load_map_tile_objects {
+    my $self = shift;
+    $self->twarn("Loading map tile objects ...\n");
+    my $nc = 0;
+    my $wc = 0;
+    my $rc = 0;
+    my $order = 0;
+    foreach my $node (@{$self->{_doc}->{osm}->[0]->{node}}) {
+        my $id = $node->{-id};
+        $self->{_map_tile_nodes}->{$id} = $node;
+        $nc += 1;
+        delete $node->{-changeset};
+        delete $node->{-timestamp};
+        delete $node->{-uid};
+        delete $node->{-user};
+        delete $node->{-version};
+        delete $node->{-visible};
+        $node->{type} = 'node';
+        $node->{order} = ++$order;
+    }
+    $self->tinfo("  %d nodes\n", $nc);
+    foreach my $way (@{$self->{_doc}->{osm}->[0]->{way}}) {
+        my $id = $way->{-id};
+        $self->{_map_tile_ways}->{$id} = $way;
+        $wc += 1;
+        delete $way->{-changeset};
+        delete $way->{-timestamp};
+        delete $way->{-uid};
+        delete $way->{-user};
+        delete $way->{-version};
+        delete $way->{-visible};
+        $way->{type} = 'way';
+        $way->{order} = ++$order;
+    }
+    $self->tinfo("  %d ways\n", $wc);
+    foreach my $relation (@{$self->{_doc}->{osm}->[0]->{relation}}) {
+        my $id = $relation->{-id};
+        $self->{_map_tile_relations}->{$id} = $relation;
+        $rc += 1;
+        delete $relation->{-changeset};
+        delete $relation->{-timestamp};
+        delete $relation->{-uid};
+        delete $relation->{-user};
+        delete $relation->{-version};
+        delete $relation->{-visible};
+        $relation->{type} = 'relation';
+        $relation->{order} = ++$order;
+    }
+    $self->tinfo("  %d relations\n", $rc);
+    $self->twarn("Done.\n");
+}
+
+sub convert_map_tile_tags {
+    my ($self) = @_;
+    my $nodes = $self->{_map_tile_nodes};
+    my $ways = $self->{_map_tile_ways};
+    my $relations = $self->{_map_tile_relations};
+    my $count = (scalar keys %$nodes) + (scalar keys %$ways) + (scalar keys %$relations);
+    $self->twarn("Converting tags on %d objects ...\n", $count);
+    foreach my $node (values %$nodes) {
+        my $id = $node->{-id};
+        $self->convert_object_tags($node);
+    }
+    foreach my $way (values %$ways) {
+        my $id = $way->{-id};
+        $self->convert_object_tags($way);
+    }
+    foreach my $relation (values %$relations) {
+        my $id = $relation->{-id};
+        $self->convert_object_tags($relation);
+    }
+    $self->twarn("Done.\n");
+}
+
+sub convert_object_tags {
     my ($self, $object) = @_;
+    return if $object->{tags} || $object->{index};
     $object->{tags} = {};
     $object->{index} = {};
     foreach my $tag (@{$object->{tag}}) {
         my $k = $tag->{-k};
-        next if index($k, ':') > -1;
-        next if $k eq 'name';
-        next if $k eq 'ref';
-        next if $k eq 'phone';
-        next if $k eq 'website';
-        next if $k eq 'opening_hours';
-        next if $k eq 'brand';
-        next if $k eq 'description';
-        next if $k eq 'wikidata';
         my $v = $tag->{-v};
         $object->{tags}->{$k} = $v;
         if (defined $v && $v ne '') {
@@ -290,477 +301,261 @@ sub index_tags {
             $object->{index}->{$k} = 1;
         }
     }
+    delete $object->{tag};
 }
 
-sub index_match {
-    my $self = shift;
-    my $a = shift;
-    my $b = shift;
-    foreach my $k (keys %$a) {
-        if ($b->{$k}) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-sub set_elements {
-    my $self = shift;
-    $self->diag("($self->{_map_tile_number}/$self->{_map_tile_count}) Running set_elements ...\n");
-
-    my $node_elements = $self->{_map_tile_node_elements};
-    @$node_elements = @{$self->{_doc}->{osm}->[0]->{node}};
-    my $relation_elements = $self->{_map_tile_relation_elements};
-    @$relation_elements = @{$self->{_doc}->{osm}->[0]->{relation}};
-    my $way_elements = $self->{_map_tile_way_elements};
-    @$way_elements = @{$self->{_doc}->{osm}->[0]->{way}};
-
-    if ($self->{verbose} >= 2) {
-        $self->diag(sprintf("  Found %d nodes.\n", scalar @$node_elements));
-        $self->diag(sprintf("  Found %d relations.\n", scalar @$relation_elements));
-        $self->diag(sprintf("  Found %d ways.\n", scalar @$way_elements));
-    }
-
-    if ($self->{_seek_object_id}) {
-        my ($node)     = grep { $_->{-id} eq $self->{_seek_object_id} } @$node_elements;
-        my ($relation) = grep { $_->{-id} eq $self->{_seek_object_id} } @$relation_elements;
-        my ($way)      = grep { $_->{-id} eq $self->{_seek_object_id} } @$way_elements;
-        if ($node) {
-            @$node_elements = ($node);
-            @$way_elements = ();
-            @$relation_elements = ();
-            $self->diag("  Tile number $self->{_map_tile_number} contains object id $self->{_seek_object_id}\n");
-        } elsif ($way) {
-            # @$node_elements = ();
-            @$way_elements = ($way);
-            @$relation_elements = ();
-            $self->diag("  Tile number $self->{_map_tile_number} contains object id $self->{_seek_object_id}\n");
-        } elsif ($relation) {
-            # @$node_elements = ();
-            # @$way_elements = ();
-            @$relation_elements = ($relation);
-            $self->diag("  Tile number $self->{_map_tile_number} contains object id $self->{_seek_object_id}\n");
+sub index_layer_tags {
+    my ($self, $layer) = @_;
+    $layer->{index} = [];
+    foreach my $tag (@{$layer->{tags}}) {
+        my $k = $tag->{k};
+        my $v = $tag->{v};
+        if (defined $v && $v ne '') {
+            push(@{$layer->{index}}, join($;, $k, $v));
         } else {
-            @$node_elements = ();
-            @$relation_elements = ();
-            @$way_elements = ();
+            push(@{$layer->{index}}, join($;, $k));
         }
     }
-
-    $self->diag("Done.\n");
 }
 
-# Collect *all* <node>s' coordinates.  Even if a <node> is not
-# used directly, it could be used by a <way>.
-sub convert_node_coordinates {
-    my $self = shift;
-    my $node_elements = $self->{_map_tile_node_elements};
-    my $converter = $self->{converter};
-    my $count = scalar @$node_elements;
-    $self->diag("($self->{_map_tile_number}/$self->{_map_tile_count}) Converting coordinates for $count nodes ...\n");
-    foreach my $node_element (@$node_elements) {
-        $node_element->{svg_coords} = [];
-    }
+sub convert_coordinates {
+    my ($self) = @_;
+    $self->twarn("Converting coordinates ...\n");
     foreach my $map_area (@{$self->{_map_areas}}) {
         $self->update_scale($map_area);
-        my $index = $map_area->{index};
-        my $area_name = $map_area->{name};
-        my $west_svg  = $self->west_outer_map_boundary_svg;
-        my $east_svg  = $self->east_outer_map_boundary_svg;
-        my $north_svg = $self->north_outer_map_boundary_svg;
-        my $south_svg = $self->south_outer_map_boundary_svg;
-        foreach my $node_element (@$node_elements) {
-            my $node_id = $node_element->{-id};
-            my $lat_deg = 0 + $node_element->{-lat};
-            my $lon_deg = 0 + $node_element->{-lon};
-            my ($svgx, $svgy) = $converter->lon_lat_deg_to_x_y_px($lon_deg, $lat_deg);
-            my $xzone = ($svgx < $west_svg)  ? -1 : ($svgx > $east_svg)  ? 1 : 0;
-            my $yzone = ($svgy < $north_svg) ? -1 : ($svgy > $south_svg) ? 1 : 0;
-            my $result = [$svgx, $svgy, $xzone, $yzone];
-            $node_element->{svg_coords}->[$index] = $result;
-        }
-    }
-    $self->diag("Done.\n");
-}
-
-sub draw_map_tile_objects {
-    my $self = shift;
-    foreach my $map_area (@{$self->{_map_areas}}) {
-        $self->draw_map_tile_map_area($map_area);
-    }
-}
-
-sub draw_map_objects {
-    my $self = shift;
-    foreach my $map_area (@{$self->{_map_areas}}) {
-        $self->draw_map_area($map_area);
-    }
-}
-
-sub draw_map_tile_map_area {
-    my $self = shift;
-    my $map_area = shift;
-
-    my $map_area_index = $map_area->{index};
-    my $map_area_name = $map_area->{name};
-
-    $self->diag("($self->{_map_tile_number}/$self->{_map_tile_count}) Drawing into map area [$map_area_name] ...\n");
-
-    $self->update_scale($map_area);
-
-    foreach my $layer (@{$self->{osm_layers}}) {
-        next unless $layer->{map_tile_objects};
-
-        my $layer_name = $layer->{name};
-        my $layer_group = $layer->{_map_area_group}[$map_area_index];
-
-        my $count = scalar @{$layer->{map_tile_objects}};
-
-        if ($count && $self->{verbose} >= 2) {
-            $self->diag("  This map tile will add no more than $count objects to layer '$layer_name' now...\n");
-        }
-
-        my $count_added = 0;
-
-        foreach my $object (@{$layer->{map_tile_objects}}) {
-            my $css_class = $layer->{class};
-
-            my $attr = {};
-            $attr->{'data-name'} = $object->{tags}->{name} if defined $object->{tags}->{name};
-
-            my @svg_coords;
-            if ($object->{type} eq 'way') {
-                if (!$object->{node_elements}) {
-                    $object->{node_elements} = [ map { $self->{_map_tile_nodes_by_id}->{$_} } map { $_->{-ref} } @{$object->{nd}} ];
-                }
-                @svg_coords = map { $_->{svg_coords}->[$map_area_index] } @{$object->{node_elements}};
-            } elsif ($object->{type} eq 'node') {
-                # not yet supported here
-                next;
-            } elsif ($object->{type} eq 'relation') {
-                # not supported here
-                next;
-            }
-
-            if (all { $_->[POINT_X_ZONE] == -1 } @svg_coords) { next; }
-            if (all { $_->[POINT_X_ZONE] ==  1 } @svg_coords) { next; }
-            if (all { $_->[POINT_Y_ZONE] == -1 } @svg_coords) { next; }
-            if (all { $_->[POINT_Y_ZONE] ==  1 } @svg_coords) { next; }
-
-            if ($object->{type} eq 'way') {
-                my $is_closed = scalar @{$object->{node_elements}} >= 3 && $object->{node_elements}->[0] eq $object->{node_elements}->[-1];
-                my $css_id = $map_area->{id_prefix} . "w" . $object->{-id};
-                my $svg_object;
-                if ($is_closed) {
-                    $svg_object = $self->polygon(points => \@svg_coords,
-                                                 class => $css_class,
-                                                 attr => $attr,
-                                                 id => $css_id);
-                } else {
-                    $svg_object = $self->polyline(points => \@svg_coords,
-                                                  class => $css_class . ' OPEN',
-                                                  attr => $attr,
-                                                  id => $css_id);
-                }
-                $layer_group->appendChild($svg_object);
-                $count_added += 1;
-            } elsif ($object->{type} eq 'node') {
-                # not yet supported
-            } elsif ($object->{type} eq 'relation') {
-                # not yet supported
-            }
-        }
-        if ($count_added && $self->{verbose} >= 2) {
-            $self->diag("  $count_added objects added.\n");
-        }
-    }
-    $self->diag("Done.\n");
-}
-
-sub draw_map_area {
-    my $self = shift;
-    my $map_area = shift;
-
-    my $map_area_index = $map_area->{index};
-    my $map_area_name = $map_area->{name};
-
-    $self->diag("Drawing global objects into map area [$map_area_name] ...\n");
-
-    foreach my $layer (@{$self->{osm_layers}}) {
-        my $layer_name = $layer->{name};
-        my $layer_group = $layer->{_map_area_group}[$map_area_index];
-        my $count = scalar @{$layer->{map_objects}};
-      object:
-        foreach my $object (@{$layer->{map_objects}}) {
-            my $css_class = $layer->{class};
-            my $attr = {};
-            $attr->{'data-name'} = $object->{tags}->{name} if defined $object->{tags}->{name};
-            if ($object->{type} eq 'relation') {
-                my @way_ids = @{$object->{way_ids}};
-                my @way_ids_not_found = grep { !$object->{ways_by_id}->{$_} } @way_ids;
-                if (scalar @way_ids_not_found) {
-                    warn("oh crap, $object->{type} $object->{-id} way ids not found: @way_ids_not_found\n");
-                    next object;
-                }
-                my @ways = map { $object->{ways_by_id}->{$_} } @way_ids;
-                foreach my $way (@ways) {
-                    my @node_ids = @{$way->{node_ids}};
-                    my @node_ids_not_found = grep { !$object->{nodes_by_id}->{$_} } @node_ids;
-                    if (scalar @node_ids_not_found) {
-                        warn("oh crap, $object->{-type} $object->{-id} way $way->{-id} node ids not found: @node_ids_not_found\n");
-                        next object;
+        my $map_area_index = $map_area->{index};
+        foreach my $layer (@{$self->{osm_layers}}) {
+            foreach my $relation (grep { $_->{type} eq 'relation' } values %{$layer->{objects}}) {
+                foreach my $way (values %{$relation->{ways}}) {
+                    foreach my $node (values %{$way->{nodes}}) {
+                        $node->{svg_coords}->[$map_area_index] ||= $self->convert_node_coordinates($node);
                     }
                 }
-                my @outer_way_ids = @{$object->{outer_way_ids}};
-                my @inner_way_ids = @{$object->{inner_way_ids}};
-                my @outer_ways = map { $object->{ways_by_id}->{$_} } @outer_way_ids;
-                my @inner_ways = map { $object->{ways_by_id}->{$_} } @inner_way_ids;
-                my @node_ids = map { @{$_->{node_ids}} } @outer_ways;
-                my @nodes = map { $object->{nodes_by_id}->{$_} } @node_ids;
-                my @svg_coords = map { $_->{svg_coords}->[$map_area_index] } @nodes;
-
-                if (all { $_->[POINT_X_ZONE] == -1 } @svg_coords) { next; }
-                if (all { $_->[POINT_X_ZONE] ==  1 } @svg_coords) { next; }
-                if (all { $_->[POINT_Y_ZONE] == -1 } @svg_coords) { next; }
-                if (all { $_->[POINT_Y_ZONE] ==  1 } @svg_coords) { next; }
-
-                my $css_id = $map_area->{id_prefix} . "w" . $object->{-id};
-                my $svg_object = $self->polygon(
-                    points => \@svg_coords,
-                    class => $css_class,
-                    attr => $attr,
-                    id => $css_id
-                );
-                $layer_group->appendChild($svg_object);
-            } elsif ($object->{type} eq 'way') {
-                # not supported here
-                next;
-            } elsif ($object->{type} eq 'node') {
-                # not supported here
-                next;
+            }
+            foreach my $way (grep { $_->{type} eq 'way' } values %{$layer->{objects}}) {
+                foreach my $node (values %{$way->{nodes}}) {
+                    $node->{svg_coords}->[$map_area_index] ||= $self->convert_node_coordinates($node);
+                }
+            }
+            foreach my $node (grep { $_->{type} eq 'node' } values %{$layer->{objects}}) {
+                $node->{svg_coords}->[$map_area_index] ||= $self->convert_node_coordinates($node);
             }
         }
     }
-
-    $self->diag("Done.\n");
+    $self->twarn("Done.\n");
 }
 
-our $IS_IDENTIFYING_TAG;
-BEGIN {
-    $IS_IDENTIFYING_TAG = {
-        name => 1,
-        ref => 1,
-        phone => 1,
-        website => 1,
-        opening_hours => 1,
-        brand => 1,
-        description => 1,
-        wikidata => 1,
-    };
+sub convert_node_coordinates {
+    my ($self, $node) = @_;
+    my $west_svg  = $self->west_outer_map_boundary_svg;
+    my $east_svg  = $self->east_outer_map_boundary_svg;
+    my $north_svg = $self->north_outer_map_boundary_svg;
+    my $south_svg = $self->south_outer_map_boundary_svg;
+    my $lat = 0 + $node->{-lat};
+    my $lon = 0 + $node->{-lon};
+    my ($svgx, $svgy) = $self->{converter}->lon_lat_deg_to_x_y_px($lon, $lat);
+    my $xzone = ($svgx < $west_svg)  ? -1 : ($svgx > $east_svg)  ? 1 : 0;
+    my $yzone = ($svgy < $north_svg) ? -1 : ($svgy > $south_svg) ? 1 : 0;
+    my $result = [$svgx, $svgy, $xzone, $yzone];
+    return $result;
 }
 
-sub is_identifying_tag {
-    my $self = shift;
-    my $tag = shift;
-    return if $IS_IDENTIFYING_TAG->{$tag};
-}
+use vars qw(%NS);
 
-sub object_matches_layer {
-    my ($self, $object, $layer) = @_;
-    return 0 unless $layer->{type}->{$object->{type}};
-    return $self->index_match($object->{index}, $layer->{index});
-}
-
-sub convert_tags {
-    my $self = shift;
-
-    my $nc = scalar @{$self->{_map_tile_node_elements}};
-    my $rc = scalar @{$self->{_map_tile_relation_elements}};
-    my $wc = scalar @{$self->{_map_tile_way_elements}};
-    my $oc = $nc + $rc + $wc;
-
-    if ($oc) {
-        $self->diag("($self->{_map_tile_number}/$self->{_map_tile_count}) Converting tags for $oc objects ...\n");
-    }
-
-    if ($nc && $self->{verbose} >= 2) {
-        $self->diag("  Converting tags for for $nc nodes ...\n");
-    }
-    foreach my $node (@{$self->{_map_tile_node_elements}}) {
-        my $id = $node->{-id};
-        $self->{_map_tile_nodes_by_id}->{$id} = $node;
-        $self->index_tags($node);
-        $node->{type} = 'node';
-    }
-    if (grep { $_->{relation} } map { $_->{type} } @{$self->{osm_layers}}) {
-        if ($rc && $self->{verbose} >= 2) {
-            $self->diag("  Converting tags for $rc relations ...\n");
-        }
-        foreach my $relation (@{$self->{_map_tile_relation_elements}}) {
-            my $id = $relation->{-id};
-            $self->{_map_tile_relations_by_id}->{$id} = $relation;
-            $self->index_tags($relation);
-            $relation->{type} = 'relation';
-        }
-    }
-    if (grep { $_->{way} } map { $_->{type} } @{$self->{osm_layers}}) {
-        if ($wc && $self->{verbose} >= 2) {
-            $self->diag("  Converting tags for $wc ways ...\n");
-        }
-        foreach my $way (@{$self->{_map_tile_way_elements}}) {
-            my $id = $way->{-id};
-            $self->{_map_tile_ways_by_id}->{$id} = $way;
-            $self->index_tags($way);
-            $way->{type} = 'way';
-        }
-    }
-    $self->diag("Done.\n");
-}
-
-sub remove_duplicate_objects {
-    my $self = shift;
-
-    $self->diag("($self->{_map_tile_number}/$self->{_map_tile_count}) Removing duplicate objects ...\n");
-
-    my $node_id_exists = $self->{_map_node_id_exists};
-    my $relation_id_exists = $self->{_map_relation_id_exists};
-    my $way_id_exists = $self->{_map_way_id_exists};
-
-    foreach my $node (@{$self->{_map_tile_node_elements}}) {
-        my $node_id = $node->{-id};
-        if ($node_id_exists->{$node_id}) {
-            $node->{is_duplicated} = 1;
-            next;
-        }
-        $node_id_exists->{$node_id} = 1;
-    }
-
-    # We do not want to remove duplicate relation objects AT THIS
-    # TIME.  Not every map tile containing a relation will have all
-    # the ways and all the nodes required to render it.
-
-    if (grep { $_->{way} } map { $_->{type} } @{$self->{osm_layers}}) {
-        foreach my $way (@{$self->{_map_tile_way_elements}}) {
-            my $way_id = $way->{-id};
-            if ($way_id_exists->{$way_id}) {
-                $way->{is_duplicated} = 1;
-                next;
+sub draw {
+    my ($self) = @_;
+    $self->twarn("Drawing into map ...\n");
+    foreach my $map_area (@{$self->{_map_areas}}) {
+        $self->update_scale($map_area);
+        my $map_area_index = $map_area->{index};
+        my $map_area_name = $map_area->{name};
+        $self->twarn("  Drawing into map area $map_area_index - $map_area_name ...\n");
+        foreach my $layer (@{$self->{osm_layers}}) {
+            my $layer_name = $layer->{name};
+            my $layer_group = $layer->{_map_area_group}[$map_area_index];
+            my @objects = sort { $a->{order} <=> $b->{order} } values %{$layer->{objects}};
+            $self->twarn("    Adding %d objects to layer $layer_name ...\n", scalar @objects);
+            foreach my $object (@objects) {
+                my $css_class = $layer->{class};
+                my $attr = {};
+                $attr->{'data-name'} = $object->{tags}->{name} if defined $object->{tags}->{name};
+                my $parent = $layer_group;
+                my @ways = ($object);
+                if ($object->{type} eq 'relation') {
+                    @ways = values %{$object->{outer_ways}};
+                    $parent = $self->{_svg_doc}->createElementNS($NS{svg}, 'g');
+                    $parent->setAttribute('id', $map_area->{id_prefix} . 'r' . $object->{-id});
+                    $parent->setAttribute('data-name', $object->{tags}->{name});
+                    $parent->setAttribute('class', 'relation');
+                    $layer_group->appendChild($parent);
+                }
+                foreach my $way (sort { $a->{order} <=> $b->{order} } @ways) {
+                    my $css_id = $map_area->{id_prefix} . "w" . $way->{-id};
+                    my @svg_coords =
+                        map { $way->{nodes}->{$_}->{svg_coords}->[$map_area_index] }
+                        @{$way->{node_ids}};
+                    next unless scalar @svg_coords; # ick!
+                    if (all { $_->[POINT_X_ZONE] == -1 } @svg_coords) { next; }
+                    if (all { $_->[POINT_X_ZONE] ==  1 } @svg_coords) { next; }
+                    if (all { $_->[POINT_Y_ZONE] == -1 } @svg_coords) { next; }
+                    if (all { $_->[POINT_Y_ZONE] ==  1 } @svg_coords) { next; }
+                    my $svg_object;
+                    if ($way->{is_area}) {
+                        $svg_object = $self->polygon(points => \@svg_coords,
+                                                     class => $css_class . ' AREA',
+                                                     attr => $attr,
+                                                     id => $css_id);
+                    } elsif ($way->{is_closed}) {
+                        $svg_object = $self->polygon(points => \@svg_coords,
+                                                     class => $css_class . ' CLOSED',
+                                                     attr => $attr,
+                                                     id => $css_id);
+                    } else {
+                        $svg_object = $self->polyline(points => \@svg_coords,
+                                                      class => $css_class . ' OPEN',
+                                                      attr => $attr,
+                                                      id => $css_id);
+                    }
+                    $layer_group->appendChild($svg_object);
+                }
             }
-            $way_id_exists->{$way_id} = 1;
         }
     }
-
-    my $nc = scalar @{$self->{_map_tile_node_elements}};
-    my $wc = scalar @{$self->{_map_tile_way_elements}};
-
-    @{$self->{_map_tile_node_elements}}     = grep { !$_->{is_duplicated} } @{$self->{_map_tile_node_elements}};
-    @{$self->{_map_tile_way_elements}}      = grep { !$_->{is_duplicated} } @{$self->{_map_tile_way_elements}};
-
-    my $nc2 = scalar @{$self->{_map_tile_node_elements}};
-    my $wc2 = scalar @{$self->{_map_tile_way_elements}};
-
-    if ($self->{verbose} >= 2) {
-        if ($nc) {
-            $self->diag(sprintf("  Nodes     before: %-6d => after: %-6d\n", $nc, $nc2));
-        }
-        if ($wc) {
-            $self->diag(sprintf("  Ways      before: %-6d => after: %-6d\n", $wc, $wc2));
-        }
-    }
-
-    $self->diag("Done.\n");
+    $self->twarn("Done.\n");
 }
 
-sub collect_relations_for_later {
-    my $self = shift;
-
-    $self->diag("($self->{_map_tile_number}/$self->{_map_tile_count}) Collecting relations into layers ...\n");
-
-    my $rc = scalar @{$self->{_map_tile_relation_elements}};
-
+sub collect_map_tile_layer_objects {
+    my ($self) = @_;
     my $count = 0;
-
+    $self->twarn("Collecting objects for layers ...\n");
     foreach my $layer (@{$self->{osm_layers}}) {
-        if ($layer->{type}->{relation}) {
-            foreach my $object (@{$self->{_map_tile_relation_elements}}) {
-                next unless $self->index_match($layer->{index}, $object->{index});
-                my ($existing_object) = grep { $_->{-id} eq $object->{-id} } @{$layer->{map_objects}};
-                if ($existing_object) {
-                    $object = $existing_object;
-                } else {
-                    push(@{$layer->{map_objects}}, $object);
-                    $count += 1;
-
-                    my @outer_way_ids = map { $_->{-ref} } grep { eval { $_->{-role} eq 'outer' && $_->{-type} eq 'way' && defined $_->{-ref} } } @{$object->{member}};
-                    my @inner_way_ids = map { $_->{-ref} } grep { eval { $_->{-role} eq 'inner' && $_->{-type} eq 'way' && defined $_->{-ref} } } @{$object->{member}};
-                    my @way_ids = (@outer_way_ids, @inner_way_ids);
-
-                    $object->{way_ids}       = \@way_ids;
-                    $object->{outer_way_ids} = \@outer_way_ids;
-                    $object->{inner_way_ids} = \@inner_way_ids;
-                    $object->{way_id_found}  = {};
-                    $object->{node_id_found} = {};
-                    $object->{ways_by_id}    = {};
-                }
-                foreach my $way_id (@{$object->{way_ids}}) {
-                    my ($way) = grep { $_->{-id} eq $way_id } @{$self->{_map_tile_way_elements}};
-                    if ($way) {
-                        $object->{way_id_found}->{$way_id} = 1;
-                        $object->{ways_by_id}->{$way_id} //= $way;
-                        my @node_ids = map { $_->{-ref} } @{$way->{nd}};
-                        $way->{node_ids} = \@node_ids;
-                        foreach my $node_id (@node_ids) {
-                            my ($node) = grep { $_->{-id} eq $node_id } @{$self->{_map_tile_node_elements}};
-                            if ($node) {
-                                $object->{node_id_found}->{$node_id} = 1;
-                                $object->{nodes_by_id}->{$node_id} //= $node;
-                            }
-                        }
-                    }
+        $layer->{objects} //= {};
+        foreach my $object (values %{$self->{_map_tile_nodes}},
+                            values %{$self->{_map_tile_ways}},
+                            values %{$self->{_map_tile_relations}}) {
+            next unless $layer->{type}->{$object->{type}};
+            my $match = 0;
+            foreach my $index (@{$layer->{index}}) {
+                if ($object->{index}->{$index}) {
+                    $match = 1;
+                    last;
                 }
             }
-        }
-        my $layer_name = $layer->{name};
-        if ($count && $self->{verbose} >= 2) {
-            $self->diag("  This map tile will add no more than $count of $rc relation objects to layer '$layer_name' later...\n");
+            next unless $match;
+            $layer->{objects}->{$object->{-id}} = $object;
+            $count += 1;
         }
     }
-
-    $self->diag("Done.\n");
+    $self->tinfo("  Added %d objects\n", $count);
+    $self->twarn("Done.\n");
 }
 
-sub collect_objects_into_layers {
-    my $self = shift;
-
-    $self->diag("($self->{_map_tile_number}/$self->{_map_tile_count}) Collecting objects into layers ...\n");
-
-    my $nc = scalar @{$self->{_map_tile_node_elements}};
-    my $wc = scalar @{$self->{_map_tile_way_elements}};
-    my $oc = $nc + $wc;
-
+sub link_map_tile_objects {
+    my ($self) = @_;
     foreach my $layer (@{$self->{osm_layers}}) {
-        if ($layer->{type}->{node}) {
-            foreach my $object (@{$self->{_map_tile_node_elements}}) {
-                next unless $self->index_match($layer->{index}, $object->{index});
-                push(@{$layer->{map_tile_objects}}, $object);
-            }
+        foreach my $relation (grep { $_->{type} eq 'relation' } values %{$layer->{objects}}) {
+            $self->link_relation_object($relation);
         }
-        if ($layer->{type}->{way}) {
-            foreach my $object (@{$self->{_map_tile_way_elements}}) {
-                next unless $self->index_match($layer->{index}, $object->{index});
-                push(@{$layer->{map_tile_objects}}, $object);
-            }
-        }
-        my $layer_name = $layer->{name};
-        if ($layer->{map_tile_objects}) {
-            my $count = scalar @{$layer->{map_tile_objects}};
-            if ($count && $self->{verbose} >= 2) {
-                $self->diag("  This map tile will add no more than $count of $oc objects to layer '$layer_name' later...\n");
-            }
+        foreach my $way (grep { $_->{type} eq 'way' } values %{$layer->{objects}}) {
+            $self->link_way_object($way);
         }
     }
+}
 
-    $self->diag("Done.\n");
+sub link_relation_object {
+    my ($self, $relation) = @_;
+    $relation->{ways} //= {};
+    my @outer_way_ids = map { $_->{-ref} } grep { eval { $_->{-role} eq 'outer' && $_->{-type} eq 'way' && defined $_->{-ref} } } @{$relation->{member}};
+    my @inner_way_ids = map { $_->{-ref} } grep { eval { $_->{-role} eq 'inner' && $_->{-type} eq 'way' && defined $_->{-ref} } } @{$relation->{member}};
+    foreach my $way_id (@outer_way_ids) {
+        my $way = $self->{_map_tile_ways}->{$way_id};
+        next unless $way;
+        my $existing_way = $relation->{ways}->{$way_id};
+        if (defined $existing_way) {
+            $way = $existing_way;
+        } else {
+            $relation->{ways}->{$way_id} = $way;
+        }
+        $self->link_way_object($way);
+        $relation->{outer_ways}->{$way_id} = $way;
+    }
+    foreach my $way_id (@inner_way_ids) {
+        my $way = $self->{_map_tile_ways}->{$way_id};
+        next unless $way;
+        my $existing_way = $relation->{ways}->{$way_id};
+        if (defined $existing_way) {
+            $way = $existing_way;
+        } else {
+            $relation->{ways}->{$way_id} = $way;
+        }
+        $self->link_way_object($way);
+        $relation->{inner_ways}->{$way_id} = $way;
+    }
+}
+
+sub link_way_object {
+    my ($self, $way) = @_;
+    $way->{nodes} //= {};
+    my @node_ids = map { $_->{-ref} } @{$way->{nd}};
+    $way->{node_ids} = \@node_ids;
+    foreach my $node_id (@node_ids) {
+        my $node = $self->{_map_tile_nodes}->{$node_id};
+        next unless $node;
+        my $existing_node = $way->{nodes}->{$node_id};
+        if (defined $existing_node) {
+            $node = $existing_node;
+        } else {
+            $way->{nodes}->{$node_id} = $node;
+        }
+    }
+    if (scalar @node_ids > 1 && $node_ids[0] eq $node_ids[-1]) {
+        $way->{is_closed} = 1;
+        if ($way->{tags} && defined $way->{tags}->{area} && $way->{tags}->{area} eq 'yes') {
+            $way->{is_area} = 1;
+        } elsif (!exists $way->{tags}->{highway} && !exists $way->{tags}->{barrier}) {
+            $way->{is_area} = 1;
+        }
+        # Normally a way with highway=* or barrier=* is a closed
+        # polyline that's not filled.  However, if area=yes is
+        # specified, it can be filled.
+    } else {
+        $way->{is_closed} = 0;
+    }
+}
+
+use vars qw($prefix2);
+
+sub tlog {
+    my ($self, $level, $format, @args) = @_;
+    local $prefix2;
+    my $number = $self->{_map_tile_number};
+    my $count = $self->{_map_tile_count};
+    if (defined $number && defined $count) {
+        $prefix2 = sprintf("(%d/%d) ", $number, $count);
+    } else {
+        $prefix2 = "";
+    }
+    return $self->log($level, $format, @args);
+}
+
+sub terror {
+    my ($self, $format, @args) = @_;
+    return $self->tlog(LOG_ERROR, $format, @args);
+}
+
+sub twarn {
+    my ($self, $format, @args) = @_;
+    return $self->tlog(LOG_WARN, $format, @args);
+}
+
+sub tinfo {
+    my ($self, $format, @args) = @_;
+    return $self->tlog(LOG_INFO, $format, @args);
+}
+
+sub tdebug {
+    my ($self, $format, @args) = @_;
+    return $self->tlog(LOG_DEBUG, $format, @args);
 }
 
 1;
