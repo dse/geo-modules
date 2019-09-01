@@ -193,8 +193,6 @@ sub draw_openstreetmap_maps {
             last if $self->{_map_tile_number} >= 16;
         }
 
-        next unless grep { $self->{_map_tile_number} == $_ } (117, 118, 120, 153, 154, 155);
-
         $self->twarn("Parsing %s ...\n", $filename);
         local $self->{_doc} = xml2hash(path($filename)->slurp(), array => 1);
         $self->twarn("done.\n");
@@ -454,11 +452,9 @@ sub draw {
                     my $css_class = $way->{is_inner} ? $inner_css_class : $css_class;
 
                     if (!$way) {
-                        $self->tinfo("      :-( no way\n");
                         next;
                     }
                     if (!$way->{node_ids}) {
-                        $self->tinfo("      :-( way with no node_ids array\n");
                         next;
                     }
                     my $css_id = $map_area->{id_prefix} . "w" . $way->{-id};
@@ -467,14 +463,13 @@ sub draw {
                     }
                     my @node_ids = @{$way->{node_ids}};
                     if (!scalar @node_ids) {
-                        $self->tinfo("      :-( no node ids for way %s\n", $way->{-id});
+                        next;
                     }
                     my @svg_coords =
                         grep { $_ }
                         map { $way->{nodes}->{$_}->{svg_coords}->[$map_area_index] }
                         @{$way->{node_ids}};
                     if (!scalar @svg_coords) {
-                        $self->tinfo("      :-( no svg coords for way %s\n", $way->{-id});
                         next;
                     }
                     if (all { $_->[POINT_X_ZONE] == -1 } @svg_coords) { $self->tinfo("  :-( all out of bounds\n"); next; }
@@ -623,12 +618,9 @@ sub link_way_object {
     my @node_ids = map { $_->{-ref} } @{$way->{nd}};
     $way->{node_ids} = \@node_ids;
 
-    $self->twarn("      way id %s has %d nodes\n", $way_id, scalar @node_ids);
-
     foreach my $node_id (@node_ids) {
         my $node = $self->{_map_tile_nodes}->{$node_id};
         if (!$node) {
-            $self->twarn("      :-( no node id %s in this map tile\n", $node_id);
             next;
         }
 
