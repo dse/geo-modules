@@ -244,7 +244,7 @@ sub load_map_tile_objects {
         $node->{type} = 'node';
         $node->{order} = ++$order;
     }
-    $self->tinfo("  %d nodes\n", $nc);
+    $self->tdebug("  %d nodes\n", $nc);
     foreach my $way (@{$self->{_doc}->{osm}->[0]->{way}}) {
         my $id = $way->{-id};
         $self->{_map_tile_ways}->{$id} = $way;
@@ -258,7 +258,7 @@ sub load_map_tile_objects {
         $way->{type} = 'way';
         $way->{order} = ++$order;
     }
-    $self->tinfo("  %d ways\n", $wc);
+    $self->tdebug("  %d ways\n", $wc);
     foreach my $relation (@{$self->{_doc}->{osm}->[0]->{relation}}) {
         my $id = $relation->{-id};
         $self->{_map_tile_relations}->{$id} = $relation;
@@ -272,7 +272,7 @@ sub load_map_tile_objects {
         $relation->{type} = 'relation';
         $relation->{order} = ++$order;
     }
-    $self->tinfo("  %d relations\n", $rc);
+    $self->tdebug("  %d relations\n", $rc);
     $self->twarn("Done.\n");
 }
 
@@ -472,10 +472,10 @@ sub draw {
                     if (!scalar @svg_coords) {
                         next;
                     }
-                    if (all { $_->[POINT_X_ZONE] == -1 } @svg_coords) { $self->tinfo("  :-( all out of bounds\n"); next; }
-                    if (all { $_->[POINT_X_ZONE] ==  1 } @svg_coords) { $self->tinfo("  :-( all out of bounds\n"); next; }
-                    if (all { $_->[POINT_Y_ZONE] == -1 } @svg_coords) { $self->tinfo("  :-( all out of bounds\n"); next; }
-                    if (all { $_->[POINT_Y_ZONE] ==  1 } @svg_coords) { $self->tinfo("  :-( all out of bounds\n"); next; }
+                    if (all { $_->[POINT_X_ZONE] == -1 } @svg_coords) { next; }
+                    if (all { $_->[POINT_X_ZONE] ==  1 } @svg_coords) { next; }
+                    if (all { $_->[POINT_Y_ZONE] == -1 } @svg_coords) { next; }
+                    if (all { $_->[POINT_Y_ZONE] ==  1 } @svg_coords) { next; }
                     my $svg_object;
                     if ($way->{is_area} || $is_multipolygon_relation) {
                         $svg_object = $self->polygon(points => \@svg_coords,
@@ -529,25 +529,24 @@ sub collect_map_tile_layer_objects {
             $count += 1;
         }
     }
-    $self->tinfo("  Added %d objects\n", $count);
-    $self->twarn("Done.\n");
+    $self->twarn("Done.  Added %d objects.\n", $count);
 }
 
 sub link_map_tile_objects {
     my ($self) = @_;
     $self->twarn("Linking objects ...\n");
+    my $count = 0;
     foreach my $layer (@{$self->{osm_layers}}) {
-        $self->tdebug("  Layer $layer->{name} ...\n");
-        $self->tdebug("    relations ...\n");
         foreach my $relation_id (map { $_->{-id} } grep { $_->{type} eq 'relation' } values %{$layer->{map_tile_objects}}) {
             $self->link_relation_object($layer, $relation_id);
+            $count += 1;
         }
-        $self->tdebug("    ways ...\n");
         foreach my $way_id (map { $_->{-id} } grep { $_->{type} eq 'way' } values %{$layer->{map_tile_objects}}) {
             $self->link_way_object($layer, $way_id);
+            $count += 1;
         }
     }
-    $self->twarn("Done.\n");
+    $self->twarn("Done.  Linked %d objects.\n", $count);
 }
 
 sub link_relation_object {
