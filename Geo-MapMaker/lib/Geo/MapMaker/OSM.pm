@@ -511,12 +511,11 @@ sub collect_map_tile_layer_objects {
     $self->twarn("Collecting objects for layers ...\n");
     foreach my $layer (@{$self->{osm_layers}}) {
         my @objects;
-        push(@objects, values %{$self->{_map_tile_nodes}});
-        push(@objects, values %{$self->{_map_tile_ways}});
-        push(@objects, values %{$self->{_map_tile_relations}});
+        push(@objects, values %{$self->{_map_tile_nodes}})     if $layer->{type}->{node};
+        push(@objects, values %{$self->{_map_tile_ways}})      if $layer->{type}->{way};
+        push(@objects, values %{$self->{_map_tile_relations}}) if $layer->{type}->{relation};
 
         foreach my $object (@objects) {
-            next unless $layer->{type}->{$object->{type}};
             my $match = 0;
             foreach my $index (@{$layer->{index}}) {
                 if ($object->{index}->{$index}) {
@@ -529,7 +528,6 @@ sub collect_map_tile_layer_objects {
             $layer->{map_tile_objects}->{$object->{-id}} = $object;
             $count += 1;
         }
-        $self->tdebug("    layer %s objects %d\n", $layer->{name}, scalar values %{$layer->{objects}});
     }
     $self->tinfo("  Added %d objects\n", $count);
     $self->twarn("Done.\n");
