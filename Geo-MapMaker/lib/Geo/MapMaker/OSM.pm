@@ -340,13 +340,7 @@ sub convert_coordinates {
         foreach my $layer (@{$self->{osm_layers}}) {
             foreach my $relation (grep { $_->{type} eq 'relation' } values %{$layer->{objects}}) {
                 foreach my $way (values %{$relation->{ways}}) {
-                    if ($relation->{-id} eq '3962892') {
-                        $self->tinfo("      relation $relation->{-id} way $way->{-id}\n");
-                    }
                     foreach my $node (values %{$way->{nodes}}) {
-                        if ($relation->{-id} eq '3962892') {
-                            $self->tinfo("      relation $relation->{-id} way $way->{-id} node $node->{-id}\n");
-                        }
                         $node->{svg_coords}->[$map_area_index] ||= $self->convert_node_coordinates($node);
                     }
                 }
@@ -420,11 +414,6 @@ sub draw {
                     @ways = values %{$object->{outer_ways}};
                     if (defined $inner_css_class) {
                         @inner_ways = values %{$object->{inner_ways}};
-                    }
-
-                    if ($object->{-id} eq '3962892') {
-                        say $object;
-                        $self->tinfo("      $object->{type} $object->{-id} has %d ways\n", scalar @ways);
                     }
 
                     my $group = $self->{_svg_doc}->createElementNS($NS{svg}, 'g');
@@ -579,18 +568,8 @@ sub link_relation_object {
     $relation->{outer_ways} //= {};
     $relation->{inner_ways} //= {};
 
-    if ($relation_id eq '3962892') {
-        say $relation;
-        $self->twarn("      link_relation_object %s\n", $relation->{-id});
-    }
     my @outer_way_ids = map { $_->{-ref} } grep { eval { $_->{-role} eq 'outer' && $_->{-type} eq 'way' && defined $_->{-ref} } } @{$map_tile_relation->{member}};
     my @inner_way_ids = map { $_->{-ref} } grep { eval { $_->{-role} eq 'inner' && $_->{-type} eq 'way' && defined $_->{-ref} } } @{$map_tile_relation->{member}};
-    if ($relation_id eq '3962892') {
-        $self->twarn("        %d outer ways\n", scalar @outer_way_ids);
-        $self->twarn("          %s\n", join(', ', @outer_way_ids));
-        $self->twarn("        %d inner ways\n", scalar @inner_way_ids);
-        $self->twarn("          %s\n", join(', ', @inner_way_ids));
-    }
 
     $relation->{contains_outer_way} //= {};
     $relation->{contains_inner_way} //= {};
