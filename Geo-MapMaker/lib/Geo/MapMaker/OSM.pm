@@ -177,10 +177,7 @@ sub draw_openstreetmap_maps {
     }
 
     foreach my $layer (@{$self->{osm_layers}}) {
-
-        # persistent objects
-        $layer->{objects} = {};
-
+        $layer->{objects} = {}; # persistent objects
         $self->index_layer_tags($layer);
     }
 
@@ -190,7 +187,7 @@ sub draw_openstreetmap_maps {
     foreach my $filename (@{$self->{_osm_xml_filenames}}) {
         $self->{_map_tile_number} += 1;
         if ($ENV{PERFORMANCE}) {
-            last if $self->{_map_tile_number} >= 16;
+            last if $self->{_map_tile_number} > 16;
         }
 
         $self->twarn("Parsing %s ...\n", $filename);
@@ -514,7 +511,6 @@ sub collect_map_tile_layer_objects {
         push(@objects, values %{$self->{_map_tile_nodes}})     if $layer->{type}->{node};
         push(@objects, values %{$self->{_map_tile_ways}})      if $layer->{type}->{way};
         push(@objects, values %{$self->{_map_tile_relations}}) if $layer->{type}->{relation};
-
         foreach my $object (@objects) {
             my $match = 0;
             foreach my $index (@{$layer->{index}}) {
