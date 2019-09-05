@@ -563,10 +563,10 @@ sub update_or_create_style_node {
     $contents .= <<'END';
 	.WHITE { fill: #fff; }
 	.MAP_BORDER { fill: none !important; stroke-linejoin: square !important; }
-        .AREA   { }
         .CLOSED { stroke-linecap: round; stroke-linejoin: round; }
 	.OPEN   { fill: none !important; stroke-linecap: round; stroke-linejoin: round; }
         .MPR    { fill-rule: evenodd !important; stroke-linecap: round; stroke-linejoin: round; }
+        .NMPR   { fill: none !important; stroke-linecap: round; stroke-linejoin: round; }
 	.TEXT_NODE_BASE {
 		text-align: center;
 		text-anchor: middle;
