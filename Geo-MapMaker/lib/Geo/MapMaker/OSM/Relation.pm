@@ -63,4 +63,12 @@ sub svg_object_non_mpr {
     return $path;
 }
 
+sub css_class_suffix {
+    my ($self) = @_;
+    if ($self->is_multipolygon_relation) {
+        return ' MPR';
+    }
+    return ' NMPR';
+}
+
 1;
