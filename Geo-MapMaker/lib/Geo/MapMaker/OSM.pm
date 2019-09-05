@@ -19,6 +19,9 @@ use fields qw(_osm_xml_filenames
               _map_tile_node_hash
               _map_tile_way_hash
               _map_tile_relation_hash
+              _map_tile_node_array
+              _map_tile_way_array
+              _map_tile_relation_array
               _map_tile_number
               _map_tile_count);
 
@@ -187,7 +190,10 @@ sub draw_openstreetmap_maps {
     }
 
     foreach my $layer (@{$self->{osm_layers}}) {
-        $layer->{object_hash} = {}; # persistent objects
+        # persistent objects
+        $layer->{object_hash}  = {};
+        $layer->{object_array} = [];
+
         $self->index_layer_tags($layer);
     }
 
@@ -212,10 +218,14 @@ sub draw_openstreetmap_maps {
         local $self->{_map_tile_node_hash} = {};
         local $self->{_map_tile_way_hash} = {};
         local $self->{_map_tile_relation_hash} = {};
+        local $self->{_map_tile_node_array} = [];
+        local $self->{_map_tile_way_array} = [];
+        local $self->{_map_tile_relation_array} = [];
 
         foreach my $layer (@{$self->{osm_layers}}) {
             # filtered objects for each map tile
             $layer->{map_tile_object_hash} = {};
+            $layer->{map_tile_object_array} = [];
         }
 
         $self->load_map_tile_objects();
@@ -245,6 +255,7 @@ sub load_map_tile_objects {
     foreach my $node (@{$self->{_doc}->{osm}->[0]->{node}}) {
         my $id = $node->{-id};
         $self->{_map_tile_node_hash}->{$id} = $node;
+        push(@{$self->{_map_tile_node_array}}, $node);
         $nc += 1;
         delete $node->{-changeset};
         delete $node->{-timestamp};
@@ -259,6 +270,7 @@ sub load_map_tile_objects {
     foreach my $way (@{$self->{_doc}->{osm}->[0]->{way}}) {
         my $id = $way->{-id};
         $self->{_map_tile_way_hash}->{$id} = $way;
+        push(@{$self->{_map_tile_way_array}}, $way);
         $wc += 1;
         delete $way->{-changeset};
         delete $way->{-timestamp};
@@ -273,6 +285,7 @@ sub load_map_tile_objects {
     foreach my $relation (@{$self->{_doc}->{osm}->[0]->{relation}}) {
         my $id = $relation->{-id};
         $self->{_map_tile_relation_hash}->{$id} = $relation;
+        push(@{$self->{_map_tile_relation_array}}, $relation);
         $rc += 1;
         delete $relation->{-changeset};
         delete $relation->{-timestamp};
@@ -289,20 +302,20 @@ sub load_map_tile_objects {
 
 sub convert_map_tile_tags {
     my ($self) = @_;
-    my $nodes = $self->{_map_tile_node_hash};
-    my $ways = $self->{_map_tile_way_hash};
-    my $relations = $self->{_map_tile_relation_hash};
-    my $count = (scalar keys %$nodes) + (scalar keys %$ways) + (scalar keys %$relations);
+    my $nodes     = $self->{_map_tile_node_array};
+    my $ways      = $self->{_map_tile_way_array};
+    my $relations = $self->{_map_tile_relation_array};
+    my $count = (scalar @$nodes) + (scalar @$ways) + (scalar @$relations);
     $self->twarn("Converting tags on %d objects ...\n", $count);
-    foreach my $node (values %$nodes) {
+    foreach my $node (@$nodes) {
         my $id = $node->{-id};
         $self->convert_object_tags($node);
     }
-    foreach my $way (values %$ways) {
+    foreach my $way (@$ways) {
         my $id = $way->{-id};
         $self->convert_object_tags($way);
     }
-    foreach my $relation (values %$relations) {
+    foreach my $relation (@$relations) {
         my $id = $relation->{-id};
         $self->convert_object_tags($relation);
     }
@@ -347,19 +360,19 @@ sub convert_coordinates {
         $self->update_scale($map_area);
         my $map_area_index = $map_area->{index};
         foreach my $layer (@{$self->{osm_layers}}) {
-            foreach my $relation (grep { $_->{type} eq 'relation' } values %{$layer->{object_hash}}) {
-                foreach my $way (values %{$relation->{way_hash}}) {
-                    foreach my $node (values %{$way->{node_hash}}) {
+            foreach my $relation (grep { $_->{type} eq 'relation' } @{$layer->{object_array}}) {
+                foreach my $way (@{$relation->{way_array}}) {
+                    foreach my $node (@{$way->{node_array}}) {
                         $node->{svg_coords}->[$map_area_index] ||= $self->convert_node_coordinates($node);
                     }
                 }
             }
-            foreach my $way (grep { $_->{type} eq 'way' } values %{$layer->{object_hash}}) {
-                foreach my $node (values %{$way->{node_hash}}) {
+            foreach my $way (grep { $_->{type} eq 'way' } @{$layer->{object_array}}) {
+                foreach my $node (@{$way->{node_array}}) {
                     $node->{svg_coords}->[$map_area_index] ||= $self->convert_node_coordinates($node);
                 }
             }
-            foreach my $node (grep { $_->{type} eq 'node' } values %{$layer->{object_hash}}) {
+            foreach my $node (grep { $_->{type} eq 'node' } @{$layer->{object_array}}) {
                 $node->{svg_coords}->[$map_area_index] ||= $self->convert_node_coordinates($node);
             }
         }
@@ -395,7 +408,7 @@ sub draw {
         foreach my $layer (@{$self->{osm_layers}}) {
             my $layer_name = $layer->{name};
             my $layer_group = $layer->{_map_area_group}[$map_area_index];
-            my @objects = sort { $a->{order} <=> $b->{order} } values %{$layer->{object_hash}};
+            my @objects = sort { $a->{order} <=> $b->{order} } @{$layer->{object_array}};
             $self->twarn("    Adding %d objects to layer $layer_name ...\n", scalar @objects);
             foreach my $object (@objects) {
                 my $css_class = $layer->{class};
@@ -420,9 +433,9 @@ sub draw {
                         $is_multipolygon_relation = 1;
                     }
 
-                    @ways = values %{$object->{outer_way_hash}};
+                    @ways = @{$object->{outer_way_array}};
                     if (defined $inner_css_class) {
-                        @inner_ways = values %{$object->{inner_way_hash}};
+                        @inner_ways = @{$object->{inner_way_array}};
                     }
 
                     my $group = $self->{_svg_doc}->createElementNS($NS{svg}, 'g');
@@ -522,9 +535,9 @@ sub collect_map_tile_layer_objects {
     $self->twarn("Collecting objects for layers ...\n");
     foreach my $layer (@{$self->{osm_layers}}) {
         my @objects;
-        push(@objects, values %{$self->{_map_tile_node_hash}})     if $layer->{type}->{node};
-        push(@objects, values %{$self->{_map_tile_way_hash}})      if $layer->{type}->{way};
-        push(@objects, values %{$self->{_map_tile_relation_hash}}) if $layer->{type}->{relation};
+        push(@objects, @{$self->{_map_tile_node_array}})     if $layer->{type}->{node};
+        push(@objects, @{$self->{_map_tile_way_array}})      if $layer->{type}->{way};
+        push(@objects, @{$self->{_map_tile_relation_array}}) if $layer->{type}->{relation};
         foreach my $object (@objects) {
             my $match = 0;
             foreach my $index (@{$layer->{index}}) {
@@ -534,6 +547,8 @@ sub collect_map_tile_layer_objects {
                 }
             }
             next unless $match;
+            push(@{$layer->{object_array}}, $object)          unless $layer->{object_hash}->{$object->{-id}};;
+            push(@{$layer->{map_tile_object_array}}, $object) unless $layer->{map_tile_object_hash}->{$object->{-id}};
             $layer->{object_hash}->{$object->{-id}} //= $object; # persistent
             $layer->{map_tile_object_hash}->{$object->{-id}} = $object;
             $count += 1;
@@ -547,11 +562,11 @@ sub link_map_tile_objects {
     $self->twarn("Linking objects ...\n");
     my $count = 0;
     foreach my $layer (@{$self->{osm_layers}}) {
-        foreach my $relation_id (map { $_->{-id} } grep { $_->{type} eq 'relation' } values %{$layer->{map_tile_object_hash}}) {
+        foreach my $relation_id (map { $_->{-id} } grep { $_->{type} eq 'relation' } @{$layer->{map_tile_object_array}}) {
             $self->link_relation_object($layer, $relation_id);
             $count += 1;
         }
-        foreach my $way_id (map { $_->{-id} } grep { $_->{type} eq 'way' } values %{$layer->{map_tile_object_hash}}) {
+        foreach my $way_id (map { $_->{-id} } grep { $_->{type} eq 'way' } @{$layer->{map_tile_object_array}}) {
             $self->link_way_object($layer, $way_id);
             $count += 1;
         }
@@ -569,6 +584,9 @@ sub link_relation_object {
     $relation->{way_hash} //= {};
     $relation->{outer_way_hash} //= {};
     $relation->{inner_way_hash} //= {};
+    $relation->{way_array} //= [];
+    $relation->{outer_way_array} //= [];
+    $relation->{inner_way_array} //= [];
 
     my @outer_way_ids = map { $_->{-ref} } grep { eval { $_->{-role} eq 'outer' && $_->{-type} eq 'way' && defined $_->{-ref} } } @{$map_tile_relation->{member}};
     my @inner_way_ids = map { $_->{-ref} } grep { eval { $_->{-role} eq 'inner' && $_->{-type} eq 'way' && defined $_->{-ref} } } @{$map_tile_relation->{member}};
@@ -583,7 +601,7 @@ sub link_relation_object {
         $relation->{contains_inner_way}->{$way_id} = 1;
     }
 
-    foreach my $way_id (keys %{$relation->{contains_outer_way}}) {
+    foreach my $way_id (@outer_way_ids) {
         my $way;
         my $existing_way = $relation->{way_hash}->{$way_id};
         if (defined $existing_way) {
@@ -596,8 +614,10 @@ sub link_relation_object {
                 $self->link_way_object($layer, $way_id, $way);
             }
         }
+        push(@{$relation->{way_array}}, $way);
+        push(@{$relation->{outer_way_array}}, $way);
     }
-    foreach my $way_id (keys %{$relation->{contains_inner_way}}) {
+    foreach my $way_id (@inner_way_ids) {
         my $way;
         my $existing_way = $relation->{way_hash}->{$way_id};
         if (defined $existing_way) {
@@ -610,6 +630,8 @@ sub link_relation_object {
                 $self->link_way_object($layer, $way_id, $way);
             }
         }
+        push(@{$relation->{way_array}}, $way);
+        push(@{$relation->{inner_way_array}}, $way);
     }
 }
 
@@ -621,6 +643,7 @@ sub link_way_object {
     }
 
     $way->{node_hash} //= {};
+    $way->{node_array} //= [];
 
     my @node_ids = map { $_->{-ref} } @{$way->{nd}};
     $way->{node_ids} = \@node_ids;
@@ -637,6 +660,7 @@ sub link_way_object {
         } else {
             $way->{node_hash}->{$node_id} = $node;
         }
+        push(@{$way->{node_array}}, $node);
     }
 
     if (scalar @node_ids > 1 && $node_ids[0] eq $node_ids[-1]) {
