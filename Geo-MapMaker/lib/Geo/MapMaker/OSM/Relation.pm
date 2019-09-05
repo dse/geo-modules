@@ -14,4 +14,22 @@ sub new {
     return $self;
 }
 
+sub svg_object {
+    my ($self, %args) = @_;
+    if ($self->is_multipolygon_relation()) {
+        return $self->svg_object_mpr(%args);
+    }
+    return $self->svg_object_non_mpr(%args);
+}
+
+sub svg_object_mpr {
+    my ($self, %args) = @_;
+    my $map_area_index = $args{map_area_index} || 0;
+}
+
+sub svg_object_non_mpr {
+    my ($self, %args) = @_;
+    my $map_area_index = $args{map_area_index} || 0;
+}
+
 1;
