@@ -5,13 +5,14 @@ use v5.10.0;
 
 use lib "$ENV{HOME}/git/dse.d/geo-modules/Geo-MapMaker/lib";
 
-use fields qw(array hash override_on_add);
+use fields qw(array hash);
 
 sub new {
     my $class = shift;
     my $self = fields::new($class);
     $self->{array} = [];
     $self->{hash}  = {};
+    $self->{index} = {};
     $self->add(@_);
     return $self;
 }
@@ -20,6 +21,7 @@ sub clear {
     my ($self) = @_;
     @{$self->{array}} = ();
     %{$self->{hash}}  = ();
+    %{$self->{index}} = ();
 }
 
 sub add {
@@ -28,11 +30,30 @@ sub add {
         next unless eval { $object->isa('Geo::MapMaker::OSM::Object') };
         my $id = $object->{-id};
         if (exists $self->{hash}->{$id}) {
-            $self->{hash}->{$id} = $object if $self->{override_on_add};
-        } else {
-            push(@{$self->{array}}, $object);
-            $self->{hash}->{$id} = $object;
+            next;
         }
+        my $index = scalar @{$self->{array}};
+        push(@{$self->{array}}, $object);
+        $self->{hash}->{$id} = $object;
+        $self->{index}->{$id} = $index;
+    }
+}
+
+sub add_override {
+    my ($self, @objects) = @_;
+    foreach my $object (@objects) {
+        next unless eval { $object->isa('Geo::MapMaker::OSM::Object') };
+        my $id = $object->{-id};
+        if (exists $self->{hash}->{$id}) {
+            my $index = $self->{index}->{$id};
+            $self->{hash}->{$id} = $object;
+            $self->{array}->[$index] = $object;
+            next;
+        }
+        my $index = scalar @{$self->{array}};
+        push(@{$self->{array}}, $object);
+        $self->{hash}->{$id} = $object;
+        $self->{index}->{$id} = $index;
     }
 }
 
@@ -59,12 +80,6 @@ sub get {
 sub has {
     my ($self, $id) = @_;
     return exists $self->{hash}->{$id};
-}
-
-sub override_on_add {
-    my $self = shift;
-    return $self->{override_on_add} if !scalar @_;
-    return $self->{override_on_add} = shift;
 }
 
 1;
