@@ -14,4 +14,9 @@ sub new {
     return $self;
 }
 
+sub svg_object {
+    # placeholder
+    return;
+}
+
 1;
