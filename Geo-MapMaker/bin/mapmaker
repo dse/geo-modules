@@ -16,12 +16,6 @@ BEGIN {
     }
 }
 
-BEGIN {
-    # local $SIG{__WARN__};
-    require Carp::Always;
-    import Carp::Always qw();
-}
-
 use Carp qw();
 use Geo::GTFS;
 use Geo::MapMaker;
