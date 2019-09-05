@@ -140,7 +140,8 @@ BEGIN {
                   _xml_debug_info
                   disable_read_only
 
-                  no_edit);
+                  no_edit
+                  log_prefix);
 }
 use fields @_FIELDS;
 
@@ -159,6 +160,7 @@ sub new {
     $self->{extend_to_full_page} = FALSE;
     $self->{vertical_align} = "top";
     $self->{horizontal_align} = "left";
+    $self->{log_prefix} = '';
 
     {
         my $pw = delete $options{paper_width};
@@ -1994,6 +1996,7 @@ sub log_debug {
     my ($self, $format, @args) = @_;
     return $self->log(LOG_DEBUG, $format, @args);
 }
+
 sub log {
     my ($self, $level, $format, @args) = @_;
     return if $level > $self->{verbose};
@@ -2004,10 +2007,7 @@ sub log {
         $string = sprintf($format, @args);
     }
     if ($prepend) {
-        if (defined $prefix2 && $prefix2 ne '') {
-            $string = $prefix2 . $string;
-        }
-        $string = "$progname: " . $string;
+        $string = $progname . ': ' . $self->{log_prefix} . $string;
     }
     print STDERR $string;
     if ($string =~ m{\n\z}) {
