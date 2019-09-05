@@ -58,17 +58,7 @@ sub css_id {
 
 sub css_class_suffix {
     my ($self) = @_;
-    if ($self->isa('Geo::MapMaker::OSM::Relation')) {
-        if ($self->is_multipolygon_relation) {
-            return ' MPR';
-        }
-        return ' NMPR';
-    } else {
-        if ($self->is_closed) {
-            return ' CLOSED';
-        }
-        return ' OPEN';
-    }
+    return '';
 }
 
 1;
