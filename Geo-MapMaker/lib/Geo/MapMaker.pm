@@ -2,6 +2,7 @@ package Geo::MapMaker;
 use warnings;
 use strict;
 
+use lib "$ENV{HOME}/git/dse.d/geo-modules/Geo-MapMaker/lib";
 use Geo::MapMaker::Constants qw(:all);
 use Geo::MapMaker::CoordinateConverter qw(:const);
 
