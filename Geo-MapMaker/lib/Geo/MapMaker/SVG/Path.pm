@@ -71,4 +71,74 @@ sub as_string {
     return $result;
 }
 
+sub stitch_polylines {
+    my ($self) = @_;
+    my %stitch_forward;
+    my %self_closing;
+
+    my $polyline_count = scalar @{$self->{polylines}};
+
+    warn(sprintf("stitch_polylines: stitching %d polylines...\n", $polyline_count));
+
+    # determine which polylines self-close
+    for (my $i = 0; $i < $polyline_count; $i += 1) {
+        my $polyline_i = $self->{polylines}->[$i];
+        if ($polyline_i->is_self_closing()) {
+            warn("stitch_polylines:     #$i self-closes.\n");
+            $self_closing{$i} = 1;
+        }
+    }
+
+    # determine which polylines connect (including with themselves)
+    for (my $i = 0; $i < $polyline_count; $i += 1) {
+        my $polyline_i = $self->{polylines}->[$i];
+        for (my $j = 0; $j < $polyline_count; $j += 1) {
+            my $polyline_j = $self->{polylines}->[$j];
+            my $point_i = $polyline_i->{points}->[-1];
+            my $point_j = $polyline_j->{points}->[0];
+            if ($point_i->is_at($point_j)) {
+                if (exists $stitch_forward{$i}) {
+                    # no more than two polylines may share an endpoint
+                    return 0;
+                }
+                warn("stitch_polylines:     #$i ends where #$j starts.\n");
+                $stitch_forward{$i} = $j;
+            }
+        }
+    }
+
+    my $stitch_count;
+    do {
+        $stitch_count = 0;
+        for (my $i = 0; $i < $polyline_count; $i += 1) {
+            next if $self_closing{$i};
+            my $j = delete $stitch_forward{$i};
+            next if !defined $j;
+            my $polyline_i = $self->{polylines}->[$i];
+            my $polyline_j = $self->{polylines}->[$j];
+            next if !$polyline_i || !$polyline_j;
+
+            warn("stitch_polylines:     appending #$j to #$i.\n");
+            warn(sprintf("stitch_polylines:         before: #%d has %d points\n", $i, scalar @{$polyline_i->{points}}));
+            warn(sprintf("stitch_polylines:         before: #%d has %d points\n", $j, scalar @{$polyline_j->{points}}));
+
+            my @points = $polyline_j->points;
+            splice(@points, 0, 1);
+            $polyline_i->add_points(@points);
+            $self->{polylines}->[$j] = undef;
+            $stitch_count += 1;
+
+            warn(sprintf("stitch_polylines:         after:  #%d has %d points\n", $i, scalar @{$polyline_i->{points}}));
+
+            if ($polyline_i->is_self_closing()) {
+                $self_closing{$i} = 1;
+            }
+        }
+    } while ($stitch_count);
+
+    @{$self->{polylines}} = grep { $_ } @{$self->{polylines}};
+
+    return 1;
+}
+
 1;
