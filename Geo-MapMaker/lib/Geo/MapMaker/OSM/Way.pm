@@ -36,8 +36,6 @@ sub svg_object {
 sub is_closed {
     my ($self) = @_;
     return $self->is_self_closing();
-    return scalar@{$self->{node_array}} > 1 &&
-        $self->{node_array}->[0]->{-id} eq $self->{node_array}->[-1]->{-id};
 }
 
 sub is_complete {
