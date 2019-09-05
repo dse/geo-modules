@@ -27,4 +27,12 @@ sub convert_tags {
     delete $self->{tag};
 }
 
+# can be checked on all objects
+sub is_multipolygon_relation {
+    my $self = shift;
+    return $self->isa('Geo::MapMaker::OSM::Relation') &&
+        defined $self->{tags}->{type} &&
+        $self->{tags}->{type} eq 'multipolygon';
+}
+
 1;
