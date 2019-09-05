@@ -39,4 +39,15 @@ sub is_closed {
         $self->{node_array}->[0]->{-id} eq $self->{node_array}->[-1]->{-id};
 }
 
+sub is_complete {
+    my ($self) = @_;
+    return scalar @{$self->{node_array}} == scalar @{$self->{node_ids}};
+}
+
+sub is_self_closing {
+    my ($self) = @_;
+    return $self->is_complete && scalar @{$self->{node_ids}} > 1 &&
+        $self->{node_array}->[0]->{-id} eq $self->{node_array}->[-1]->{-id};
+}
+
 1;
