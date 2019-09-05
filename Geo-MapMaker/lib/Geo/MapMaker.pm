@@ -303,7 +303,6 @@ sub include_mapmaker_yaml {
 
 sub DESTROY {
     my ($self) = @_;
-    warn("Geo::MapMaker::DESTROY\n");
     if ($self->{_dirty_}) {
 	$self->save();
     }
