@@ -595,7 +595,7 @@ sub link_relation_object {
         } else {
             # do nothing
         }
-        if ($way) {
+        if ($way && $self->$WATCH_OBJECT_ID->{$id}) {
             $self->log_warn("link_relation_object: relation id %s: way id %s: persistent object is %s\n",
                             $relation_id,
                             $id,
