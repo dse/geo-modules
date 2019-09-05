@@ -813,32 +813,13 @@ sub new_id {
 
 sub polygon {
     my ($self, %args) = @_;
-
-    my $id = $args{id};
-    if ($self->{_xml_debug_info}) {
-        $id //= $self->new_id();
-    }
-
-    my $path = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
-    $path->setAttribute("d", $self->points_to_path(1, @{$args{points}}));
-    $path->setAttribute("class", $args{class}) if defined $args{class};
-    $path->setAttribute("id", $id) if defined $id;
-    $path->setAttributeNS($NS{"mapmaker"}, "mapmaker:shape-id", $args{shape_id}) if defined $args{shape_id};
-    $path->setAttributeNS($NS{"mapmaker"}, "mapmaker:shape-ids",
-                          join(', ', nsort keys %{$args{shape_id_hash}}))
-        if defined $args{shape_id_hash};
-
-    if (eval { ref $args{attr} eq 'HASH' }) {
-        foreach my $key (nsort keys %{$args{attr}}) {
-            $path->setAttribute($key, $args{attr}->{$key});
-        }
-    }
-
-    return $path;
+    $args{is_closed} = 1;
+    return $self->polyline(%args);
 }
 
 sub polyline {
     my ($self, %args) = @_;
+    my $is_closed = $args{is_closed} ? 1 : 0;
 
     my $id = $args{id};
     if ($self->{_xml_debug_info}) {
@@ -846,7 +827,7 @@ sub polyline {
     }
 
     my $path = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
-    $path->setAttribute("d", $self->points_to_path(0, @{$args{points}}));
+    $path->setAttribute("d", $self->points_to_path($is_closed, @{$args{points}}));
     $path->setAttribute("class", $args{class}) if defined $args{class};
     $path->setAttribute("id", $id) if defined $id;
     $path->setAttributeNS($NS{"mapmaker"}, "mapmaker:shape-id", $args{shape_id}) if defined $args{shape_id};
