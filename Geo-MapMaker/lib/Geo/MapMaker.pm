@@ -2,11 +2,9 @@ package Geo::MapMaker;
 use warnings;
 use strict;
 
+use lib "$ENV{HOME}/git/dse.d/geo-modules/Geo-MapMaker/lib";
 use Geo::MapMaker::Constants qw(:all);
 use Geo::MapMaker::CoordinateConverter qw(:const);
-
-use Carp qw(croak);
-use Carp qw(confess);
 
 # NOTE: "ground" and "background" are apparently treated as the same
 # classname in SVG, or some shit.
@@ -55,7 +53,6 @@ will update the appropriate layers in the SVG file as needed without
 affecting manually-edited layers.
 
 =cut
-
 
 our @_FIELDS;
 BEGIN {
@@ -146,7 +143,19 @@ BEGIN {
 }
 use fields @_FIELDS;
 
+use Carp qw(carp croak cluck confess);
+use File::Basename qw(basename dirname);
+use File::Basename;
+use File::Path qw(mkpath);
+use Geo::MapMaker::CoordinateConverter;
+use Geo::MapMaker::Util qw(file_get_contents file_put_contents);
+use List::MoreUtils qw(all firstidx uniq);
+use LWP::Simple;
+use Regexp::Common qw(number);
 use Sort::Naturally qw(nsort);
+use URI;
+use XML::LibXML qw(:all);
+use YAML::Syck qw(Load LoadFile);
 
 sub new {
     my ($class, %options) = @_;
@@ -223,7 +232,6 @@ sub new {
     return $self;
 }
 
-use Regexp::Common qw(number);
 
 sub dim {
     my ($self, $value) = @_;
@@ -254,7 +262,6 @@ sub mapmaker_yaml_filename {
     return $filename;
 }
 
-use YAML::Syck qw(Load LoadFile);
 
 sub load_mapmaker_yaml {
     my ($self, $filename) = @_;
@@ -279,7 +286,6 @@ sub load_mapmaker_yaml {
     }
 }
 
-use File::Basename qw(dirname);
 
 sub include_mapmaker_yaml {
     my ($self, $filename, $orig_filename) = @_;
@@ -303,22 +309,11 @@ sub include_mapmaker_yaml {
 
 sub DESTROY {
     my ($self) = @_;
-    warn("Geo::MapMaker::DESTROY\n");
     if ($self->{_dirty_}) {
 	$self->save();
     }
 }
 
-use XML::LibXML qw(:all);
-use LWP::Simple;
-use URI;
-use Carp qw(croak);
-use Carp qw(confess);
-use File::Path qw(mkpath);
-use File::Basename;
-use List::MoreUtils qw(all firstidx uniq);
-use Geo::MapMaker::Util qw(file_get_contents file_put_contents);
-use Geo::MapMaker::CoordinateConverter;
 
 our %NS;
 BEGIN {
@@ -466,22 +461,22 @@ sub upgrade_mapmaker_version {
     if (!$doc_elt) { return; }
     my $version = $doc_elt->getAttributeNS($NS{"mapmaker"}, "version") // 0;
     my $old_version = $version;
-    warn("Document is at mapmaker:version $version.  Checking for upgrades...\n");
+    $self->log(LOG_WARN, "Document is at mapmaker:version $version.  Checking for upgrades...\n");
     while (TRUE) {
 	my $next_version = $version + 1;
 	my $sub_name = "upgrade_mapmaker_version_from_${version}_to_${next_version}";
 	last if (!(exists &$sub_name));
-	warn("  Upgrading from version ${version} to version ${next_version}...\n");
+	$self->log(LOG_WARN, "  Upgrading from version ${version} to version ${next_version}...\n");
 	$self->$sub_name();
 	$version = $next_version;
 	$doc_elt->setAttributeNS($NS{"mapmaker"}, "version", $version);
 	$self->{_dirty_} = 1;
-	warn("  Done.\n");
+	$self->log(LOG_WARN, "  Done.\n");
     }
     if ($old_version eq $version) {
-	warn("No upgrades necessary.\n");
+	$self->log(LOG_WARN, "No upgrades necessary.\n");
     } else {
-	warn("All upgrades complete.\n");
+	$self->log(LOG_WARN, "All upgrades complete.\n");
     }
 }
 
@@ -566,15 +561,13 @@ sub update_or_create_style_node {
     my $contents = "\n";
 
     $contents .= <<'END';
-	.WHITE { fill: #fff; }
-	.MAP_BORDER { fill: none !important; stroke-linejoin: square !important; }
-        .AREA   { }
-        .CLOSED { stroke-linecap: round; stroke-linejoin: round; }
-	.OPEN   { fill: none !important; stroke-linecap: round; stroke-linejoin: round; }
-	.TEXT_NODE_BASE {
-		text-align: center;
-		text-anchor: middle;
-	}
+	.WHITE          { fill: #fff; }
+	.MAP_BORDER     { fill: none !important; stroke-linejoin: square !important; }
+        .AREA           { stroke-linecap: round; stroke-linejoin: round; }
+        .CLOSED         { stroke-linecap: round; stroke-linejoin: round; }
+	.OPEN           { fill: none !important; stroke-linecap: round; stroke-linejoin: round; }
+        .MPR            { fill-rule: evenodd; stroke-linecap: round; stroke-linejoin: round; }
+	.TEXT_NODE_BASE { text-align: center; text-anchor: middle; }
 END
 
     foreach my $class (sort keys %{$self->{classes}}) {
@@ -813,40 +806,36 @@ sub new_id {
 
 sub polygon {
     my ($self, %args) = @_;
-
-    my $id = $args{id};
-    if ($self->{_xml_debug_info}) {
-        $id //= $self->new_id();
-    }
-
-    my $path = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
-    $path->setAttribute("d", $self->points_to_path(1, @{$args{points}}));
-    $path->setAttribute("class", $args{class}) if defined $args{class};
-    $path->setAttribute("id", $id) if defined $id;
-    $path->setAttributeNS($NS{"mapmaker"}, "mapmaker:shape-id", $args{shape_id}) if defined $args{shape_id};
-    $path->setAttributeNS($NS{"mapmaker"}, "mapmaker:shape-ids",
-                          join(', ', nsort keys %{$args{shape_id_hash}}))
-        if defined $args{shape_id_hash};
-
-    if (eval { ref $args{attr} eq 'HASH' }) {
-        foreach my $key (nsort keys %{$args{attr}}) {
-            $path->setAttribute($key, $args{attr}->{$key});
-        }
-    }
-
-    return $path;
+    $args{is_closed} = 1;
+    return $self->polyline(%args);
 }
 
 sub polyline {
     my ($self, %args) = @_;
-
+    my $is_closed = $args{is_closed};
     my $id = $args{id};
+
     if ($self->{_xml_debug_info}) {
         $id //= $self->new_id();
     }
 
     my $path = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
-    $path->setAttribute("d", $self->points_to_path(0, @{$args{points}}));
+    if ($args{points}) {
+        $path->setAttribute("d", $self->points_to_path(
+            is_closed => $is_closed,
+            polyline => \@{$args{points}}
+        ));
+    } elsif ($args{polyline}) {
+        $path->setAttribute("d", $self->points_to_path(
+            is_closed => $is_closed,
+            polyline => $args{polyline}
+        ));
+    } elsif ($args{path}) {
+        $path->setAttribute("d", $self->points_to_path(
+            is_closed => $is_closed,
+            path => $args{path}
+        ));
+    }
     $path->setAttribute("class", $args{class}) if defined $args{class};
     $path->setAttribute("id", $id) if defined $id;
     $path->setAttributeNS($NS{"mapmaker"}, "mapmaker:shape-id", $args{shape_id}) if defined $args{shape_id};
@@ -864,17 +853,20 @@ sub polyline {
 }
 
 sub points_to_path {
-    my ($self, $closed, @points) = @_;
-    my @coords = map { [ int($_->[POINT_X] * 100 + 0.5) / 100,
-			 int($_->[POINT_Y] * 100 + 0.5) / 100 ] } @points;
-    my $result = sprintf("m %.2f,%.2f", @{$coords[0]});
-    for (my $i = 1; $i < scalar(@coords); $i += 1) {
-	$result .= sprintf(" %.2f,%.2f",
-			   $coords[$i][POINT_X] - $coords[$i - 1][POINT_X],
-			   $coords[$i][POINT_Y] - $coords[$i - 1][POINT_Y]);
+    my ($self, %args) = @_;
+    my $is_closed = $args{is_closed};
+
+    if (defined $args{polyline}) {
+        my $polyline = Geo::MapMaker::SVG::PolyLine->object($args{polyline});
+        return $polyline->as_string;
     }
-    $result .= " z" if $closed;
-    return $result;
+
+    if (defined $args{path}) {
+        my $path = Geo::MapMaker::SVG::Path->object($args{path});
+        return $path->as_string;
+    }
+
+    die("points_to_path: polyline or path must be specified.\n");
 }
 
 sub find_or_create_clipped_group {
@@ -1059,10 +1051,10 @@ sub create_element {
 	if (defined $NS{$prefix}) {
 	    $element = $self->{_svg_doc}->createElementNS($NS{$prefix}, $name);
 	} else {
-	    croak("create_element: prefix '$prefix' is not supported.  ($prefix:$name)");
+            confess("create_element: prefix '$prefix' is not supported.  ($prefix:$name)");
 	}
     } else {
-	croak("create_element: prefix must be specified.  ($name)");
+	confess("create_element: prefix must be specified.  ($name)");
     }
     if ($autogenerated) {
 	$element->setAttributeNS($NS{"mapmaker"}, "mapmaker:autogenerated", "true");
@@ -1953,7 +1945,6 @@ BEGIN {
     select($select);
 }
 
-use File::Basename qw(basename);
 
 our $prepend;
 our $progname;
