@@ -36,6 +36,9 @@ use Encode;
 
 use XML::Fast;
 
+use constant TEST_WITH_LIMITED_TILES => 1;
+use constant TEST_WITH_LIMITED_LAYERS => 1;
+
 sub update_openstreetmap {
     my ($self, $force) = @_;
     $self->{_osm_xml_filenames} = [];
@@ -165,6 +168,10 @@ sub draw_openstreetmap_maps {
 
     my $num_xml_files = scalar(@{$self->{_osm_xml_filenames}});
 
+    if (TEST_WITH_LIMITED_LAYERS) {
+        splice(@{$self->{osm_layers}}, 1);
+    }
+
     foreach my $layer (@{$self->{osm_layers}}) {
         $layer->{type} //= { way => 1 };
         $layer->{index} = {};
@@ -191,6 +198,10 @@ sub draw_openstreetmap_maps {
         $self->{_map_tile_number} += 1;
         if ($ENV{PERFORMANCE}) {
             last if $self->{_map_tile_number} > 16;
+        }
+
+        if (TEST_WITH_LIMITED_TILES) {
+            next unless grep { $self->{_map_tile_number} == $_ } (117, 118, 120, 153, 154, 155);
         }
 
         $self->twarn("Parsing %s ...\n", $filename);
