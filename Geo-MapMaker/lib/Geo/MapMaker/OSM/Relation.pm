@@ -25,11 +25,42 @@ sub svg_object {
 sub svg_object_mpr {
     my ($self, %args) = @_;
     my $map_area_index = $args{map_area_index} || 0;
+    my $map_area = $args{map_area};
+    my $css_class = $args{css_class};
+    my $css_id = $self->css_id();
+    my $attr = $args{attr} || {};
+    $css_class .= $self->css_class_suffix();
+
+    my $path = Geo::MapMaker::SVG::Path->new();
+    warn(sprintf("svg_object_mpr: contains %d ways\n", scalar @{$self->{way_array}}));
+    foreach my $way (@{$self->{way_array}}) {
+        my $polyline = $way->svg_object(map_area_index => $map_area_index);
+        next unless $polyline;
+        $path->add($polyline);
+    }
+    warn(sprintf("svg_object_mpr: contains %d polylines\n", scalar @{$path->{polylines}}));
+    $path->stitch_polylines();
+    return $path;
 }
 
 sub svg_object_non_mpr {
     my ($self, %args) = @_;
     my $map_area_index = $args{map_area_index} || 0;
+    my $map_area = $args{map_area};
+    my $css_class = $args{css_class};
+    my $css_id = $self->css_id();
+    my $attr = $args{attr} || {};
+    $css_class .= $self->css_class_suffix();
+
+    my $path = Geo::MapMaker::SVG::Path->new();
+    warn(sprintf("svg_object_non_mpr: contains %d ways\n", scalar @{$self->{way_array}}));
+    foreach my $way (@{$self->{way_array}}) {
+        my $polyline = $way->svg_object(map_area_index => $map_area_index);
+        next unless $polyline;
+        $path->add($polyline);
+    }
+    warn(sprintf("svg_object_non_mpr: contains %d polylines\n", scalar @{$path->{polylines}}));
+    return $path;
 }
 
 1;
