@@ -41,6 +41,7 @@ use Geo::MapMaker::OSM::Collection;
 use File::Slurper qw(read_text);
 use Path::Tiny;
 use Encode;
+use Scalar::Util qw(looks_like_number);
 
 use XML::Fast;
 
@@ -149,6 +150,14 @@ sub update_or_create_openstreetmap_layer {
 sub draw_openstreetmap_maps {
     my ($self) = @_;
 
+    local $TEST_WITH_LIMITED_TILES  = $TEST_WITH_LIMITED_TILES;
+    local $TEST_WITH_LIMITED_LAYERS = $TEST_WITH_LIMITED_LAYERS;
+    local $WATCH_OBJECT_ID          = $WATCH_OBJECT_ID;
+
+    if ($ENV{TEST_MAPMAKER_OSM_PERFORMANCE}) {
+        $TEST_WITH_LIMITED_TILES = 16;
+    }
+
     local $self->{log_prefix} = $self->{log_prefix} . '(drawing) ';
 
     if (!$self->{no_edit}) {
@@ -225,19 +234,21 @@ sub draw_openstreetmap_maps {
         local $self->{log_prefix} = $self->{log_prefix} .
             sprintf('(%d/%d) ', $self->{_map_tile_number}, $self->{_map_tile_count});
 
-        if ($ENV{PERFORMANCE}) {
-            last if $self->{_map_tile_number} > 16;
-        }
-
-        if (ref $TEST_WITH_LIMITED_TILES eq 'ARRAY') {
-            next unless grep { $self->{_map_tile_number} == $_ } @$TEST_WITH_LIMITED_TILES;
+        if ($TEST_WITH_LIMITED_TILES) {
+            if (looks_like_number($TEST_WITH_LIMITED_TILES)) {
+                last if $self->{_map_tile_number} > $TEST_WITH_LIMITED_TILES;
+            } elsif (ref $TEST_WITH_LIMITED_TILES eq 'ARRAY') {
+                next unless grep { $self->{_map_tile_number} == $_ } @$TEST_WITH_LIMITED_TILES;
+            }
         }
 
         $self->twarn("Reading %s ...\n", $filename);
         my $doc = path($filename)->slurp();
 
-        if (lc(ref $TEST_WITH_LIMITED_TILES) eq 'regexp') {
-            next unless $doc =~ $TEST_WITH_LIMITED_TILES;
+        if ($TEST_WITH_LIMITED_TILES) {
+            if (lc(ref $TEST_WITH_LIMITED_TILES) eq 'regexp') {
+                next unless $doc =~ $TEST_WITH_LIMITED_TILES;
+            }
         }
 
         $self->twarn("Parsing %s ...\n", $filename);
@@ -294,7 +305,6 @@ sub load_map_tile_objects {
         delete $node->{-version};
         delete $node->{-visible};
         $node->{type} = 'node';
-        $node->{order} = ++$order;
 
         if ($WATCH_OBJECT_ID->{$id}) {
         }
@@ -313,7 +323,6 @@ sub load_map_tile_objects {
         delete $way->{-version};
         delete $way->{-visible};
         $way->{type} = 'way';
-        $way->{order} = ++$order;
 
         if ($WATCH_OBJECT_ID->{$id}) {
         }
@@ -332,7 +341,6 @@ sub load_map_tile_objects {
         delete $relation->{-version};
         delete $relation->{-visible};
         $relation->{type} = 'relation';
-        $relation->{order} = ++$order;
 
         if ($WATCH_OBJECT_ID->{$id}) {
             say STDERR Dumper($relation);
