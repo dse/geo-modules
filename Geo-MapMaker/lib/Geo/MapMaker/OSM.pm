@@ -176,7 +176,7 @@ sub draw_openstreetmap_maps {
     }
 
     foreach my $layer (@{$self->{osm_layers}}) {
-        $layer->{type} //= { way => 1 };
+        $layer->{type} //= { way => 1, relation => 1 };
         $layer->{index} = {};
         foreach my $tag (@{$layer->{tags}}) {
             my $k = $tag->{k};
@@ -412,121 +412,103 @@ sub draw {
             $self->twarn("    Adding %d objects to layer $layer_name ...\n", scalar @objects);
             foreach my $object (@objects) {
                 my $css_class = $layer->{class};
-                my $inner_css_class = $layer->{inner_class};
-
+                my $css_id;
                 my $attr = {};
                 $attr->{'data-name'} = $object->{tags}->{name} if defined $object->{tags}->{name};
-
-                my $parent = $layer_group;
-                my $inner_parent;
-
-                my @ways = ($object);
-                my @inner_ways = ();
-
-                foreach my $way (@ways) {
-                    $way->{is_inner} = 0;
-                }
-
                 my $is_multipolygon_relation = 0;
                 if ($object->{type} eq 'relation') {
                     if ($object->{tags}->{type} eq 'multipolygon') {
                         $is_multipolygon_relation = 1;
                     }
-
-                    @ways = @{$object->{outer_way_array}};
-                    if (defined $inner_css_class) {
-                        @inner_ways = @{$object->{inner_way_array}};
+                    my $css_id = $map_area->{id_prefix} . "w" . $object->{-id};
+                    if ($is_multipolygon_relation) {
+                        $css_class .= ' MPR';
+                    } else {
+                        $css_class .= ' AREA';
                     }
-
-                    my $group = $self->{_svg_doc}->createElementNS($NS{svg}, 'g');
-                    $group->setAttribute('id', $map_area->{id_prefix} . 'r' . $object->{-id} . '-r');
-                    $group->setAttribute('data-name', $object->{tags}->{name}) if defined $object->{tags}->{name};
-                    $group->setAttribute('class', 'relation-group-group');
-
-                    $parent = undef;
-                    if (scalar @ways) {
-                        $parent = $self->{_svg_doc}->createElementNS($NS{svg}, 'g');
-                        $parent->setAttribute('id', $map_area->{id_prefix} . 'r' . $object->{-id} . '-ro');
-                        $parent->setAttribute('data-name', $object->{tags}->{name}) if defined $object->{tags}->{name};
-                        $parent->setAttribute('class', 'relation-group relation-group-outer');
-                    }
-
-                    $inner_parent = undef;
-                    if (scalar @inner_ways) {
-                        $inner_parent = $self->{_svg_doc}->createElementNS($NS{svg}, 'g');
-                        $inner_parent->setAttribute('id', $map_area->{id_prefix} . 'r' . $object->{-id} . '-ri');
-                        $inner_parent->setAttribute('data-name', $object->{tags}->{name}) if defined $object->{tags}->{name};
-                        $inner_parent->setAttribute('class', 'relation-group relation-group-inner');
-                    }
-
-                    $layer_group->appendChild($group);
-                    if ($parent) {
-                        $group->appendChild($parent);
-                    }
-                    if ($inner_parent) {
-                        $group->appendChild($inner_parent);
-                    }
-
-                    foreach my $way (@inner_ways) {
-                        $way->{is_inner} = 1;
+                } else {
+                    my $css_id = $map_area->{id_prefix} . "r" . $object->{-id};
+                    if ($object->{is_closed}) {
+                        $css_class .= ' CLOSED';
+                    } else {
+                        $css_class .= ' OPEN';
                     }
                 }
 
-                foreach my $way (sort { $a->{order} <=> $b->{order} } (@ways, @inner_ways)) {
-                    my $css_class = $way->{is_inner} ? $inner_css_class : $css_class;
-
-                    if (!$way) {
-                        next;
-                    }
-                    if (!$way->{node_ids}) {
-                        next;
-                    }
-                    my $css_id = $map_area->{id_prefix} . "w" . $way->{-id};
-                    if ($way->{is_inner}) {
-                        $css_id .= '-i';
-                    }
-                    my @node_ids = @{$way->{node_ids}};
-                    if (!scalar @node_ids) {
-                        next;
-                    }
-                    my @svg_coords =
-                        grep { $_ }
-                        map { $way->{node_hash}->{$_}->{svg_coords}->[$map_area_index] }
-                        @{$way->{node_ids}};
-                    if (!scalar @svg_coords) {
-                        next;
-                    }
-                    if (all { $_->[POINT_X_ZONE] == -1 } @svg_coords) { next; }
-                    if (all { $_->[POINT_X_ZONE] ==  1 } @svg_coords) { next; }
-                    if (all { $_->[POINT_Y_ZONE] == -1 } @svg_coords) { next; }
-                    if (all { $_->[POINT_Y_ZONE] ==  1 } @svg_coords) { next; }
-                    my $svg_object;
-                    if ($way->{is_area} || $is_multipolygon_relation) {
-                        $svg_object = $self->legacy_polygon(points => \@svg_coords,
-                                                            class => $css_class . ' AREA',
-                                                            attr => $attr,
-                                                            id => $css_id);
-                    } elsif ($way->{is_closed}) {
-                        $svg_object = $self->legacy_polygon(points => \@svg_coords,
-                                                            class => $css_class . ' CLOSED',
-                                                            attr => $attr,
-                                                            id => $css_id);
-                    } else {
-                        $svg_object = $self->legacy_polyline(points => \@svg_coords,
-                                                             class => $css_class . ' OPEN',
-                                                             attr => $attr,
-                                                             id => $css_id);
-                    }
-                    if ($way->{is_inner}) {
-                        $inner_parent->appendChild($svg_object);
-                    } else {
-                        $parent->appendChild($svg_object);
-                    }
+                my $svg_object;
+                if ($is_multipolygon_relation || $object->{type} eq 'relation') {
+                    my $path = $self->relation_to_svg_path($object, $map_area_index);
+                    next unless $path;
+                    $svg_object = $self->polygon(
+                        path => $path,
+                        class => $css_class,
+                        attr => $attr,
+                        id => $css_id,
+                        map_area_index => $map_area_index,
+                    );
+                } elsif ($object->{type} eq 'way') {
+                    my $polyline = $self->way_to_svg_polyline($object, $map_area_index);
+                    next unless $polyline;
+                    $svg_object = $self->polygon(
+                        polyline => $polyline,
+                        class => $css_class,
+                        attr => $attr,
+                        id => $css_id,
+                        map_area_index => $map_area_index,
+                    );
+                }
+                if ($svg_object) {
+                    $layer_group->appendChild($svg_object);
                 }
             }
         }
     }
     $self->twarn("Done.\n");
+}
+
+sub way_to_svg_polyline {
+    my ($self, $way, $map_area_index) = @_;
+    $self->log_warn("E1\n");
+    my @svg_coords = grep { $_ } map { $_->{svg_coords}->[$map_area_index] } @{$way->{nodes}};
+    $self->log_warn("E2\n");
+    return unless scalar @svg_coords;
+    $self->log_warn("E3\n");
+    if (all { $_->[POINT_X_ZONE] == -1 } @svg_coords) { return; }
+    if (all { $_->[POINT_X_ZONE] ==  1 } @svg_coords) { return; }
+    if (all { $_->[POINT_Y_ZONE] == -1 } @svg_coords) { return; }
+    if (all { $_->[POINT_Y_ZONE] ==  1 } @svg_coords) { return; }
+    $self->log_warn("E4 %d\n", scalar @svg_coords);
+    my $polyline = Geo::MapMaker::SVG::PolyLine->new(@svg_coords);
+    $self->log_warn("E5\n");
+    if ($way->{is_area}) {
+        $polyline->is_closed(1);
+    }
+    $self->log_warn("E6\n");
+    return $polyline;
+}
+
+sub relation_to_svg_path {
+    my ($self, $relation, $map_area_index) = @_;
+    my @outer_ways = @{$relation->{outer_ways}};
+    my @inner_ways = @{$relation->{inner_ways}};
+    my $is_multipolygon_relation = ($relation->{tags}->{type} eq 'multipolygon');
+    foreach my $way (@outer_ways) {
+        $way->{is_inner} = 0;
+    }
+    foreach my $way (@inner_ways) {
+        $way->{is_inner} = 1;
+    }
+    my @polyline;
+    foreach my $way (@outer_ways, @inner_ways) {
+        my $polyline = $self->way_to_svg_polyline($way, $map_area_index);
+        next unless $polyline;
+        if ($is_multipolygon_relation) {
+            $polyline->is_closed(1);
+        }
+        push(@polyline, $polyline);
+    }
+    my $path = Geo::MapMaker::SVG::Path->new(@polyline);
+    return $path;
 }
 
 sub collect_map_tile_layer_objects {
