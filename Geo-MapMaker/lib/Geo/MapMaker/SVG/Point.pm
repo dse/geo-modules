@@ -152,4 +152,9 @@ sub translate_y {
     $self->{y} += $dy if defined $dy;
 }
 
+sub is_at {
+    my ($self, $other_point) = @_;
+    return $self->x == $other_point->x && $self->y == $other_point->y;
+}
+
 1;
