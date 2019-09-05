@@ -5,13 +5,17 @@ use v5.10.0;
 
 use Test::More;
 
-plan tests => 74;
+plan tests => 84;
 
 use Geo::MapMaker::SVG::Point;
-use Geo::MapMaker::SVG::Polyline;
+use Geo::MapMaker::SVG::PolyLine;
 use Geo::MapMaker::SVG::Path;
 
 {
+    diag("Point");
+
+    diag("x, y");
+
     my $point0 = Geo::MapMaker::SVG::Point->new();
     ok($point0->x == 0);
     ok($point0->y == 0);
@@ -19,8 +23,13 @@ use Geo::MapMaker::SVG::Path;
     $point0->y(0.5678);
     ok($point0->x == 0.1234);
     ok($point0->y == 0.5678);
+
+    diag("X, Y");
+
     ok($point0->X == 0.12);
     ok($point0->Y == 0.57);
+
+    diag("x_y");
 
     my $xy = $point0->x_y;
     ok(ref $xy eq 'ARRAY');
@@ -32,6 +41,8 @@ use Geo::MapMaker::SVG::Path;
     ok(scalar @xy == 2);
     ok($xy[0] == 0.1234);
     ok($xy[1] == 0.5678);
+
+    diag("X_Y");
 
     my $XY = $point0->X_Y;
     ok(ref $XY eq 'ARRAY');
@@ -89,20 +100,14 @@ use Geo::MapMaker::SVG::Path;
     ok($point0->y == 78);
 }
 
-diag("X/Y/DX/DY");
-
 {
     my $point0 = Geo::MapMaker::SVG::Point->new(0.1234, 0.5678);
-    ok($point0->x == 0.1234);
-    ok($point0->y == 0.5678);
-    ok($point0->X == 0.12);
-    ok($point0->Y == 0.57);
-
     my $point1 = Geo::MapMaker::SVG::Point->new(1.5678, 1.1234);
+
+    diag("dx, dy, dx_dy");
+
     ok($point1->dx($point0) == (1.5678 - 0.1234));
     ok($point1->dy($point0) == (1.1234 - 0.5678));
-    ok($point1->DX($point0) == (1.57 - 0.12));
-    ok($point1->DY($point0) == (1.12 - 0.57));
 
     my $dx_dy = $point1->dx_dy($point0);
     ok(ref $dx_dy eq 'ARRAY');
@@ -115,6 +120,11 @@ diag("X/Y/DX/DY");
     ok($dx_dy[0] == (1.5678 - 0.1234));
     ok($dx_dy[1] == (1.1234 - 0.5678));
 
+    diag("DX, DY, DX_DY");
+
+    ok($point1->DX($point0) == (1.57 - 0.12));
+    ok($point1->DY($point0) == (1.12 - 0.57));
+
     my $DX_DY = $point1->DX_DY($point0);
     ok(ref $DX_DY eq 'ARRAY');
     ok(scalar @$DX_DY == 2);
@@ -126,9 +136,11 @@ diag("X/Y/DX/DY");
     ok($DX_DY[0] == (1.57 - 0.12));
     ok($DX_DY[1] == (1.12 - 0.57));
 
+    diag("PolyLine");
+
     my $s;
 
-    my $polyline0 = Geo::MapMaker::SVG::Polyline->new($point0, $point1);
+    my $polyline0 = Geo::MapMaker::SVG::PolyLine->new($point0, $point1);
     ok($polyline0->as_string() eq 'm 0.12,0.57 1.45,0.55');
     $polyline0->is_closed(1);
     ok($polyline0->as_string() eq 'm 0.12,0.57 1.45,0.55 z');
@@ -145,16 +157,18 @@ diag("X/Y/DX/DY");
 }
 
 {
+    diag("Path");
+
     my $s;
-    
-    my $polyline0 = Geo::MapMaker::SVG::Polyline->new();
+
+    my $polyline0 = Geo::MapMaker::SVG::PolyLine->new();
     $polyline0->add_xy(12, 34);
     $polyline0->add_xy(78, 56);
     $polyline0->add_xy(12, 34);
     $polyline0->add_xy(78, 56);
     ok(($s = $polyline0->as_string) eq 'm 12.00,34.00 66.00,22.00 -66.00,-22.00 66.00,22.00');
 
-    my $polyline1 = Geo::MapMaker::SVG::Polyline->new();
+    my $polyline1 = Geo::MapMaker::SVG::PolyLine->new();
     $polyline1->add_xy(12, 34);
     $polyline1->add_xy(78, 56);
     $polyline1->add_xy(12, 34);
