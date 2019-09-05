@@ -35,4 +35,40 @@ sub is_multipolygon_relation {
         $self->{tags}->{type} eq 'multipolygon';
 }
 
+sub css_id {
+    my ($self, %args) = @_;
+    my $map_area = $args{map_area};
+    my $map_area_index = $args{map_area_index} || 0;
+    my $result = '';
+    if ($map_area) {
+        $result .= $map_area->{id_prefix};
+    }
+    if ($self->isa('Geo::MapMaker::OSM::Node')) {
+        $result .= 'n';
+    } elsif ($self->isa('Geo::MapMaker::OSM::Way')) {
+        $result .= 'w';
+    } elsif ($self->isa('Geo::MapMaker::OSM::Relation')) {
+        $result .= 'r';
+    } else {
+        $result .= 'o';
+    }
+    $result .= $self->{-id};
+    return $result;
+}
+
+sub css_class_suffix {
+    my ($self) = @_;
+    if ($self->isa('Geo::MapMaker::OSM::Relation')) {
+        if ($self->is_multipolygon_relation) {
+            return ' MPR';
+        }
+        return ' NMPR';
+    } else {
+        if ($self->is_closed) {
+            return ' CLOSED';
+        }
+        return ' OPEN';
+    }
+}
+
 1;
