@@ -22,7 +22,7 @@ sub new {
 sub svg_object {
     my ($self, %args) = @_;
     my $map_area_index = $args{map_area_index} || 0;
-    my $is_closed = $args{is_closed} // $self->{is_closed};# // $self->is_closed;
+    my $is_closed = $args{is_closed} // $self->{is_closed};
     my @svg_coords = grep { $_ } map { $_->{svg_coords}->[$map_area_index] } @{$self->{node_array}};
     return unless scalar @svg_coords;
     if (all { $_->[POINT_X_ZONE] == -1 } @svg_coords) { return; }
@@ -35,6 +35,7 @@ sub svg_object {
 
 sub is_closed {
     my ($self) = @_;
+    return $self->is_self_closing();
     return scalar@{$self->{node_array}} > 1 &&
         $self->{node_array}->[0]->{-id} eq $self->{node_array}->[-1]->{-id};
 }
@@ -48,6 +49,14 @@ sub is_self_closing {
     my ($self) = @_;
     return $self->is_complete && scalar @{$self->{node_ids}} > 1 &&
         $self->{node_array}->[0]->{-id} eq $self->{node_array}->[-1]->{-id};
+}
+
+sub css_class_suffix {
+    my ($self) = @_;
+    if ($self->is_self_closing) {
+        return ' CLOSED';
+    }
+    return ' OPEN';
 }
 
 1;
