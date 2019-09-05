@@ -811,13 +811,13 @@ sub new_id {
     return 'mm-' . $self->{_id_counter};
 }
 
-sub polygon {
+sub legacy_polygon {
     my ($self, %args) = @_;
     $args{is_closed} = 1;
-    return $self->polyline(%args);
+    return $self->legacy_polyline(%args);
 }
 
-sub polyline {
+sub legacy_polyline {
     my ($self, %args) = @_;
     my $is_closed = $args{is_closed} ? 1 : 0;
 
@@ -827,7 +827,7 @@ sub polyline {
     }
 
     my $path = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
-    $path->setAttribute("d", $self->points_to_path($is_closed, @{$args{points}}));
+    $path->setAttribute("d", $self->legacy_points_to_path($is_closed, @{$args{points}}));
     $path->setAttribute("class", $args{class}) if defined $args{class};
     $path->setAttribute("id", $id) if defined $id;
     $path->setAttributeNS($NS{"mapmaker"}, "mapmaker:shape-id", $args{shape_id}) if defined $args{shape_id};
@@ -844,7 +844,7 @@ sub polyline {
     return $path;
 }
 
-sub points_to_path {
+sub legacy_points_to_path {
     my ($self, $closed, @points) = @_;
     my @coords = map { [ int($_->[POINT_X] * 100 + 0.5) / 100,
 			 int($_->[POINT_Y] * 100 + 0.5) / 100 ] } @points;

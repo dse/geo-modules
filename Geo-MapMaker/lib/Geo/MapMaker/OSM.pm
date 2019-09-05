@@ -502,20 +502,20 @@ sub draw {
                     if (all { $_->[POINT_Y_ZONE] ==  1 } @svg_coords) { next; }
                     my $svg_object;
                     if ($way->{is_area} || $is_multipolygon_relation) {
-                        $svg_object = $self->polygon(points => \@svg_coords,
-                                                     class => $css_class . ' AREA',
-                                                     attr => $attr,
-                                                     id => $css_id);
+                        $svg_object = $self->legacy_polygon(points => \@svg_coords,
+                                                            class => $css_class . ' AREA',
+                                                            attr => $attr,
+                                                            id => $css_id);
                     } elsif ($way->{is_closed}) {
-                        $svg_object = $self->polygon(points => \@svg_coords,
-                                                     class => $css_class . ' CLOSED',
-                                                     attr => $attr,
-                                                     id => $css_id);
+                        $svg_object = $self->legacy_polygon(points => \@svg_coords,
+                                                            class => $css_class . ' CLOSED',
+                                                            attr => $attr,
+                                                            id => $css_id);
                     } else {
-                        $svg_object = $self->polyline(points => \@svg_coords,
-                                                      class => $css_class . ' OPEN',
-                                                      attr => $attr,
-                                                      id => $css_id);
+                        $svg_object = $self->legacy_polyline(points => \@svg_coords,
+                                                             class => $css_class . ' OPEN',
+                                                             attr => $attr,
+                                                             id => $css_id);
                     }
                     if ($way->{is_inner}) {
                         $inner_parent->appendChild($svg_object);

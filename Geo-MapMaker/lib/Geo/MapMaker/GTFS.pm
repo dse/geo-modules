@@ -737,26 +737,26 @@ sub draw_transit_routes {
 
 			my $id = $map_area->{id_prefix} . "rt" . $route_short_name . "_ch" . $index;
 			my $id2 = $id . "_2";
-			my $polyline = $self->polyline(points => $shape->{points}, class => $class,
-                                                       attr => {
-                                                           'data-shape-id' => $shape->{shape_id},
-                                                       },
-                                                       ($self->{_xml_debug_info} ? (
-                                                           id => $id,
-                                                           shape_id => $shape->{shape_id},
-                                                           shape_id_hash => $shape->{shape_id_hash}
-                                                       ) : ()));
+			my $polyline = $self->legacy_polyline(points => $shape->{points}, class => $class,
+                                                              attr => {
+                                                                  'data-shape-id' => $shape->{shape_id},
+                                                              },
+                                                              ($self->{_xml_debug_info} ? (
+                                                                  id => $id,
+                                                                  shape_id => $shape->{shape_id},
+                                                                  shape_id_hash => $shape->{shape_id_hash}
+                                                              ) : ()));
 			$clipped_group->appendChild($polyline);
 			if ($self->has_style_2(class => $class)) {
-			    my $polyline_2 = $self->polyline(points => $shape->{points}, class => $class_2,
-                                                             attr => {
-                                                                 'data-shape-id' => $shape->{shape_id},
-                                                             },
-                                                             ($self->{_xml_debug_info} ? (
-                                                                 id => $id2,
-                                                                 shape_id => $shape->{shape_id},
-                                                                 shape_id_hash => $shape->{shape_id_hash}
-                                                             ) : ()));
+			    my $polyline_2 = $self->legacy_polyline(points => $shape->{points}, class => $class_2,
+                                                                    attr => {
+                                                                        'data-shape-id' => $shape->{shape_id},
+                                                                    },
+                                                                    ($self->{_xml_debug_info} ? (
+                                                                        id => $id2,
+                                                                        shape_id => $shape->{shape_id},
+                                                                        shape_id_hash => $shape->{shape_id_hash}
+                                                                    ) : ()));
 			    $clipped_group->appendChild($polyline_2);
 			}
 		    } continue {
