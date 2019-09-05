@@ -96,6 +96,14 @@ sub as_string {
     return $result;
 }
 
+sub is_self_closing {
+    my $self = shift;
+    return 0 if scalar @{$self->{points}} < 2;
+    my $a = $self->{points}->[0];
+    my $b = $self->{points}->[-1];
+    return $a->is_at($b);
+}
+
 sub is_closed {
     my $self = shift;
     return $self->{is_closed} unless scalar @_;
