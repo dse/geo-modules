@@ -408,7 +408,7 @@ sub draw {
         foreach my $layer (@{$self->{osm_layers}}) {
             my $layer_name = $layer->{name};
             my $layer_group = $layer->{_map_area_group}[$map_area_index];
-            my @objects = sort { $a->{order} <=> $b->{order} } @{$layer->{object_array}};
+            my @objects = @{$layer->{object_array}};
             $self->twarn("    Adding %d objects to layer $layer_name ...\n", scalar @objects);
             foreach my $object (@objects) {
                 my $css_class = $layer->{class};
