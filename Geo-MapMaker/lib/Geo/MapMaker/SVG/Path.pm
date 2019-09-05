@@ -118,17 +118,11 @@ sub stitch_polylines {
             my $polyline_j = $self->{polylines}->[$j];
             next if !$polyline_i || !$polyline_j;
 
-            warn("stitch_polylines:     appending #$j to #$i.\n");
-            warn(sprintf("stitch_polylines:         before: #%d has %d points\n", $i, scalar @{$polyline_i->{points}}));
-            warn(sprintf("stitch_polylines:         before: #%d has %d points\n", $j, scalar @{$polyline_j->{points}}));
-
             my @points = $polyline_j->points;
             splice(@points, 0, 1);
             $polyline_i->add_points(@points);
             $self->{polylines}->[$j] = undef;
             $stitch_count += 1;
-
-            warn(sprintf("stitch_polylines:         after:  #%d has %d points\n", $i, scalar @{$polyline_i->{points}}));
 
             if ($polyline_i->is_self_closing()) {
                 $self_closing{$i} = 1;
