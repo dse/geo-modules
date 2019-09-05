@@ -571,6 +571,7 @@ sub update_or_create_style_node {
         .AREA   { }
         .CLOSED { stroke-linecap: round; stroke-linejoin: round; }
 	.OPEN   { fill: none !important; stroke-linecap: round; stroke-linejoin: round; }
+        .MPR    { fill-rule: evenodd !important; stroke-linecap: round; stroke-linejoin: round; }
 	.TEXT_NODE_BASE {
 		text-align: center;
 		text-anchor: middle;
@@ -809,6 +810,43 @@ sub new_id {
     }
     $self->{_id_counter} += 1;
     return 'mm-' . $self->{_id_counter};
+}
+
+sub svg_path {
+    my ($self, %args) = @_;
+    my $is_closed = $args{is_closed};
+
+    my $id = $args{id};
+    if ($self->{_xml_debug_info}) {
+        $id //= $self->new_id();
+    }
+
+    my $d;
+    if ($args{path}) {
+        my $path = Geo::MapMaker::SVG::Path->object($args{path});
+        $d = $path->as_string;
+    } elsif ($args{polyline}) {
+        my $polyline = Geo::MapMaker::SVG::Path->object($args{polyline});
+        $d = $polyline->as_string;
+    } elsif ($args{points}) {
+        $d = $self->legacy_points_to_path($is_closed, @{$args{points}});
+    }
+    my $path = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
+    $path->setAttribute("d", $d);
+    $path->setAttribute("class", $args{class}) if defined $args{class};
+    $path->setAttribute("id", $id) if defined $id;
+    $path->setAttributeNS($NS{"mapmaker"}, "mapmaker:shape-id", $args{shape_id}) if defined $args{shape_id};
+    $path->setAttributeNS($NS{"mapmaker"}, "mapmaker:shape-ids",
+                          join(', ', nsort keys %{$args{shape_id_hash}}))
+        if defined $args{shape_id_hash};
+
+    if (eval { ref $args{attr} eq 'HASH' }) {
+        foreach my $key (nsort keys %{$args{attr}}) {
+            $path->setAttribute($key, $args{attr}->{$key});
+        }
+    }
+
+    return $path;
 }
 
 sub legacy_polygon {
