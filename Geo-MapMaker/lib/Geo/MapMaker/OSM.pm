@@ -253,7 +253,6 @@ sub draw_openstreetmap_maps {
         foreach my $layer (@{$self->{osm_layers}}) {
             # filtered objects for each map tile
             $layer->{map_tile_objects} = Geo::MapMaker::OSM::Collection->new();
-            $layer->{map_tile_objects}->override_on_add(1);
         }
 
         $self->load_map_tile_objects();
@@ -509,8 +508,14 @@ sub collect_map_tile_layer_objects {
                 }
             }
             next unless $match;
+
+            # persistent objects
             $layer->{objects}->add($object);
-            $layer->{map_tile_objects}->add($object);
+
+            # current objects, from which we pull any ways not found
+            # in previously pulled relations
+            $layer->{map_tile_objects}->add_override($object);
+
             $count += 1;
         }
     }
