@@ -75,10 +75,10 @@ sub _update_openstreetmap {
         $self->_update_openstreetmap($force, $west_deg,   $center_lat, $center_lon, $north_deg);
         $self->_update_openstreetmap($force, $center_lon, $center_lat, $east_deg,   $north_deg);
     } elsif (-e $xml_filename && !$force) {
-        CORE::warn("Not updating $xml_filename\n    $url\n") if $self->{verbose};
+        $self->log_warn("Not updating $xml_filename\n    $url\n") if $self->{verbose};
         push(@{$self->{_osm_xml_filenames}}, $xml_filename);
     } elsif (-e $xml_filename && $force && -M $xml_filename < 1) {
-        CORE::warn("Not updating $xml_filename\n    $url\n    (force in effect but less than 1 day old)\n") if $self->{verbose};
+        $self->log_warn("Not updating $xml_filename\n    $url\n    (force in effect but less than 1 day old)\n") if $self->{verbose};
         push(@{$self->{_osm_xml_filenames}}, $xml_filename);
     } else {
         my $ua = LWP::UserAgent->new();
@@ -102,7 +102,7 @@ sub _update_openstreetmap {
             push(@{$self->{_osm_xml_filenames}}, $xml_filename);
             # ok then
         } elsif ($rc == 509) {	# Bandwidth Exceeded
-            CORE::warn("Waiting 30 seconds...\n");
+            $self->log_warn("Waiting 30 seconds...\n");
             sleep(30);
             goto try_again;
         } else {
@@ -439,7 +439,7 @@ sub draw {
                 if ($is_multipolygon_relation || $object->{type} eq 'relation') {
                     my $path = $self->relation_to_svg_path($object, $map_area_index);
                     next unless $path;
-                    $svg_object = $self->polygon(
+                    $svg_object = $self->svg_path(
                         path => $path,
                         class => $css_class,
                         attr => $attr,
@@ -449,7 +449,7 @@ sub draw {
                 } elsif ($object->{type} eq 'way') {
                     my $polyline = $self->way_to_svg_polyline($object, $map_area_index);
                     next unless $polyline;
-                    $svg_object = $self->polygon(
+                    $svg_object = $self->svg_path(
                         polyline => $polyline,
                         class => $css_class,
                         attr => $attr,
@@ -469,7 +469,7 @@ sub draw {
 sub way_to_svg_polyline {
     my ($self, $way, $map_area_index) = @_;
     $self->log_warn("E1\n");
-    my @svg_coords = grep { $_ } map { $_->{svg_coords}->[$map_area_index] } @{$way->{nodes}};
+    my @svg_coords = grep { $_ } map { $_->{svg_coords}->[$map_area_index] } @{$way->{node_array}};
     $self->log_warn("E2\n");
     return unless scalar @svg_coords;
     $self->log_warn("E3\n");
@@ -489,8 +489,8 @@ sub way_to_svg_polyline {
 
 sub relation_to_svg_path {
     my ($self, $relation, $map_area_index) = @_;
-    my @outer_ways = @{$relation->{outer_ways}};
-    my @inner_ways = @{$relation->{inner_ways}};
+    my @outer_ways = @{$relation->{outer_way_array}};
+    my @inner_ways = @{$relation->{inner_way_array}};
     my $is_multipolygon_relation = ($relation->{tags}->{type} eq 'multipolygon');
     foreach my $way (@outer_ways) {
         $way->{is_inner} = 0;
