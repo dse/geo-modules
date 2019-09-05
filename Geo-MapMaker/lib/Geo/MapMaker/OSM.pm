@@ -29,9 +29,14 @@ use LWP::Simple;                # RC_NOT_MODIFIED
 use List::MoreUtils qw(all uniq);
 use Sort::Naturally;
 use Geo::MapMaker::Dumper qw(Dumper);
+
 use Geo::MapMaker::SVG::Point;
 use Geo::MapMaker::SVG::PolyLine;
 use Geo::MapMaker::SVG::Path;
+
+use Geo::MapMaker::OSM::Node;
+use Geo::MapMaker::OSM::Relation;
+use Geo::MapMaker::OSM::Way;
 
 use File::Slurper qw(read_text);
 use Path::Tiny;
@@ -39,8 +44,19 @@ use Encode;
 
 use XML::Fast;
 
-use constant TEST_WITH_LIMITED_TILES => 1;
-use constant TEST_WITH_LIMITED_LAYERS => 1;
+our $TEST_WITH_LIMITED_TILES => 0;
+# our $TEST_WITH_LIMITED_TILES = qr{<\s*tag\s+k="name"\s+v="Ohio River"\s*/>}i;
+# our $TEST_WITH_LIMITED_TILES = [117, 118, 120, 153, 154, 155];
+
+our $TEST_WITH_LIMITED_LAYERS = 0;
+# our $TEST_WITH_LIMITED_LAYERS = sub {
+#     return $_->{name} =~ m{river}i;
+# };
+
+our $WATCH_OBJECT_ID = {
+    #'2182501' => 1,
+    #'3962892' => 1,
+};
 
 sub update_openstreetmap {
     my ($self, $force) = @_;
@@ -171,8 +187,12 @@ sub draw_openstreetmap_maps {
 
     my $num_xml_files = scalar(@{$self->{_osm_xml_filenames}});
 
-    if (TEST_WITH_LIMITED_LAYERS) {
-        splice(@{$self->{osm_layers}}, 1);
+    if ($TEST_WITH_LIMITED_LAYERS) {
+        if (ref $TEST_WITH_LIMITED_LAYERS eq 'SUB') {
+            @{$self->{osm_layers}} = grep { $TEST_WITH_LIMITED_LAYERS->() } @{$self->{osm_layers}};
+        } else {
+            @{$self->{osm_layers}} = grep { $_->{name} =~ m{river}i } @{$self->{osm_layers}};
+        }
     }
 
     foreach my $layer (@{$self->{osm_layers}}) {
@@ -206,12 +226,20 @@ sub draw_openstreetmap_maps {
             last if $self->{_map_tile_number} > 16;
         }
 
-        if (TEST_WITH_LIMITED_TILES) {
-            next unless grep { $self->{_map_tile_number} == $_ } (117, 118, 120, 153, 154, 155);
+        if (ref $TEST_WITH_LIMITED_TILES eq 'ARRAY') {
+            next unless grep { $self->{_map_tile_number} == $_ } @$TEST_WITH_LIMITED_TILES;
+        }
+
+        $self->twarn("Reading %s ...\n", $filename);
+        my $doc = path($filename)->slurp();
+
+        if (lc(ref $TEST_WITH_LIMITED_TILES) eq 'regexp') {
+            next unless $doc =~ $TEST_WITH_LIMITED_TILES;
         }
 
         $self->twarn("Parsing %s ...\n", $filename);
-        local $self->{_doc} = xml2hash(path($filename)->slurp(), array => 1);
+        local $self->{_doc} = xml2hash($doc, array => 1);
+
         $self->twarn("done.\n");
 
         # all objects for each map tile
@@ -247,13 +275,17 @@ sub draw_openstreetmap_maps {
 
 sub load_map_tile_objects {
     my $self = shift;
-    $self->twarn("Loading map tile objects ...\n");
+    $self->twarn("Loading map tile objects (%d nodes, %d ways, and %d relations) ...\n",
+                 scalar @{$self->{_doc}->{osm}->[0]->{node}},
+                 scalar @{$self->{_doc}->{osm}->[0]->{way}},
+                 scalar @{$self->{_doc}->{osm}->[0]->{relation}});
     my $nc = 0;
     my $wc = 0;
     my $rc = 0;
     my $order = 0;
     foreach my $node (@{$self->{_doc}->{osm}->[0]->{node}}) {
         my $id = $node->{-id};
+        $node = Geo::MapMaker::OSM::Node->new($node);
         $self->{_map_tile_node_hash}->{$id} = $node;
         push(@{$self->{_map_tile_node_array}}, $node);
         $nc += 1;
@@ -265,10 +297,15 @@ sub load_map_tile_objects {
         delete $node->{-visible};
         $node->{type} = 'node';
         $node->{order} = ++$order;
+
+        if ($WATCH_OBJECT_ID->{$id}) {
+        }
     }
     $self->tdebug("  %d nodes\n", $nc);
+
     foreach my $way (@{$self->{_doc}->{osm}->[0]->{way}}) {
         my $id = $way->{-id};
+        $way = Geo::MapMaker::OSM::Way->new($way);
         $self->{_map_tile_way_hash}->{$id} = $way;
         push(@{$self->{_map_tile_way_array}}, $way);
         $wc += 1;
@@ -280,10 +317,15 @@ sub load_map_tile_objects {
         delete $way->{-visible};
         $way->{type} = 'way';
         $way->{order} = ++$order;
+
+        if ($WATCH_OBJECT_ID->{$id}) {
+        }
     }
     $self->tdebug("  %d ways\n", $wc);
+
     foreach my $relation (@{$self->{_doc}->{osm}->[0]->{relation}}) {
         my $id = $relation->{-id};
+        $relation = Geo::MapMaker::OSM::Relation->new($relation);
         $self->{_map_tile_relation_hash}->{$id} = $relation;
         push(@{$self->{_map_tile_relation_array}}, $relation);
         $rc += 1;
@@ -295,8 +337,13 @@ sub load_map_tile_objects {
         delete $relation->{-visible};
         $relation->{type} = 'relation';
         $relation->{order} = ++$order;
+
+        if ($WATCH_OBJECT_ID->{$id}) {
+            say STDERR Dumper($relation);
+        }
     }
     $self->tdebug("  %d relations\n", $rc);
+
     $self->twarn("Done.\n");
 }
 
@@ -308,35 +355,15 @@ sub convert_map_tile_tags {
     my $count = (scalar @$nodes) + (scalar @$ways) + (scalar @$relations);
     $self->twarn("Converting tags on %d objects ...\n", $count);
     foreach my $node (@$nodes) {
-        my $id = $node->{-id};
-        $self->convert_object_tags($node);
+        $node->convert_tags();
     }
     foreach my $way (@$ways) {
-        my $id = $way->{-id};
-        $self->convert_object_tags($way);
+        $way->convert_tags();
     }
     foreach my $relation (@$relations) {
-        my $id = $relation->{-id};
-        $self->convert_object_tags($relation);
+        $relation->convert_tags();
     }
     $self->twarn("Done.\n");
-}
-
-sub convert_object_tags {
-    my ($self, $object) = @_;
-    return if $object->{tags} || $object->{index};
-    $object->{tags} = {};
-    $object->{index} = {};
-    foreach my $tag (@{$object->{tag}}) {
-        my $k = $tag->{-k};
-        my $v = $tag->{-v};
-        $object->{tags}->{$k} = $v;
-        $object->{index}->{$k} = 1; # incase of tags: { k: '...' } in a layer.
-        if (defined $v && $v ne '') {
-            $object->{index}->{$k,$v} = 1;
-        }
-    }
-    delete $object->{tag};
 }
 
 sub index_layer_tags {
@@ -411,35 +438,36 @@ sub draw {
             my @objects = @{$layer->{object_array}};
             $self->twarn("    Adding %d objects to layer $layer_name ...\n", scalar @objects);
             foreach my $object (@objects) {
-                my $css_class = $layer->{class};
-                my $css_id;
+                my $css_class = $layer->{class} . $object->css_class_suffix(
+                    map_area_index => $map_area_index,
+                    map_area => $map_area,
+                );
+                my $css_id = $object->css_id(
+                    map_area_index => $map_area_index,
+                    map_area => $map_area,
+                );
                 my $attr = {};
                 $attr->{'data-name'} = $object->{tags}->{name} if defined $object->{tags}->{name};
-                my $is_multipolygon_relation = 0;
-                if ($object->{type} eq 'relation') {
-                    if ($object->{tags}->{type} eq 'multipolygon') {
-                        $is_multipolygon_relation = 1;
-                    }
-                    my $css_id = $map_area->{id_prefix} . "w" . $object->{-id};
-                    if ($is_multipolygon_relation) {
-                        $css_class .= ' MPR';
-                    } else {
-                        $css_class .= ' AREA';
-                    }
-                } else {
-                    my $css_id = $map_area->{id_prefix} . "r" . $object->{-id};
-                    if ($object->{is_closed}) {
-                        $css_class .= ' CLOSED';
-                    } else {
-                        $css_class .= ' OPEN';
-                    }
-                }
 
-                my $svg_object;
-                if ($is_multipolygon_relation || $object->{type} eq 'relation') {
-                    my $path = $self->relation_to_svg_path($object, $map_area_index);
+                my $svg_element;
+                if ($object->is_multipolygon_relation) {
+                    my $path = $object->svg_object(map_area_index => $map_area_index);
                     next unless $path;
-                    $svg_object = $self->svg_path(
+                    $svg_element = $self->svg_path(
+                        path => $path,
+                        class => $css_class,
+                        attr => $attr,
+                        id => $css_id,
+                        map_area_index => $map_area_index,
+                    );
+                } elsif ($object->isa('Geo::MapMaker::OSM::Relation')) {
+                    if ($WATCH_OBJECT_ID->{$object->{-id}}) {
+                        $self->log_warn("%s is a relation but not an mpr\n",
+                                        $object->{-id});
+                    }
+                    my $path = $object->svg_object(map_area_index => $map_area_index);
+                    next unless $path;
+                    $svg_element = $self->svg_path(
                         path => $path,
                         class => $css_class,
                         attr => $attr,
@@ -447,9 +475,9 @@ sub draw {
                         map_area_index => $map_area_index,
                     );
                 } elsif ($object->{type} eq 'way') {
-                    my $polyline = $self->way_to_svg_polyline($object, $map_area_index);
+                    my $polyline = $object->svg_object(map_area_index => $map_area_index);
                     next unless $polyline;
-                    $svg_object = $self->svg_path(
+                    $svg_element = $self->svg_path(
                         polyline => $polyline,
                         class => $css_class,
                         attr => $attr,
@@ -457,58 +485,13 @@ sub draw {
                         map_area_index => $map_area_index,
                     );
                 }
-                if ($svg_object) {
-                    $layer_group->appendChild($svg_object);
+                if ($svg_element) {
+                    $layer_group->appendChild($svg_element);
                 }
             }
         }
     }
     $self->twarn("Done.\n");
-}
-
-sub way_to_svg_polyline {
-    my ($self, $way, $map_area_index) = @_;
-    $self->log_warn("E1\n");
-    my @svg_coords = grep { $_ } map { $_->{svg_coords}->[$map_area_index] } @{$way->{node_array}};
-    $self->log_warn("E2\n");
-    return unless scalar @svg_coords;
-    $self->log_warn("E3\n");
-    if (all { $_->[POINT_X_ZONE] == -1 } @svg_coords) { return; }
-    if (all { $_->[POINT_X_ZONE] ==  1 } @svg_coords) { return; }
-    if (all { $_->[POINT_Y_ZONE] == -1 } @svg_coords) { return; }
-    if (all { $_->[POINT_Y_ZONE] ==  1 } @svg_coords) { return; }
-    $self->log_warn("E4 %d\n", scalar @svg_coords);
-    my $polyline = Geo::MapMaker::SVG::PolyLine->new(@svg_coords);
-    $self->log_warn("E5\n");
-    if ($way->{is_area}) {
-        $polyline->is_closed(1);
-    }
-    $self->log_warn("E6\n");
-    return $polyline;
-}
-
-sub relation_to_svg_path {
-    my ($self, $relation, $map_area_index) = @_;
-    my @outer_ways = @{$relation->{outer_way_array}};
-    my @inner_ways = @{$relation->{inner_way_array}};
-    my $is_multipolygon_relation = ($relation->{tags}->{type} eq 'multipolygon');
-    foreach my $way (@outer_ways) {
-        $way->{is_inner} = 0;
-    }
-    foreach my $way (@inner_ways) {
-        $way->{is_inner} = 1;
-    }
-    my @polyline;
-    foreach my $way (@outer_ways, @inner_ways) {
-        my $polyline = $self->way_to_svg_polyline($way, $map_area_index);
-        next unless $polyline;
-        if ($is_multipolygon_relation) {
-            $polyline->is_closed(1);
-        }
-        push(@polyline, $polyline);
-    }
-    my $path = Geo::MapMaker::SVG::Path->new(@polyline);
-    return $path;
 }
 
 sub collect_map_tile_layer_objects {
@@ -529,7 +512,7 @@ sub collect_map_tile_layer_objects {
                 }
             }
             next unless $match;
-            push(@{$layer->{object_array}}, $object)          unless $layer->{object_hash}->{$object->{-id}};;
+            push(@{$layer->{object_array}}, $object)          unless $layer->{object_hash}->{$object->{-id}};
             push(@{$layer->{map_tile_object_array}}, $object) unless $layer->{map_tile_object_hash}->{$object->{-id}};
             $layer->{object_hash}->{$object->{-id}} //= $object; # persistent
             $layer->{map_tile_object_hash}->{$object->{-id}} = $object;
@@ -544,16 +527,36 @@ sub link_map_tile_objects {
     $self->twarn("Linking objects ...\n");
     my $count = 0;
     foreach my $layer (@{$self->{osm_layers}}) {
-        foreach my $relation_id (map { $_->{-id} } grep { $_->{type} eq 'relation' } @{$layer->{map_tile_object_array}}) {
-            $self->link_relation_object($layer, $relation_id);
+        foreach my $relation (grep { $_->{type} eq 'relation' } @{$layer->{map_tile_object_array}}) {
+            my $id = $relation->{-id};
+            my $relation = $self->find_persistent_object($layer, $relation);
+            $self->link_relation_object($layer, $id, $relation);
             $count += 1;
         }
-        foreach my $way_id (map { $_->{-id} } grep { $_->{type} eq 'way' } @{$layer->{map_tile_object_array}}) {
-            $self->link_way_object($layer, $way_id);
+        foreach my $way (grep { $_->{type} eq 'way' } @{$layer->{map_tile_object_array}}) {
+            my $id = $way->{-id};
+            my $way = $self->find_persistent_object($layer, $way);
+            $self->link_way_object($layer, $id, $way);
             $count += 1;
         }
     }
     $self->twarn("Done.  Linked %d objects.\n", $count);
+}
+
+sub find_persistent_object {
+    my ($self, $layer, $object) = @_;
+    if (!$object) {
+        return;
+    }
+    if (!ref $object) {
+        my $id = $object;
+        return $layer->{object_hash}->{$id};
+    }
+    my $id = $object->{-id};
+    if ($layer->{object_hash}->{$id}) {
+        return $layer->{object_hash}->{$id};
+    }
+    return $layer->{object_hash}->{$id} = $object;
 }
 
 sub link_relation_object {
@@ -562,58 +565,54 @@ sub link_relation_object {
     my $relation          = $layer->{object_hash}->{$relation_id}; # persistent
     my $map_tile_relation = $layer->{map_tile_object_hash}->{$relation_id}; # current, where we get way_ids
 
+    # a relation consists of ways.  they are in no particular order.
+
     # store ways in persistent objects
     $relation->{way_hash} //= {};
-    $relation->{outer_way_hash} //= {};
-    $relation->{inner_way_hash} //= {};
-    $relation->{way_array} //= [];
-    $relation->{outer_way_array} //= [];
-    $relation->{inner_way_array} //= [];
+    $relation->{way_id_is_outer} //= {};
+    $relation->{way_id_is_inner} //= {};
 
+    my @way_ids       = map { $_->{-ref} } @{$map_tile_relation->{member}};
     my @outer_way_ids = map { $_->{-ref} } grep { eval { $_->{-role} eq 'outer' && $_->{-type} eq 'way' && defined $_->{-ref} } } @{$map_tile_relation->{member}};
     my @inner_way_ids = map { $_->{-ref} } grep { eval { $_->{-role} eq 'inner' && $_->{-type} eq 'way' && defined $_->{-ref} } } @{$map_tile_relation->{member}};
 
-    $relation->{contains_outer_way} //= {};
-    $relation->{contains_inner_way} //= {};
-
-    foreach my $way_id (@outer_way_ids) {
-        $relation->{contains_outer_way}->{$way_id} = 1;
+    foreach my $id (@outer_way_ids) {
+        $relation->{way_id_is_outer}->{$id} = 1;
     }
-    foreach my $way_id (@inner_way_ids) {
-        $relation->{contains_inner_way}->{$way_id} = 1;
+    foreach my $id (@inner_way_ids) {
+        $relation->{way_id_is_inner}->{$id} = 1;
     }
 
-    foreach my $way_id (@outer_way_ids) {
-        my $way;
-        my $existing_way = $relation->{way_hash}->{$way_id};
-        if (defined $existing_way) {
-            $way = $existing_way;
+    foreach my $id (@way_ids) {
+        my $way = $self->{_map_tile_way_hash}->{$id};
+        if ($way) {
+            $way = $self->find_persistent_object($layer, $way);
         } else {
-            $way = $self->{_map_tile_way_hash}->{$way_id};
-            if ($way) {
-                $relation->{way_hash}->{$way_id} = $way;
-                $relation->{outer_way_hash}->{$way_id} = $way;
-                $self->link_way_object($layer, $way_id, $way);
-            }
+            $way = $self->find_persistent_object($layer, $id);
         }
-        push(@{$relation->{way_array}}, $way);
-        push(@{$relation->{outer_way_array}}, $way);
+        if ($way) {
+            $relation->{way_hash}->{$id} = $way;
+        } else {
+            # do nothing
+        }
+        if ($way) {
+            $self->log_warn("link_relation_object: relation id %s: way id %s: persistent object is %s\n",
+                            $relation_id,
+                            $id,
+                            $way);
+        }
     }
-    foreach my $way_id (@inner_way_ids) {
-        my $way;
-        my $existing_way = $relation->{way_hash}->{$way_id};
-        if (defined $existing_way) {
-            $way = $existing_way;
-        } else {
-            $way = $self->{_map_tile_way_hash}->{$way_id};
-            if ($way) {
-                $relation->{way_hash}->{$way_id} = $way;
-                $relation->{inner_way_hash}->{$way_id} = $way;
-                $self->link_way_object($layer, $way_id, $way);
-            }
-        }
-        push(@{$relation->{way_array}}, $way);
-        push(@{$relation->{inner_way_array}}, $way);
+
+    @{$relation->{way_array}} =
+        grep { $_ } map { $relation->{way_hash}->{$_} } sort { $a <=> $b } keys %{$relation->{way_hash}};
+    @{$relation->{outer_way_array}} = grep { $relation->{way_id_is_outer}->{$_->{-id}} } @{$relation->{way_array}};
+    @{$relation->{inner_way_array}} = grep { $relation->{way_id_is_inner}->{$_->{-id}} } @{$relation->{way_array}};
+    @{$relation->{other_way_array}} =
+        grep { !$relation->{way_id_is_inner}->{$_->{-id}} && !$relation->{way_id_is_outer}->{$_->{-id}} }
+        @{$relation->{way_array}};
+
+    foreach my $way (@{$relation->{way_array}}) {
+        $self->link_way_object($layer, $way->{-id}, $way);
     }
 }
 
@@ -625,36 +624,43 @@ sub link_way_object {
     }
 
     $way->{node_hash} //= {};
-    $way->{node_array} //= [];
 
     my @node_ids = map { $_->{-ref} } @{$way->{nd}};
-    $way->{node_ids} = \@node_ids;
+    $way->{node_ids} = \@node_ids; # should always be the same
 
     foreach my $node_id (@node_ids) {
         my $node = $self->{_map_tile_node_hash}->{$node_id};
-        if (!$node) {
-            next;
-        }
-
-        my $existing_node = $way->{node_hash}->{$node_id};
-        if (defined $existing_node) {
-            $node = $existing_node;
+        if ($node) {
+            $node = $self->find_persistent_object($layer, $node);
         } else {
-            $way->{node_hash}->{$node_id} = $node;
+            $node = $self->find_persistent_object($layer, $node_id);
         }
-        push(@{$way->{node_array}}, $node);
+        if ($node) {
+            $way->{node_hash}->{$node_id} = $node;
+        } else {
+            # do nothing
+        }
     }
 
-    if (scalar @node_ids > 1 && $node_ids[0] eq $node_ids[-1]) {
-        $way->{is_closed} = 1;
-        if ($way->{tags} && defined $way->{tags}->{area} && $way->{tags}->{area} eq 'yes') {
-            $way->{is_area} = 1;
-        } elsif (!exists $way->{tags}->{highway} && !exists $way->{tags}->{barrier}) {
-            $way->{is_area} = 1;
+    @{$way->{node_array}} =
+        grep { $_ }
+        map { $self->find_persistent_object($layer, $way->{node_hash}->{$_}) }
+        @{$way->{node_ids}};
+
+    if ($way->is_complete()) {
+        if ($way->is_self_closing()) {
+            $way->{is_closed} = 1;
+            if ($way->{tags} && defined $way->{tags}->{area} && $way->{tags}->{area} eq 'yes') {
+                $way->{is_area} = 1;
+            } elsif (!exists $way->{tags}->{highway} && !exists $way->{tags}->{barrier}) {
+                $way->{is_area} = 1;
+            }
+            # Normally a way with highway=* or barrier=* is a closed
+            # polyline that's not filled.  However, if area=yes is
+            # specified, it can be filled.
+        } else {
+            $way->{is_closed} = 0;
         }
-        # Normally a way with highway=* or barrier=* is a closed
-        # polyline that's not filled.  However, if area=yes is
-        # specified, it can be filled.
     } else {
         $way->{is_closed} = 0;
     }
