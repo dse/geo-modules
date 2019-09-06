@@ -57,6 +57,37 @@ sub add_override {
     }
 }
 
+sub add1 {
+    my ($self, @objects) = @_;
+    foreach my $object (@objects) {
+        next unless eval { $object->isa('Geo::MapMaker::OSM::Object') };
+        my $id = $object->{-id};
+
+        if (!$self->{hash}->{$id}) {
+            push(@{$self->{array}}, $object) unless $self->{hash}->{$id};
+            $self->{index}->{$id} = scalar @{$self->{array}} - 1;
+        }
+        $self->{hash}->{$id} //= $object; # persistent
+
+    }
+}
+
+sub add2 {
+    my ($self, @objects) = @_;
+    foreach my $object (@objects) {
+        next unless eval { $object->isa('Geo::MapMaker::OSM::Object') };
+        my $id = $object->{-id};
+
+        if (!$self->{hash}->{$id}) {
+            push(@{$self->{array}}, $object);
+            $self->{index}->{$id} = scalar @{$self->{array}} - 1;
+        }
+        $self->{hash}->{$id} = $object;
+        # $self->{array}->[$self->{index}->{$id}] = $object;
+
+    }
+}
+
 sub ids {
     my ($self) = @_;
     return map { $_->{-id} } @{$self->{array}};
