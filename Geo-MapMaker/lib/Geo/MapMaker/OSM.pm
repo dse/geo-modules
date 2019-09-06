@@ -42,8 +42,12 @@ use File::Slurper qw(read_text);
 use Path::Tiny;
 use Encode;
 use Scalar::Util qw(looks_like_number);
-
+use Digest::SHA qw(sha1_hex);
+use File::Path qw(make_path);
+use File::Basename qw(dirname);
 use XML::Fast;
+use File::MMagic;
+use IO::Uncompress::AnyUncompress qw(anyuncompress);
 
 our $TEST_WITH_LIMITED_TILES = 0;
 # $TEST_WITH_LIMITED_TILES = qr{<\s*tag\s+k="name"\s+v="Ohio River"\s*/>}i;
@@ -61,11 +65,69 @@ our $WATCH_OBJECT_ID = {
 
 sub update_openstreetmap {
     my ($self, $force) = @_;
-    $self->{_osm_xml_filenames} = [];
-    $self->_update_openstreetmap($force);
+    my $source = $self->{map_data_source};
+    if ($source) {
+        $self->update_openstreetmap_from_source($force);
+    } else {
+        $self->update_openstreetmap_from_osm_xml_api($force);
+    }
 }
 
-sub _update_openstreetmap {
+sub update_openstreetmap_from_source {
+    my ($self, $force) = @_;
+    my $source = $self->{map_data_source};
+    if (ref $source eq 'ARRAY' || !ref $source) {
+        $self->update_openstreetmap_from_source_url($force);
+    }
+}
+
+sub update_openstreetmap_from_source_url {
+    my ($self, $force) = @_;
+    my $source = $self->{map_data_source};
+    my @url;
+
+    if (ref $source eq 'ARRAY') {
+        @url = @$source;
+    } else {
+        @url = ($source);
+    }
+
+    my $ua = LWP::UserAgent->new();
+
+    foreach my $url (@url) {
+        my $filename = $self->cache_filename($url);
+        if (-e $filename && !$force) {
+            $self->log_warn("Not updating\n");
+            push(@{$self->{_osm_xml_filenames}}, $filename);
+        } elsif (-e $filename && $force && -M $filename < 1) {
+            $self->log_warn("Not updating (force in effect but file is less than 1 day old)\n");
+            push(@{$self->{_osm_xml_filenames}}, $filename);
+        } else {
+            make_path(dirname($filename));
+            $self->log_warn("Downloading %s ...\n", $url);
+            my $response = $ua->mirror($url, $filename);
+            my $content_type = $response->content_type;
+            $self->log_warn("=> %s (%s)\n", $response->status_line, $response->content_type);
+            if (!$response->is_success) {
+                exit(1);
+            }
+            push(@{$self->{_osm_xml_filenames}}, $filename);
+        }
+    }
+}
+
+sub cache_filename {
+    my ($self, $url) = @_;
+    return sprintf('%s/.geo-mapmaker-osm/cache/%s', $ENV{HOME}, sha1_hex($url));
+}
+
+sub update_openstreetmap_from_osm_xml_api {
+    my ($self, $force) = @_;
+    $self->{_osm_xml_filenames} = [];
+    $self->_update_openstreetmap_from_osm_xml_api($force);
+}
+
+sub _update_openstreetmap_from_osm_xml_api {
     my ($self, $force, $west_deg, $south_deg, $east_deg, $north_deg) = @_;
 
     $west_deg  //= $self->west_map_data_boundary_deg();
@@ -87,10 +149,10 @@ sub _update_openstreetmap {
     my $status = eval { file_get_contents($txt_filename); };
 
     if ($status && $status eq "split-up") {
-        $self->_update_openstreetmap($force, $west_deg,   $south_deg,  $center_lon, $center_lat);
-        $self->_update_openstreetmap($force, $center_lon, $south_deg,  $east_deg,   $center_lat);
-        $self->_update_openstreetmap($force, $west_deg,   $center_lat, $center_lon, $north_deg);
-        $self->_update_openstreetmap($force, $center_lon, $center_lat, $east_deg,   $north_deg);
+        $self->_update_openstreetmap_from_osm_xml_api($force, $west_deg,   $south_deg,  $center_lon, $center_lat);
+        $self->_update_openstreetmap_from_osm_xml_api($force, $center_lon, $south_deg,  $east_deg,   $center_lat);
+        $self->_update_openstreetmap_from_osm_xml_api($force, $west_deg,   $center_lat, $center_lon, $north_deg);
+        $self->_update_openstreetmap_from_osm_xml_api($force, $center_lon, $center_lat, $east_deg,   $north_deg);
     } elsif (-e $xml_filename && !$force) {
         $self->log_warn("Not updating $xml_filename\n    $url\n") if $self->{verbose};
         push(@{$self->{_osm_xml_filenames}}, $xml_filename);
@@ -111,10 +173,10 @@ sub _update_openstreetmap {
             file_put_contents($txt_filename, "split-up");
             my $center_lat = ($north_deg + $south_deg) / 2;
             my $center_lon = ($west_deg + $east_deg) / 2;
-            $self->_update_openstreetmap($force, $west_deg,   $south_deg,  $center_lon, $center_lat);
-            $self->_update_openstreetmap($force, $center_lon, $south_deg,  $east_deg,   $center_lat);
-            $self->_update_openstreetmap($force, $west_deg,   $center_lat, $center_lon, $north_deg);
-            $self->_update_openstreetmap($force, $center_lon, $center_lat, $east_deg,   $north_deg);
+            $self->_update_openstreetmap_from_osm_xml_api($force, $west_deg,   $south_deg,  $center_lon, $center_lat);
+            $self->_update_openstreetmap_from_osm_xml_api($force, $center_lon, $south_deg,  $east_deg,   $center_lat);
+            $self->_update_openstreetmap_from_osm_xml_api($force, $west_deg,   $center_lat, $center_lon, $north_deg);
+            $self->_update_openstreetmap_from_osm_xml_api($force, $center_lon, $center_lat, $east_deg,   $north_deg);
         } elsif (is_success($rc)) {
             push(@{$self->{_osm_xml_filenames}}, $xml_filename);
             # ok then
@@ -130,9 +192,9 @@ sub _update_openstreetmap {
     }
 }
 
-sub force_update_openstreetmap {
+sub force_update_openstreetmap_from_osm_xml_api {
     my ($self) = @_;
-    $self->update_openstreetmap(1);
+    $self->update_openstreetmap_from_osm_xml_api(1);
 }
 
 sub update_or_create_openstreetmap_layer {
@@ -145,6 +207,28 @@ sub update_or_create_openstreetmap_layer {
                                               parent => $map_area_layer,
                                               autogenerated => 1);
     return $layer;
+}
+
+sub get_xml_string {
+    my ($self, $filename) = @_;
+    my $mm = File::MMagic->new();
+    my $mime_type = $mm->checktype_filename($filename);
+    if ($mime_type eq 'text/plain') {
+        return path($filename)->slurp();
+    }
+    if ($mime_type eq 'application/x-gzip') {
+        $self->log_warn("Uncompressing %d bytes...\n", (-s $filename));
+        my $data;
+        my $status = anyuncompress($filename => \$data);
+        if (!$status) {
+            die(sprintf("uncompress failed: %s\n",
+                        $IO::Uncompress::AnyUncompress::AnyUncompressError));
+        }
+        $self->log_warn("  got %d bytes\n", length $data);
+        return $data;
+    }
+    say $mime_type;
+    exit(0);
 }
 
 sub draw_openstreetmap_maps {
@@ -244,7 +328,8 @@ sub draw_openstreetmap_maps {
         }
 
         $self->twarn("Reading %s ...\n", $filename);
-        my $doc = path($filename)->slurp();
+
+        my $doc = $self->get_xml_string($filename);
 
         if ($TEST_WITH_LIMITED_TILES) {
             if (lc(ref $TEST_WITH_LIMITED_TILES) eq 'regexp') {
@@ -252,7 +337,7 @@ sub draw_openstreetmap_maps {
             }
         }
 
-        $self->twarn("Parsing %s ...\n", $filename);
+        $self->twarn("Parsing XML ...\n");
         local $self->{_doc} = xml2hash($doc, array => 1);
 
         $self->twarn("done.\n");
