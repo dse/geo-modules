@@ -5,7 +5,7 @@ use v5.10.0;
 
 use lib "$ENV{HOME}/git/dse.d/geo-modules/Geo-MapMaker/lib";
 
-use fields qw(array hash);
+use fields qw(array hash index);
 
 sub new {
     my $class = shift;
@@ -13,7 +13,7 @@ sub new {
     $self->{array} = [];
     $self->{hash}  = {};
     $self->{index} = {};
-    $self->add(@_);
+    $self->add(@_) if scalar @_;
     return $self;
 }
 
