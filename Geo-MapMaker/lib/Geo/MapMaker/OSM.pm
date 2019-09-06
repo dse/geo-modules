@@ -525,14 +525,14 @@ sub collect_map_tile_layer_objects {
             }
             next unless $match;
 
-            $layer->{persistent_objects}->add1($object);
+            $layer->{persistent_objects}->add($object);
 
             # objects used directly
-            $layer->{objects}->add1($object);
+            $layer->{objects}->add($object);
 
             # current objects, from which we pull any ways not found
             # in previously pulled relations
-            $layer->{map_tile_objects}->add2($object);
+            $layer->{map_tile_objects}->add_override($object);
 
             $count += 1;
         }
