@@ -93,6 +93,7 @@ BEGIN {
 		  map_data_south_deg
 		  map_data_east_deg
 		  map_data_west_deg
+                  map_data_source
 
 		  paper_width_px
 		  paper_height_px
