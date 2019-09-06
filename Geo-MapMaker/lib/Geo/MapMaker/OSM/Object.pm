@@ -38,7 +38,6 @@ sub is_multipolygon_relation {
 sub css_id {
     my ($self, %args) = @_;
     my $map_area = $args{map_area};
-    my $map_area_index = $args{map_area_index} || 0;
     my $result = '';
     if ($map_area) {
         $result .= $map_area->{id_prefix};
