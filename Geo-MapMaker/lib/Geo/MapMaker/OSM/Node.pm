@@ -19,4 +19,11 @@ sub svg_object {
     return;
 }
 
+sub css_classes {
+    my ($self, %args) = @_;
+    my @css_classes = $self->SUPER::css_classes(%args);
+    push(@css_classes, 'osm-node');
+    return @css_classes;
+}
+
 1;
