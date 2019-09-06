@@ -32,13 +32,11 @@ sub svg_object_mpr {
     $css_class .= $self->css_class_suffix();
 
     my $path = Geo::MapMaker::SVG::Path->new();
-    warn(sprintf("svg_object_mpr: contains %d ways\n", scalar @{$self->{way_array}}));
     foreach my $way (@{$self->{way_array}}) {
         my $polyline = $way->svg_object(map_area_index => $map_area_index);
         next unless $polyline;
         $path->add($polyline);
     }
-    warn(sprintf("svg_object_mpr: contains %d polylines\n", scalar @{$path->{polylines}}));
     $path->stitch_polylines();
     return $path;
 }
@@ -53,13 +51,11 @@ sub svg_object_non_mpr {
     $css_class .= $self->css_class_suffix();
 
     my $path = Geo::MapMaker::SVG::Path->new();
-    warn(sprintf("svg_object_non_mpr: contains %d ways\n", scalar @{$self->{way_array}}));
     foreach my $way (@{$self->{way_array}}) {
         my $polyline = $way->svg_object(map_area_index => $map_area_index);
         next unless $polyline;
         $path->add($polyline);
     }
-    warn(sprintf("svg_object_non_mpr: contains %d polylines\n", scalar @{$path->{polylines}}));
     return $path;
 }
 
