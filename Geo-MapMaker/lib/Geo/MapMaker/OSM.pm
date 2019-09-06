@@ -45,12 +45,12 @@ use Scalar::Util qw(looks_like_number);
 
 use XML::Fast;
 
-our $TEST_WITH_LIMITED_TILES => 0;
-# our $TEST_WITH_LIMITED_TILES = qr{<\s*tag\s+k="name"\s+v="Ohio River"\s*/>}i;
-# our $TEST_WITH_LIMITED_TILES = [117, 118, 120, 153, 154, 155];
+our $TEST_WITH_LIMITED_TILES = 0;
+# $TEST_WITH_LIMITED_TILES = qr{<\s*tag\s+k="name"\s+v="Ohio River"\s*/>}i;
+# $TEST_WITH_LIMITED_TILES = [117, 118, 120, 153, 154, 155];
 
 our $TEST_WITH_LIMITED_LAYERS = 0;
-# our $TEST_WITH_LIMITED_LAYERS = sub {
+# $TEST_WITH_LIMITED_LAYERS = sub {
 #     return $_->{name} =~ m{river}i;
 # };
 
@@ -196,8 +196,6 @@ sub draw_openstreetmap_maps {
         }
     }
 
-    my $num_xml_files = scalar(@{$self->{_osm_xml_filenames}});
-
     if ($TEST_WITH_LIMITED_LAYERS) {
         if (ref $TEST_WITH_LIMITED_LAYERS eq 'SUB') {
             @{$self->{osm_layers}} = grep { $TEST_WITH_LIMITED_LAYERS->() } @{$self->{osm_layers}};
@@ -205,6 +203,8 @@ sub draw_openstreetmap_maps {
             @{$self->{osm_layers}} = grep { $_->{name} =~ m{river}i } @{$self->{osm_layers}};
         }
     }
+
+    my $num_xml_files = scalar(@{$self->{_osm_xml_filenames}});
 
     foreach my $layer (@{$self->{osm_layers}}) {
         $layer->{type} //= { way => 1, relation => 1 };
@@ -221,7 +221,8 @@ sub draw_openstreetmap_maps {
     }
 
     foreach my $layer (@{$self->{osm_layers}}) {
-        $layer->{objects} = Geo::MapMaker::OSM::Collection->new(); # persistent objects
+        $layer->{persistent_objects} = Geo::MapMaker::OSM::Collection->new(); # persistent objects
+        $layer->{objects} = Geo::MapMaker::OSM::Collection->new(); # subset of persistent objects used directly
         $self->index_layer_tags($layer);
     }
 
@@ -294,7 +295,6 @@ sub load_map_tile_objects {
     my $rc = 0;
     my $order = 0;
     foreach my $node (@{$self->{_doc}->{osm}->[0]->{node}}) {
-        my $id = $node->{-id};
         $node = Geo::MapMaker::OSM::Node->new($node);
         $self->{_map_tile_nodes}->add($node);
         $nc += 1;
@@ -306,13 +306,15 @@ sub load_map_tile_objects {
         delete $node->{-visible};
         $node->{type} = 'node';
 
-        if ($WATCH_OBJECT_ID->{$id}) {
-        }
+        # if ($WATCH_OBJECT_ID) {
+        #     my $id = $node->{-id};
+        #     if ($WATCH_OBJECT_ID->{$id}) {
+        #     }
+        # }
     }
     $self->tdebug("  %d nodes\n", $nc);
 
     foreach my $way (@{$self->{_doc}->{osm}->[0]->{way}}) {
-        my $id = $way->{-id};
         $way = Geo::MapMaker::OSM::Way->new($way);
         $self->{_map_tile_ways}->add($way);
         $wc += 1;
@@ -324,13 +326,15 @@ sub load_map_tile_objects {
         delete $way->{-visible};
         $way->{type} = 'way';
 
-        if ($WATCH_OBJECT_ID->{$id}) {
-        }
+        # if ($WATCH_OBJECT_ID) {
+        #     my $id = $way->{-id};
+        #     if ($WATCH_OBJECT_ID->{$id}) {
+        #     }
+        # }
     }
     $self->tdebug("  %d ways\n", $wc);
 
     foreach my $relation (@{$self->{_doc}->{osm}->[0]->{relation}}) {
-        my $id = $relation->{-id};
         $relation = Geo::MapMaker::OSM::Relation->new($relation);
         $self->{_map_tile_relations}->add($relation);
         $rc += 1;
@@ -342,9 +346,11 @@ sub load_map_tile_objects {
         delete $relation->{-visible};
         $relation->{type} = 'relation';
 
-        if ($WATCH_OBJECT_ID->{$id}) {
-            say STDERR Dumper($relation);
-        }
+        # if ($WATCH_OBJECT_ID) {
+        #     my $id = $relation->{-id};
+        #     if ($WATCH_OBJECT_ID->{$id}) {
+        #     }
+        # }
     }
     $self->tdebug("  %d relations\n", $rc);
 
@@ -358,8 +364,10 @@ sub convert_map_tile_tags {
         $self->{_map_tile_ways}->count() +
         $self->{_map_tile_relations}->count();
     $self->twarn("Converting tags on %d objects ...\n", $count);
-    foreach my $node ($self->{_map_tile_nodes}->objects) {
-        $node->convert_tags();
+    if (grep { $_->{type}->{node} } @{$self->{osm_layers}}) {
+        foreach my $node ($self->{_map_tile_nodes}->objects) {
+            $node->convert_tags();
+        }
     }
     foreach my $way ($self->{_map_tile_ways}->objects) {
         $way->convert_tags();
@@ -517,12 +525,14 @@ sub collect_map_tile_layer_objects {
             }
             next unless $match;
 
-            # persistent objects
-            $layer->{objects}->add($object);
+            $layer->{persistent_objects}->add1($object);
+
+            # objects used directly
+            $layer->{objects}->add1($object);
 
             # current objects, from which we pull any ways not found
             # in previously pulled relations
-            $layer->{map_tile_objects}->add_override($object);
+            $layer->{map_tile_objects}->add2($object);
 
             $count += 1;
         }
@@ -558,23 +568,25 @@ sub find_persistent_object {
     }
     if (!ref $object) {
         my $id = $object;
-        return $layer->{objects}->get($id);
+        return $layer->{persistent_objects}->get($id);
     }
     my $id = $object->{-id};
-    if ($layer->{objects}->has($id)) {
-        return $layer->{objects}->get($id);
+    if ($layer->{persistent_objects}->has($id)) {
+        return $layer->{persistent_objects}->get($id);
     }
-    $layer->{objects}->add($object);
+    $layer->{persistent_objects}->add($object);
     return $object;
 }
 
 sub link_relation_object {
     my ($self, $layer, $relation_id) = @_;
 
-    my $relation          = $layer->{objects}->get($relation_id); # persistent
-    my $map_tile_relation = $layer->{map_tile_objects}->get($relation_id); # current, where we get way_ids
+    my $relation = $layer->{persistent_objects}->get($relation_id); # persistent
 
-    # a relation consists of ways.  they are in no particular order.
+    # current objects, where we get way_ids from to merge them in
+    # because not all relation objects across tiles have the same list
+    # of ways
+    my $map_tile_relation = $layer->{map_tile_objects}->get($relation_id);
 
     # store ways in persistent objects
     $relation->{way_hash} //= {};
@@ -628,9 +640,7 @@ sub link_relation_object {
 sub link_way_object {
     my ($self, $layer, $way_id, $way) = @_;
 
-    if (!$way) {
-        $way = $layer->{object}->get($way_id);
-    }
+    $way ||= $layer->{persistent_objects}->get($way_id);
 
     $way->{node_hash} //= {};
 
