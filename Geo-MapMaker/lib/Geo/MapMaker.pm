@@ -61,6 +61,8 @@ BEGIN {
 		  _read_filename
 
 		  classes
+                  css
+
 		  layers
 		  route_colors
 		  route_overrides
@@ -583,6 +585,10 @@ END
 	$contents .= "\t.${class}   { $css }\n";
 	$contents .= "\t.${class}_2 { $css_2 }\n"      if $self->has_style_2(class => $class);
 	$contents .= "\t.${class}_2 { $css_BRIDGE }\n" if $self->has_style_BRIDGE(class => $class);
+    }
+
+    if (defined $self->{css}) {
+        $contents .= $self->{css};
     }
 
     $self->{_dirty_} = 1;
@@ -1217,8 +1223,6 @@ sub compose_style_string {
 		    grep { $_ ne "r" }
 		      keys %$style);
 }
-
-###############################################################################
 
 ###############################################################################
 
