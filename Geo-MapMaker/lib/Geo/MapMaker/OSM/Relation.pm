@@ -67,4 +67,16 @@ sub css_class_suffix {
     return ' NMPR';
 }
 
+sub css_classes {
+    my ($self, %args) = @_;
+    my @css_classes = $self->SUPER::css_classes(%args);
+    push(@css_classes, 'osm-relation');
+    if ($self->is_multipolygon_relation) {
+        push(@css_classes, 'osm-relation-multipolygon', 'MPR');
+    } else {
+        push(@css_classes, 'osm-relation-non-multipolygon', 'NMPR');
+    }
+    return @css_classes;
+}
+
 1;
