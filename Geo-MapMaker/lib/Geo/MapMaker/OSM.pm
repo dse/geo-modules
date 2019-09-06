@@ -17,6 +17,8 @@ use fields qw(_osm_xml_filenames
               osm_layers
               _doc
 
+              _css_class_count
+
               _map_tile_nodes
               _map_tile_ways
               _map_tile_relations
@@ -59,9 +61,12 @@ our $TEST_WITH_LIMITED_LAYERS = 0;
 # };
 
 our $WATCH_OBJECT_ID = {
+    #'471312697' => 1,
     #'2182501' => 1,
     #'3962892' => 1,
 };
+
+our $COUNT_CSS_CLASSES = 0;
 
 sub update_openstreetmap {
     my ($self, $force) = @_;
@@ -312,6 +317,7 @@ sub draw_openstreetmap_maps {
 
     local $self->{_map_tile_number} = 0;
     local $self->{_map_tile_count} = scalar @{$self->{_osm_xml_filenames}};
+    local $self->{_css_class_count} = {};
 
     foreach my $filename (@{$self->{_osm_xml_filenames}}) {
         $self->{_map_tile_number} += 1;
@@ -456,6 +462,12 @@ sub convert_map_tile_tags {
     }
     foreach my $way ($self->{_map_tile_ways}->objects) {
         $way->convert_tags();
+        # if ($WATCH_OBJECT_ID) {
+        #     my $id = $way->{-id};
+        #     if ($WATCH_OBJECT_ID->{$id}) {
+        #         say Dumper $way;
+        #     }
+        # }
     }
     foreach my $relation ($self->{_map_tile_relations}->objects) {
         $relation->convert_tags();
@@ -495,6 +507,14 @@ sub convert_coordinates {
                 foreach my $node (@{$way->{node_array}}) {
                     $node->{svg_coords}->[$map_area_index] ||= $self->convert_node_coordinates($node);
                 }
+                # if ($WATCH_OBJECT_ID) {
+                #     my $id = $way->{-id};
+                #     if ($WATCH_OBJECT_ID->{$id}) {
+                #         say "# <5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<";
+                #         say Dumper $way;
+                #         say "# >5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>";
+                #     }
+                # }
             }
             foreach my $node (grep { $_->{type} eq 'node' } $layer->{objects}->objects) {
                 $node->{svg_coords}->[$map_area_index] ||= $self->convert_node_coordinates($node);
@@ -535,16 +555,18 @@ sub draw {
             my @objects = $layer->{objects}->objects;
             $self->twarn("    Adding %d objects to layer $layer_name ...\n", scalar @objects);
             foreach my $object (@objects) {
-                my $css_class = $layer->{class} . $object->css_class_suffix(
-                    map_area_index => $map_area_index,
+                my $css_class_string = $object->css_class_string(
+                    layer => $layer,
                     map_area => $map_area,
                 );
                 my $css_id = $object->css_id(
-                    map_area_index => $map_area_index,
+                    layer => $layer,
                     map_area => $map_area,
                 );
                 my $attr = {};
                 $attr->{'data-name'} = $object->{tags}->{name} if defined $object->{tags}->{name};
+
+                # my $watch = $WATCH_OBJECT_ID && $WATCH_OBJECT_ID->{$object->{-id}};
 
                 my $svg_element;
                 if ($object->is_multipolygon_relation) {
@@ -552,31 +574,32 @@ sub draw {
                     next unless $path;
                     $svg_element = $self->svg_path(
                         path => $path,
-                        class => $css_class,
+                        class => $css_class_string,
                         attr => $attr,
                         id => $css_id,
                         map_area_index => $map_area_index,
                     );
                 } elsif ($object->isa('Geo::MapMaker::OSM::Relation')) {
-                    if ($WATCH_OBJECT_ID->{$object->{-id}}) {
-                        $self->log_warn("%s is a relation but not an mpr\n",
-                                        $object->{-id});
-                    }
                     my $path = $object->svg_object(map_area_index => $map_area_index);
                     next unless $path;
                     $svg_element = $self->svg_path(
                         path => $path,
-                        class => $css_class,
+                        class => $css_class_string,
                         attr => $attr,
                         id => $css_id,
                         map_area_index => $map_area_index,
                     );
+                    # if ($watch) {
+                    #     say "#<6>";
+                    #     say Dumper $svg_element;
+                    #     say "#</6>";
+                    # }
                 } elsif ($object->{type} eq 'way') {
                     my $polyline = $object->svg_object(map_area_index => $map_area_index);
                     next unless $polyline;
                     $svg_element = $self->svg_path(
                         polyline => $polyline,
-                        class => $css_class,
+                        class => $css_class_string,
                         attr => $attr,
                         id => $css_id,
                         map_area_index => $map_area_index,
@@ -584,11 +607,30 @@ sub draw {
                 }
                 if ($svg_element) {
                     $layer_group->appendChild($svg_element);
+                    # if ($COUNT_CSS_CLASSES) {
+                    #     my @css_classes = $object->css_classes(
+                    #         layer => $layer,
+                    #         map_area => $map_area,
+                    #     );
+                    #     foreach my $css_class (@css_classes) {
+                    #         $self->{_css_class_count}->{$css_class} += 1;
+                    #     }
+                    # }
                 }
             }
         }
     }
     $self->twarn("Done.\n");
+
+    # if ($COUNT_CSS_CLASSES) {
+    #     my $fh;
+    #     if (open($fh, '>', 'css-classes.txt')) {
+    #         foreach my $css_class (nsort keys %{$self->{_css_class_count}}) {
+    #             printf $fh ("%8d %s\n", $self->{_css_class_count}->{$css_class},
+    #                         Geo::MapMaker::OSM::Object->escape_css_class_name($css_class));
+    #         }
+    #     }
+    # }
 }
 
 sub collect_map_tile_layer_objects {
@@ -641,6 +683,13 @@ sub link_map_tile_objects {
             my $way = $self->find_persistent_object($layer, $way);
             $self->link_way_object($layer, $id, $way);
             $count += 1;
+            # if ($WATCH_OBJECT_ID) {
+            #     if ($WATCH_OBJECT_ID->{$id}) {
+            #         say "# <4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<";
+            #         say Dumper $way;
+            #         say "# >4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>";
+            #     }
+            # }
         }
     }
     $self->twarn("Done.  Linked %d objects.\n", $count);
