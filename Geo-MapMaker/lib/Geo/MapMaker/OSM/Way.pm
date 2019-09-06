@@ -57,4 +57,16 @@ sub css_class_suffix {
     return ' OPEN';
 }
 
+sub css_classes {
+    my ($self, %args) = @_;
+    my @css_classes = $self->SUPER::css_classes(%args);
+    push(@css_classes, 'osm-way');
+    if ($self->is_self_closing) {
+        push(@css_classes, 'osm-way-self-closing', 'CLOSED');
+    } else {
+        push(@css_classes, 'osm-way-not-self-closing', 'OPEN');
+    }
+    return @css_classes;
+}
+
 1;
