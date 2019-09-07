@@ -3,6 +3,9 @@ use warnings;
 use strict;
 use v5.10.0;
 
+use lib "$ENV{HOME}/git/dse.d/geo-modules/Geo-MapMaker/lib";
+use Geo::MapMaker::Constants qw(:tags);
+
 use Sort::Naturally qw(nsort);
 
 sub new {
@@ -60,72 +63,6 @@ sub css_class_suffix {
 
 # https://wiki.openstreetmap.org/wiki/Map_Features
 
-our $EXCLUDE_TAG_NAMES = {
-    name          => 1,
-    created_by    => 1,
-    ref           => 1,
-    int_name      => 1,
-    loc_name      => 1,
-    nat_name      => 1,
-    official_name => 1,
-    old_name      => 1,
-    reg_name      => 1,
-    short_name    => 1,
-    sorting_name  => 1,
-    alt_name      => 1,
-};
-
-our @EXCLUDE_TAG_NAMES = [
-    qr{:},
-    qr{^name_\d+$},
-];
-
-our $TAG_NAME_WHITELIST = {
-    aerialway        => 1,
-    aeroway          => 1,
-    amenity          => 1,
-    barrier          => 1,
-    boundary         => 1,
-    building         => 1,
-    craft            => 1,
-    emergency        => 1,
-    geological       => 1,
-    highway          => 1,
-    sidewalk         => 1,
-    cycleway         => 1,
-    busway           => 1,
-    historic         => 1,
-    landuse          => 1,
-    leisure          => 1,
-    man_made         => 1,
-    military         => 1,
-    natural          => 1,
-    office           => 1,
-    place            => 1,
-    power            => 1,
-    public_transport => 1,
-    railway          => 1,
-    electrified      => 1,
-    embedded_rails   => 1,
-    service          => 1,
-    usage            => 1,
-    route            => 1,
-    shop             => 1,
-    sport            => 1,
-    telecom          => 1,
-    tourism          => 1,
-    waterway         => 1,
-};
-
-our $TAG_NAME_VALUE_WHITELIST = {
-    'line=busbar'    => 1,
-    'line=bay'       => 1,
-    'bridge=yes'     => 1,
-    'cutting=yes'    => 1,
-    'embankment=yes' => 1,
-    'tunnel=yes'     => 1,
-};
-
 sub css_classes {
     my ($self, %args) = @_;
     my @css_classes = ();
@@ -137,7 +74,8 @@ sub css_classes {
         next if $EXCLUDE_TAG_NAMES->{$k};
         my $v = $self->{tags}->{$k};
         next unless $TAG_NAME_WHITELIST->{$k} || $TAG_NAME_VALUE_WHITELIST->{"${k}=${v}"};
-        push(@css_classes, "${k}-${v}");
+        push(@css_classes, "osm-tag-${k}");
+        push(@css_classes, "osm-tag-${k}-${v}");
     }
     my $layer = $args{layer};
     if ($layer) {
