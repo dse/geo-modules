@@ -632,7 +632,6 @@ sub draw {
         }
     }
     $self->twarn("Done.\n");
-
     # if ($COUNT_CSS_CLASSES) {
     #     my $fh;
     #     if (open($fh, '>', 'css-classes.txt')) {
@@ -744,7 +743,7 @@ sub write_unused_object_tag_value_counts {
     my $filename = 'unused-object-tag-value-counts.txt';
     open($fh, '>', $filename) or return;
     $self->log_warn("    Writing $filename ...\n");
-    my $hash = $self->{_unused_object_tag_count};
+    my $hash = $self->{_unused_object_tag_value_count};
     foreach my $type (nsort keys %$hash) {
         my $subhash = $hash->{$type};
         foreach my $key (nsort keys %$subhash) {
