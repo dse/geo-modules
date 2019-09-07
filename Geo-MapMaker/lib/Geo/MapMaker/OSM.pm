@@ -749,7 +749,7 @@ sub write_unused_object_tag_value_counts {
         foreach my $key (nsort keys %$subhash) {
             my $subsubhash = $subhash->{$key};
             foreach my $value (nsort keys %$subsubhash) {
-                printf $fh ("%8d %-15s %-23s %s\n", $subhash->{$key}, $type, $key, $value);
+                printf $fh ("%8d %-15s %-23s %s\n", $subsubhash->{$key}, $type, $key, $value);
             }
         }
     }
