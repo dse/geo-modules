@@ -128,7 +128,6 @@ our $TAG_NAME_VALUE_WHITELIST = {
 
 sub css_classes {
     my ($self, %args) = @_;
-    say "A: @_";
     my @css_classes = ();
   tag:
     foreach my $k (nsort keys %{$self->{tags}}) {
@@ -141,11 +140,6 @@ sub css_classes {
         push(@css_classes, "${k}-${v}");
     }
     my $layer = $args{layer};
-
-    say "K: ", join(' ', keys %args);
-    say "L: ", $layer;
-    say "C: ", $layer->{class};
-
     if ($layer) {
         my $class = $layer->{class};
         if ($class) {
@@ -159,11 +153,6 @@ sub css_classes {
 sub css_class_string {
     my ($self, %args) = @_;
     my $layer = $args{layer};
-
-    say "K: ", join(' ', keys %args);
-    say "L: ", $layer;
-    say "C: ", $layer->{class};
-
     my @css_classes = $self->css_classes(%args);
     my $css_class_string = $self->join_css_class(@css_classes);
     return $css_class_string;
