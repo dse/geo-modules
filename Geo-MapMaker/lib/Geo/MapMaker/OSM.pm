@@ -701,22 +701,14 @@ sub collect_map_tile_layer_objects {
 sub count_unused_object_tags {
     my ($self, $object) = @_;
     my $type = $object->{type};
+  tag:
     foreach my $k (keys %{$object->{tags}}) {
-        next if $k eq 'name';
-        next if $k eq 'created_by';
-        next if $k eq 'ref';
-        next if $k eq 'int_name';
-        next if $k eq 'loc_name';
-        next if $k eq 'nat_name';
-        next if $k eq 'official_name';
-        next if $k eq 'old_name';
-        next if $k eq 'reg_name';
-        next if $k eq 'short_name';
-        next if $k eq 'sorting_name';
-        next if $k eq 'alt_name';
-        next if $k =~ m{:};
-        next if $k =~ m{^name_\d+$};
+        next if $EXCLUDE_TAG_NAMES->{$k};
+        foreach my $exclude (@EXCLUDE_TAG_NAMES) {
+            next tag if ref $exclude eq 'Regexp' && $k =~ $exclude;
+        }
         my $v = $object->{tags}->{$k};
+        next unless $TAG_NAME_WHITELIST->{$k} || $TAG_NAME_VALUE_WHITELIST->{"${k}=${v}"};
         $self->{_unused_object_tag_count}->{$type}->{$k} += 1;
         $self->{_unused_object_tag_value_count}->{$type}->{$k}->{$v} += 1;
     }
