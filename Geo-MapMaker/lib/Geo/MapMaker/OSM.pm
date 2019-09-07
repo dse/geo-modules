@@ -19,6 +19,9 @@ use fields qw(_osm_xml_filenames
 
               _css_class_count
 
+              _unused_object_tag_count
+              _unused_object_tag_value_count
+
               _map_tile_nodes
               _map_tile_ways
               _map_tile_relations
@@ -319,6 +322,9 @@ sub draw_openstreetmap_maps {
     local $self->{_map_tile_count} = scalar @{$self->{_osm_xml_filenames}};
     local $self->{_css_class_count} = {};
 
+    local $self->{_unused_object_tag_count} = {};
+    local $self->{_unused_object_tag_value_count} = {};
+
     foreach my $filename (@{$self->{_osm_xml_filenames}}) {
         $self->{_map_tile_number} += 1;
 
@@ -372,7 +378,12 @@ sub draw_openstreetmap_maps {
         $self->draw();
     }
 
-    $self->twarn("draw_openstreetmap_maps is done\n");
+    $self->log_warn("  Writing unused object tag and tag=value counts ...\n");
+    $self->write_unused_object_tag_counts();
+    $self->write_unused_object_tag_value_counts();
+    $self->log_warn("  Done.\n");
+
+    $self->log_warn("draw_openstreetmap_maps is done\n");
 }
 
 sub load_map_tile_objects {
@@ -652,6 +663,9 @@ sub collect_map_tile_layer_objects {
             }
             next unless $match;
 
+            $object->{used} = 1;
+            # $object->{used_directly} = 1;
+
             $layer->{persistent_objects}->add($object);
 
             # objects used directly
@@ -664,7 +678,82 @@ sub collect_map_tile_layer_objects {
             $count += 1;
         }
     }
+    if (grep { $_->{type}->{node} } @{$self->{osm_layers}}) {
+        foreach my $node ($self->{_map_tile_nodes}->objects) {
+            next if $node->{used};
+            $self->count_unused_object_tags($node);
+        }
+    }
+    if (grep { $_->{type}->{way} } @{$self->{osm_layers}}) {
+        foreach my $way ($self->{_map_tile_ways}->objects) {
+            next if $way->{used};
+            $self->count_unused_object_tags($way);
+        }
+    }
+    if (grep { $_->{type}->{relation} } @{$self->{osm_layers}}) {
+        foreach my $relation ($self->{_map_tile_relations}->objects) {
+            next if $relation->{used};
+            $self->count_unused_object_tags($relation);
+        }
+    }
     $self->twarn("Done.  Added %d objects.\n", $count);
+}
+
+sub count_unused_object_tags {
+    my ($self, $object) = @_;
+    my $type = $object->{type};
+    foreach my $k (keys %{$object->{tags}}) {
+        next if $k eq 'name';
+        next if $k eq 'created_by';
+        next if $k eq 'ref';
+        next if $k eq 'int_name';
+        next if $k eq 'loc_name';
+        next if $k eq 'nat_name';
+        next if $k eq 'official_name';
+        next if $k eq 'old_name';
+        next if $k eq 'reg_name';
+        next if $k eq 'short_name';
+        next if $k eq 'sorting_name';
+        next if $k eq 'alt_name';
+        next if $k =~ m{:};
+        next if $k =~ m{^name_\d+$};
+        my $v = $object->{tags}->{$k};
+        $self->{_unused_object_tag_count}->{$type}->{$k} += 1;
+        $self->{_unused_object_tag_value_count}->{$type}->{$k}->{$v} += 1;
+    }
+}
+
+sub write_unused_object_tag_counts {
+    my ($self) = @_;
+    my $fh;
+    my $filename = 'unused-object-tag-counts.txt';
+    open($fh, '>', $filename) or return;
+    $self->log_warn("    Writing $filename ...\n");
+    my $hash = $self->{_unused_object_tag_count};
+    foreach my $type (nsort keys %$hash) {
+        my $subhash = $hash->{$type};
+        foreach my $key (nsort keys %$subhash) {
+            printf $fh ("%8d %-15s %s\n", $subhash->{$key}, $type, $key);
+        }
+    }
+}
+
+sub write_unused_object_tag_value_counts {
+    my ($self) = @_;
+    my $fh;
+    my $filename = 'unused-object-tag-value-counts.txt';
+    open($fh, '>', $filename) or return;
+    $self->log_warn("    Writing $filename ...\n");
+    my $hash = $self->{_unused_object_tag_count};
+    foreach my $type (nsort keys %$hash) {
+        my $subhash = $hash->{$type};
+        foreach my $key (nsort keys %$subhash) {
+            my $subsubhash = $subhash->{$key};
+            foreach my $value (nsort keys %$subsubhash) {
+                printf $fh ("%8d %-15s %-23s %s\n", $subhash->{$key}, $type, $key, $value);
+            }
+        }
+    }
 }
 
 sub link_map_tile_objects {
@@ -767,6 +856,8 @@ sub link_relation_object {
         @{$relation->{way_array}};
 
     foreach my $way (@{$relation->{way_array}}) {
+        # $way->{used} = 1;
+        # $way->{used_indirectly} = 1;
         $self->link_way_object($layer, $way->{-id}, $way);
     }
 }
@@ -799,6 +890,11 @@ sub link_way_object {
         grep { $_ }
         map { $self->find_persistent_object($layer, $way->{node_hash}->{$_}) }
         @{$way->{node_ids}};
+
+    # foreach my $node (@{$way->{node_array}}) {
+    #     $node->{used} = 1;
+    #     $node->{used_indirectly} = 1;
+    # }
 
     if ($way->is_complete()) {
         if ($way->is_self_closing()) {
