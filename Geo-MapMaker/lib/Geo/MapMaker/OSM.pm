@@ -305,7 +305,13 @@ sub draw_openstreetmap_maps {
             my $k = $tag->{k};
             my $v = $tag->{v};
             if (defined $v) {
-                $layer->{index}->{$k,$v} = 1;
+                if (ref $v eq 'ARRAY') {
+                    foreach my $v (@$v) {
+                        $layer->{index}->{$k,$v} = 1;
+                    }
+                } else {
+                    $layer->{index}->{$k,$v} = 1;
+                }
             } else {
                 $layer->{index}->{$k} = 1;
             }
@@ -741,7 +747,7 @@ sub write_unused_object_tag_value_counts {
         foreach my $key (nsort keys %$subhash) {
             my $subsubhash = $subhash->{$key};
             foreach my $value (nsort keys %$subsubhash) {
-                printf $fh ("%8d %-15s %-23s %s\n", $subsubhash->{$key}, $type, $key, $value);
+                printf $fh ("%8d %-15s %-23s %s\n", $subsubhash->{$value}, $type, $key, $value);
             }
         }
     }
