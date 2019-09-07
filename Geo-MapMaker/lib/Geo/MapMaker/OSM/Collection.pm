@@ -30,6 +30,15 @@ sub add {
         next unless eval { $object->isa('Geo::MapMaker::OSM::Object') };
         my $id = $object->{-id};
         if (exists $self->{hash}->{$id}) {
+            my $existing_object = $self->{hash}->{$id};
+            # We might replace this code with smarter code for
+            # existing what's in the new object we're passing to this
+            # method, into the existing object.
+            foreach my $key (qw(used)) {
+                if (exists $object->{$key}) {
+                    $existing_object->{$key} = $object->{$key};
+                }
+            }
             next;
         }
         my $index = scalar @{$self->{array}};
