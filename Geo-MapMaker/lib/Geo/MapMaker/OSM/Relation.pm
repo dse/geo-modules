@@ -72,9 +72,9 @@ sub css_classes {
     my @css_classes = $self->SUPER::css_classes(%args);
     push(@css_classes, 'osm-relation');
     if ($self->is_multipolygon_relation) {
-        push(@css_classes, 'osm-relation-multipolygon', 'MPR');
+        push(@css_classes, 'osm-relation-multipolygon');
     } else {
-        push(@css_classes, 'osm-relation-non-multipolygon', 'NMPR');
+        push(@css_classes, 'osm-relation-non-multipolygon');
     }
     return @css_classes;
 }
