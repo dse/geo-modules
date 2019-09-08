@@ -285,22 +285,39 @@ sub load_mapmaker_yaml {
 use File::Basename qw(dirname);
 
 sub include_mapmaker_yaml {
+    my ($self, $whatever, $orig_filename) = @_;
+    if (!ref $whatever) {
+        $self->include_mapmaker_yaml_file($whatever, $orig_filename);
+        return;
+    }
+    if (ref $whatever eq 'HASH') {
+        $self->include_mapmaker_yaml_hash($whatever);
+        return;
+    }
+}
+
+sub include_mapmaker_yaml_hash {
+    my ($self, $hash) = @_;
+    foreach my $k (keys %$hash) {
+        my $v = $hash->{$k};
+        if ($k eq 'gtfs') {
+            $self->gtfs($v);
+        } else {
+            $self->{$k} = $v;
+        }
+    }
+}
+
+sub include_mapmaker_yaml_file {
     my ($self, $filename, $orig_filename) = @_;
 
     my $dirname = dirname($orig_filename);
     my $abs_path = File::Spec->rel2abs($filename, $dirname);
-    print("[$dirname] $filename => $abs_path\n");
 
     my $data = eval { LoadFile($filename); };
     if ($@) { warn($@); }
-    if ($data) {
-	while (my ($k, $v) = each(%$data)) {
-	    if ($k eq "gtfs") {
-		$self->gtfs($v);
-	    } else {
-		$self->{$k} = $v;
-	    }
-	}
+    if (ref $data eq 'HASH') {
+        $self->include_mapmaker_yaml_hash($data);
     }
 }
 
