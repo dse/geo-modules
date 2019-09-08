@@ -65,7 +65,7 @@ sub css_class_suffix {
 
 sub css_classes {
     my ($self, %args) = @_;
-    my @css_classes = ();
+    my @css_classes = ('osm');
   tag:
     foreach my $k (nsort keys %{$self->{tags}}) {
         foreach my $t (@EXCLUDE_TAG_NAMES) {
@@ -76,14 +76,6 @@ sub css_classes {
         next unless $TAG_NAME_WHITELIST->{$k} || $TAG_NAME_VALUE_WHITELIST->{"${k}=${v}"};
         push(@css_classes, "osm-tag-${k}");
         push(@css_classes, "osm-tag-${k}-${v}");
-    }
-    my $layer = $args{layer};
-    if ($layer) {
-        my $class = $layer->{class};
-        if ($class) {
-            my @class = $self->split_css_class($class);
-            push(@css_classes, @class);
-        }
     }
     return @css_classes;
 }
