@@ -58,22 +58,14 @@ use File::MMagic;
 use IO::Uncompress::AnyUncompress qw(anyuncompress);
 use Text::Trim;
 
+# can be a regexp or an arrayref of tile numbers
 our $TEST_WITH_LIMITED_TILES = 0;
-# $TEST_WITH_LIMITED_TILES = qr{<\s*tag\s+k="name"\s+v="Ohio River"\s*/>}i;
-# $TEST_WITH_LIMITED_TILES = [117, 118, 120, 153, 154, 155];
 
+# can be a sub called with a layer as its only arg
 our $TEST_WITH_LIMITED_LAYERS = 0;
-# $TEST_WITH_LIMITED_LAYERS = sub {
-#     return $_->{name} =~ m{river}i;
-# };
 
-our $WATCH_OBJECT_ID = {
-    #'471312697' => 1,
-    #'2182501' => 1,
-    #'3962892' => 1,
-};
-
-our $COUNT_CSS_CLASSES = 0;
+# mapping between object id and 1/0
+our $WATCH_OBJECT_ID = {};
 
 sub update_openstreetmap {
     my ($self, $force) = @_;
@@ -643,29 +635,11 @@ sub draw {
                 }
                 if ($svg_element) {
                     $layer_group->appendChild($svg_element);
-                    # if ($COUNT_CSS_CLASSES) {
-                    #     my @css_classes = $object->css_classes(
-                    #         layer => $layer,
-                    #         map_area => $map_area,
-                    #     );
-                    #     foreach my $css_class (@css_classes) {
-                    #         $self->{_css_class_count}->{$css_class} += 1;
-                    #     }
-                    # }
                 }
             }
         }
     }
     $self->twarn("Done.\n");
-    # if ($COUNT_CSS_CLASSES) {
-    #     my $fh;
-    #     if (open($fh, '>', 'css-classes.txt')) {
-    #         foreach my $css_class (nsort keys %{$self->{_css_class_count}}) {
-    #             printf $fh ("%8d %s\n", $self->{_css_class_count}->{$css_class},
-    #                         Geo::MapMaker::OSM::Object->escape_css_class_name($css_class));
-    #         }
-    #     }
-    # }
 }
 
 sub collect_map_tile_layer_objects {
