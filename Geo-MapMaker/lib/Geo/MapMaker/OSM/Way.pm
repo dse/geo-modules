@@ -11,14 +11,6 @@ use Geo::MapMaker::SVG::PolyLine;
 use List::MoreUtils qw(all);
 use Data::Dumper qw(Dumper);
 
-sub new {
-    my $class = shift;
-    my $self = $class->SUPER::new(@_);
-    bless($self, $class);
-
-    return $self;
-}
-
 sub svg_object {
     my ($self, %args) = @_;
     my $map_area_index = $args{map_area_index} || 0;
