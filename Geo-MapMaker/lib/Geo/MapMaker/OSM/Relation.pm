@@ -8,20 +8,10 @@ use base 'Geo::MapMaker::OSM::Object';
 
 sub svg_object {
     my ($self, %args) = @_;
-    if ($self->is_multipolygon_relation()) {
-        return $self->svg_object_mpr(%args);
-    }
-    return $self->svg_object_non_mpr(%args);
-}
-
-sub svg_object_mpr {
-    my ($self, %args) = @_;
     my $map_area_index = $args{map_area_index} || 0;
     my $map_area = $args{map_area};
-    my $css_class = $args{css_class};
     my $css_id = $self->css_id();
     my $attr = $args{attr} || {};
-    $css_class .= $self->css_class_suffix();
 
     my $path = Geo::MapMaker::SVG::Path->new();
     foreach my $way (@{$self->{way_array}}) {
@@ -31,32 +21,6 @@ sub svg_object_mpr {
     }
     $path->stitch_polylines();
     return $path;
-}
-
-sub svg_object_non_mpr {
-    my ($self, %args) = @_;
-    my $map_area_index = $args{map_area_index} || 0;
-    my $map_area = $args{map_area};
-    my $css_class = $args{css_class};
-    my $css_id = $self->css_id();
-    my $attr = $args{attr} || {};
-    $css_class .= $self->css_class_suffix();
-
-    my $path = Geo::MapMaker::SVG::Path->new();
-    foreach my $way (@{$self->{way_array}}) {
-        my $polyline = $way->svg_object(map_area_index => $map_area_index);
-        next unless $polyline;
-        $path->add($polyline);
-    }
-    return $path;
-}
-
-sub css_class_suffix {
-    my ($self) = @_;
-    if ($self->is_multipolygon_relation) {
-        return ' MPR';
-    }
-    return ' NMPR';
 }
 
 sub css_classes {
