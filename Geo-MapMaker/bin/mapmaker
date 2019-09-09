@@ -78,10 +78,6 @@ where COMMAND is one of:
 	draw-transit-routes
 	draw-transit-stops
 	update-styles
-	draw-grid
-	remove-grid
-	draw-crop-lines
-	remove-crop-lines
 	save-as FILENAME
         just-rewrite
 	enable-layers LAYER ...
@@ -153,10 +149,12 @@ sub cmd__map {
     if (!$mapinfo) {
 	warn("not listed in maps.yaml: '$mapname'\n");
     }
-    my $mapmaker = Geo::MapMaker->new(filename => $mapname, $mapinfo ? %$mapinfo : ());
-    $mapmaker->{verbose} = $self->{verbose};
-    $mapmaker->{debug}   = $self->{debug};
-    $mapmaker->{no_edit} = $self->{dry_run};
+    my $mapmaker = Geo::MapMaker->new(
+        filename => $mapname, $mapinfo ? %$mapinfo : (),
+        verbose => $self->{verbose},
+        debug => $self->{debug},
+        no_edit => $self->{dry_run},
+    );
     $self->{mapmaker} = $mapmaker;
     $self->$method(@args);
 }
@@ -274,34 +272,6 @@ sub cmd__update_styles {
     my $mm = $self->{mapmaker};
     die("map MAPNAME must be specified.\n") unless $mm;
     $mm->update_styles();
-}
-
-sub cmd__draw_grid {
-    my ($self) = @_;
-    my $mm = $self->{mapmaker};
-    die("map MAPNAME must be specified.\n") unless $mm;
-    $mm->draw_grid();
-}
-
-sub cmd__remove_grid {
-    my ($self) = @_;
-    my $mm = $self->{mapmaker};
-    die("map MAPNAME must be specified.\n") unless $mm;
-    $mm->remove_grid();
-}
-
-sub cmd__draw_crop_lines {
-    my ($self) = @_;
-    my $mm = $self->{mapmaker};
-    die("map MAPNAME must be specified.\n") unless $mm;
-    $mm->draw_crop_lines();
-}
-
-sub cmd__remove_crop_lines {
-    my ($self) = @_;
-    my $mm = $self->{mapmaker};
-    die("map MAPNAME must be specified.\n") unless $mm;
-    $mm->remove_crop_lines();
 }
 
 sub cmd__save_as {
