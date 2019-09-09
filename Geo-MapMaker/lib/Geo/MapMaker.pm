@@ -193,33 +193,37 @@ sub new {
     }
 
     {
-        my $lat       = delete $options{map_center_latitude}; # e.g., 38.2
-        my $lon       = delete $options{map_center_longitude}; # e.g., -85.7
-        my $scale     = delete $options{map_scale}; # 1:45,000 would be 45000
-        my $basis_lat = delete $options{map_scale_basis_latitude};
-        if (defined $lat && defined $lon && defined $scale) {
+        my $center_lat      = delete $options{map_center_latitude}; # e.g., 38.2
+        my $center_lon      = delete $options{map_center_longitude}; # e.g., -85.7
+        my $scale           = delete $options{map_scale}; # 1:45,000 would be 45000
+        my $scale_basis_lat = delete $options{map_scale_basis_latitude};
+        if (defined $center_lat && defined $center_lon && defined $scale) {
             my $actual_scale = $scale;
-            if (defined $basis_lat) {
-                $actual_scale = $scale * cos($lat * D2R) / cos($basis_lat * D2R);
+            if (defined $scale_basis_lat) {
+                $self->log_info("1:%.2f at %.2f\n", $scale, $scale_basis_lat);
+                $actual_scale = $scale * cos($center_lat * D2R) / cos($scale_basis_lat * D2R);
+                $self->log_info("1:%.2f at %.2f\n", $actual_scale, $center_lat);
             }
 
-            my $diff_y_px = $self->{paper_height_px} / 2 - $self->{paper_margin_px};
-            my $diff_x_px = $self->{paper_width_px}  / 2 - $self->{paper_margin_px};
+            my $edge_from_center_y_px = $self->{paper_height_px} / 2 - $self->{paper_margin_px};
+            my $edge_from_center_x_px = $self->{paper_width_px}  / 2 - $self->{paper_margin_px};
 
-            printf STDERR ("paper size %.2f %.2f\n",
-                           $self->{paper_width_px} / PX_PER_IN,
-                           $self->{paper_height_px} / PX_PER_IN);
+            $self->log_info("paper size %.2f %.2f\n",
+                            $self->{paper_width_px} / PX_PER_IN,
+                            $self->{paper_height_px} / PX_PER_IN);
 
-            printf STDERR ("edge from center %.2f %.2f\n",
-                           $diff_x_px / PX_PER_IN,
-                           $diff_y_px / PX_PER_IN);
+            $self->log_info("edge from center %.2f %.2f\n",
+                            $edge_from_center_x_px / PX_PER_IN,
+                            $edge_from_center_y_px / PX_PER_IN);
+
+            my $lon_w = $center_lon - $edge_from_center_x_px * $actual_scale / PX_PER_ER / D2R / cos($center_lat * D2R);
+            my $lon_e = $center_lon + $edge_from_center_x_px * $actual_scale / PX_PER_ER / D2R / cos($center_lat * D2R);
+
+            $self->log_info("west and east longitudes %.6f %.6f\n", $lon_w, $lon_e);
 
             # these are close but not exact
-            my $lat_n = $lat + $diff_y_px * $actual_scale / PX_PER_ER / D2R;
-            my $lat_s = $lat - $diff_y_px * $actual_scale / PX_PER_ER / D2R;
-
-            my $lon_w = $lon - $diff_x_px * $actual_scale / PX_PER_ER / D2R / cos($lat * D2R);
-            my $lon_e = $lon + $diff_x_px * $actual_scale / PX_PER_ER / D2R / cos($lat * D2R);
+            my $lat_n = $center_lat + $edge_from_center_y_px * $actual_scale / PX_PER_ER / D2R;
+            my $lat_s = $center_lat - $edge_from_center_y_px * $actual_scale / PX_PER_ER / D2R;
 
             $self->{south_deg} = $lat_s;
             $self->{north_deg} = $lat_n;
