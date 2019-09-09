@@ -30,8 +30,6 @@ sub add {
         # next unless eval { $object->isa('Geo::MapMaker::OSM::Object') };
         my $id = $object->{-id};
         if (exists $self->{hash}->{$id}) {
-            my $existing_object = $self->{hash}->{$id};
-            $existing_object->{used} = $object->{used};
             next;
         }
         my $index = scalar @{$self->{array}};
