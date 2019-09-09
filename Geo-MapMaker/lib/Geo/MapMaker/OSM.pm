@@ -541,8 +541,9 @@ sub collect_map_tile_layer_objects {
         push(@objects, $self->{_map_tile_relations}->objects) if $layer->{type}->{relation};
         foreach my $object (@objects) {
             my $match = 0;
+            my $object_index = $object->{index};
             foreach my $index (@{$layer->{index}}) {
-                if ($object->{index}->{$index}) {
+                if ($object_index->{$index}) {
                     $match = 1;
                     last;
                 }
