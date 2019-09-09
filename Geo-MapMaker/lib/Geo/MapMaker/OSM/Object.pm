@@ -54,11 +54,6 @@ sub css_id {
     return $result;
 }
 
-sub css_class_suffix {
-    my ($self) = @_;
-    return '';
-}
-
 # https://wiki.openstreetmap.org/wiki/Map_Features
 
 sub css_classes {
