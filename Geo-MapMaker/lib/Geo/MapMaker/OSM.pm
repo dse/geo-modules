@@ -273,11 +273,19 @@ sub draw_openstreetmap_maps {
                 my $layer_class    = $osm_layer_info->{class};
                 my $layer_id       = $osm_layer_info->{id};
                 my $layer_geometry = $osm_layer_info->{geometry};
+                my $layer_id_class;
+
+                if (defined $layer_id) {
+                    $layer_id_class = $layer_id;
+                    if ($layer_id_class !~ m{^osm-layer-}) {
+                        $layer_id_class = 'osm-layer-' . $layer_id_class;
+                    }
+                }
 
                 my @css_classes;
                 push(@css_classes, grep { m{\S} } split(' ', $layer_class)) if defined $layer_class;
                 push(@css_classes, 'osm-layer');
-                push(@css_classes, 'osm-layer-' . $layer_id)                if defined $layer_id;
+                push(@css_classes, $layer_id_class)                         if defined $layer_id_class;
                 push(@css_classes, 'osm-geometry-' . $layer_geometry)       if defined $layer_geometry;
                 my $css_classes = (scalar @css_classes) ? join(' ', @css_classes) : undef;
 
