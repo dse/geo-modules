@@ -88,34 +88,38 @@ sub update_openstreetmap_from_source {
 sub update_openstreetmap_from_source_url {
     my ($self, $force) = @_;
     my $source = $self->{map_data_source};
-    my @url;
+    my @source;
 
     if (ref $source eq 'ARRAY') {
-        @url = @$source;
+        @source = @$source;
     } else {
-        @url = ($source);
+        @source = ($source);
     }
 
     my $ua = LWP::UserAgent->new();
 
-    foreach my $url (@url) {
-        my $filename = $self->cache_filename($url);
-        if (-e $filename && !$force) {
-            $self->log_warn("Not updating\n");
-            push(@{$self->{_osm_xml_filenames}}, $filename);
-        } elsif (-e $filename && $force && -M $filename < 1) {
-            $self->log_warn("Not updating (force in effect but file is less than 1 day old)\n");
-            push(@{$self->{_osm_xml_filenames}}, $filename);
-        } else {
-            make_path(dirname($filename));
-            $self->log_warn("Downloading %s ...\n", $url);
-            my $response = $ua->mirror($url, $filename);
-            my $content_type = $response->content_type;
-            $self->log_warn("=> %s (%s)\n", $response->status_line, $response->content_type);
-            if (!$response->is_success) {
-                exit(1);
+    foreach my $source (@source) {
+        if ($source =~ m{://}) {
+            my $filename = $self->cache_filename($source);
+            if (-e $filename && !$force) {
+                $self->log_warn("Not updating\n");
+                push(@{$self->{_osm_xml_filenames}}, $filename);
+            } elsif (-e $filename && $force && -M $filename < 1) {
+                $self->log_warn("Not updating (force in effect but file is less than 1 day old)\n");
+                push(@{$self->{_osm_xml_filenames}}, $filename);
+            } else {
+                make_path(dirname($filename));
+                $self->log_warn("Downloading %s ...\n", $source);
+                my $response = $ua->mirror($source, $filename);
+                my $content_type = $response->content_type;
+                $self->log_warn("=> %s (%s)\n", $response->status_line, $response->content_type);
+                if (!$response->is_success) {
+                    exit(1);
+                }
+                push(@{$self->{_osm_xml_filenames}}, $filename);
             }
-            push(@{$self->{_osm_xml_filenames}}, $filename);
+        } else {                # assume filename
+            push(@{$self->{_osm_xml_filenames}}, $source);
         }
     }
 }
