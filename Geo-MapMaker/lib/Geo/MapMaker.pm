@@ -4,7 +4,6 @@ use strict;
 
 use lib "$ENV{HOME}/git/dse.d/geo-modules/Geo-MapMaker/lib";
 use Geo::MapMaker::Constants qw(:all);
-use Geo::MapMaker::CoordinateConverter qw(:const);
 
 # NOTE: "ground" and "background" are apparently treated as the same
 # classname in SVG, or some shit.
@@ -66,9 +65,6 @@ BEGIN {
 		  layers
 		  route_colors
 		  route_overrides
-		  grid
-		  crop_lines
-		  crop_marks
 		  inset_maps
 		  _map_areas
 		  _parser
@@ -91,6 +87,20 @@ BEGIN {
 		  east_deg
 		  west_deg
 
+                  map_center_latitude
+                  map_center_longitude
+                  map_scale
+                  map_scale_basis_latitude
+
+                  _map_center_lat_er
+                  _map_center_lon_er
+                  _map_actual_scale
+                  _center_x
+                  _center_y
+                  _cos_lat
+                  _px_scaled
+                  _px_scaled_x
+
 		  map_data_north_deg
 		  map_data_south_deg
 		  map_data_east_deg
@@ -100,36 +110,8 @@ BEGIN {
 		  paper_width_px
 		  paper_height_px
 		  paper_margin_px
-		  fudge_factor_px
-
-		  extend_to_full_page
-
-		  vertical_align
-		  horizontal_align
-
-		  _west_er
-		  _east_er
-		  _north_er
-		  _south_er
-
-		  _west_er_outer
-		  _east_er_outer
-		  _north_er_outer
-		  _south_er_outer
-
-		  _west_svg
-		  _east_svg
-		  _north_svg
-		  _south_svg
-
-		  _west_svg_outer
-		  _east_svg_outer
-		  _north_svg_outer
-		  _south_svg_outer
 
 		  orientation
-
-		  converter
 
 		  left_point
 		  right_point
@@ -144,11 +126,20 @@ BEGIN {
                   disable_read_only
 
                   no_edit
-                  log_prefix);
+                  log_prefix
+             );
 }
 use fields @_FIELDS;
 
 use Sort::Naturally qw(nsort);
+
+use constant PI => 4 * CORE::atan2(1, 1);
+use constant D2R => PI / 180;
+use constant WGS84_ER_KM => 6378.1370;
+use constant PX_PER_IN => 90;
+use constant PX_PER_ER => 90 / 25.4 * 1_000_000 * WGS84_ER_KM;
+
+use POSIX qw(atan);
 
 sub new {
     my ($class, %options) = @_;
@@ -156,14 +147,16 @@ sub new {
     $self->{verbose} = 0;
     $self->{debug} = {};
     $self->{_cache} = {};
-    $self->{paper_width_px}  = 90 * 8.5;
-    $self->{paper_height_px} = 90 * 11;
-    $self->{paper_margin_px} = 90 * 0.25;
-    $self->{fudge_factor_px} = 90 * 0.25;
-    $self->{extend_to_full_page} = FALSE;
-    $self->{vertical_align} = "top";
-    $self->{horizontal_align} = "left";
+    $self->{paper_width_px}  = PX_PER_IN * 8.5;
+    $self->{paper_height_px} = PX_PER_IN * 11;
+    $self->{paper_margin_px} = PX_PER_IN * 0.25;
     $self->{log_prefix} = '';
+
+    foreach my $key (qw(verbose no_edit debug filename)) {
+        if (exists $options{$key}) {
+            $self->{$key} = delete $options{$key};
+        }
+    }
 
     {
         my $pw = delete $options{paper_width};
@@ -192,43 +185,66 @@ sub new {
         }
     }
 
+    $self->log_warn("paper size %.2f %.2f\n",
+                    $self->{paper_width_px} / PX_PER_IN,
+                    $self->{paper_height_px} / PX_PER_IN);
+
     {
-        my $center_lat      = delete $options{map_center_latitude}; # e.g., 38.2
-        my $center_lon      = delete $options{map_center_longitude}; # e.g., -85.7
+        my $center_lat_deg  = delete $options{map_center_latitude}; # e.g., 38.2
+        my $center_lon_deg  = delete $options{map_center_longitude}; # e.g., -85.7
         my $scale           = delete $options{map_scale}; # 1:45,000 would be 45000
         my $scale_basis_lat = delete $options{map_scale_basis_latitude};
-        if (defined $center_lat && defined $center_lon && defined $scale) {
+
+        if (defined $center_lat_deg && defined $center_lon_deg && defined $scale) {
             my $actual_scale = $scale;
             if (defined $scale_basis_lat) {
                 $self->log_info("1:%.2f at %.2f\n", $scale, $scale_basis_lat);
-                $actual_scale = $scale * cos($center_lat * D2R) / cos($scale_basis_lat * D2R);
-                $self->log_info("1:%.2f at %.2f\n", $actual_scale, $center_lat);
+                $actual_scale = $scale * cos($center_lat_deg * D2R) / cos($scale_basis_lat * D2R);
+                $self->log_info("1:%.2f at %.2f\n", $actual_scale, $center_lat_deg);
             }
 
-            my $edge_from_center_y_px = $self->{paper_height_px} / 2 - $self->{paper_margin_px};
             my $edge_from_center_x_px = $self->{paper_width_px}  / 2 - $self->{paper_margin_px};
+            my $edge_from_center_y_px = $self->{paper_height_px} / 2 - $self->{paper_margin_px};
+            my $edge_from_center_x_er = $edge_from_center_x_px * $actual_scale / PX_PER_ER;
+            my $edge_from_center_y_er = $edge_from_center_y_px * $actual_scale / PX_PER_ER;
 
-            $self->log_info("paper size %.2f %.2f\n",
-                            $self->{paper_width_px} / PX_PER_IN,
-                            $self->{paper_height_px} / PX_PER_IN);
-
-            $self->log_info("edge from center %.2f %.2f\n",
+            $self->log_warn("edge from center %.2f %.2f px\n",
                             $edge_from_center_x_px / PX_PER_IN,
                             $edge_from_center_y_px / PX_PER_IN);
 
-            my $lon_w = $center_lon - $edge_from_center_x_px * $actual_scale / PX_PER_ER / D2R / cos($center_lat * D2R);
-            my $lon_e = $center_lon + $edge_from_center_x_px * $actual_scale / PX_PER_ER / D2R / cos($center_lat * D2R);
+            my $ccl = cos($center_lat_deg * D2R);
+            my $west_lon_deg = $center_lon_deg - $edge_from_center_x_px * $actual_scale / PX_PER_ER / D2R / $ccl;
+            my $east_lon_deg = $center_lon_deg + $edge_from_center_x_px * $actual_scale / PX_PER_ER / D2R / $ccl;
+            $self->log_warn("west and east longitudes %.6f %.6f\n", $west_lon_deg, $east_lon_deg);
 
-            $self->log_info("west and east longitudes %.6f %.6f\n", $lon_w, $lon_e);
+            my $center_lat_rad = $center_lat_deg * D2R;
+            my $center_lat_er = log(abs((1 + sin($center_lat_rad)) / cos($center_lat_rad)));
+            my $north_lat_er = $center_lat_er + $edge_from_center_y_er;
+            my $south_lat_er = $center_lat_er - $edge_from_center_y_er;
+            my $north_lat_deg = (2 * atan(exp($north_lat_er)) - PI / 2) * 180 / PI;
+            my $south_lat_deg = (2 * atan(exp($south_lat_er)) - PI / 2) * 180 / PI;
 
-            # these are close but not exact
-            my $lat_n = $center_lat + $edge_from_center_y_px * $actual_scale / PX_PER_ER / D2R;
-            my $lat_s = $center_lat - $edge_from_center_y_px * $actual_scale / PX_PER_ER / D2R;
+            $self->log_warn("south and north latitudes %.6f %.6f\n", $south_lat_deg, $north_lat_deg);
 
-            $self->{south_deg} = $lat_s;
-            $self->{north_deg} = $lat_n;
-            $self->{west_deg} = $lon_w;
-            $self->{east_deg} = $lon_e;
+            $self->{south_deg} = $south_lat_deg;
+            $self->{north_deg} = $north_lat_deg;
+            $self->{west_deg}  = $west_lon_deg;
+            $self->{east_deg}  = $east_lon_deg;
+
+            $self->{_map_center_lat_er} = $center_lat_er;
+            $self->{map_center_latitude} = $center_lat_deg;
+            $self->{map_center_longitude} = $center_lon_deg;
+            $self->{map_scale} = $scale;
+            $self->{map_scale_basis_latitude} = $scale_basis_lat;
+            $self->{_map_actual_scale} = $actual_scale;
+
+            $self->{_center_x} = $self->{paper_width_px} / 2;
+            $self->{_center_y} = $self->{paper_height_px} / 2;
+            $self->{_cos_lat} = cos($center_lat_deg * D2R);
+            # $self->{_px_scaled} = PX_PER_ER / $actual_scale;
+            $self->{_px_scaled_x} = PX_PER_ER / $actual_scale * $self->{_cos_lat};
+        } else {
+            die(":-(\n");
         }
     }
 
@@ -246,6 +262,15 @@ sub new {
     }
 
     return $self;
+}
+
+sub lon_lat_deg_to_svg {
+    my ($self, $lon_deg, $lat_deg) = @_;
+    my $svg_x = $self->{_center_x} + ($lon_deg - $self->{map_center_longitude}) * D2R * $self->{_px_scaled_x};
+    my $lat_rad = $lat_deg * D2R;
+    my $lat_er = log(abs((1 + sin($lat_rad)) / cos($lat_rad)));
+    my $svg_y = $self->{_center_y} - ($lat_er - $self->{_map_center_lat_er}) * $self->{_px_scaled_x};
+    return ($svg_x, $svg_y);
 }
 
 use Regexp::Common qw(number);
@@ -357,7 +382,6 @@ use File::Path qw(mkpath);
 use File::Basename;
 use List::MoreUtils qw(all firstidx uniq);
 use Geo::MapMaker::Util qw(file_get_contents file_put_contents);
-use Geo::MapMaker::CoordinateConverter;
 
 our %NS;
 BEGIN {
@@ -822,7 +846,7 @@ sub update_styles {
     $self->{_dirty_} = 1;
     $self->stuff_all_layers_need();
     foreach my $map_area (@{$self->{_map_areas}}) {
-	$self->update_scale($map_area); # don't think this is necessary, but . . .
+	# $self->update_scale($map_area); # don't think this is necessary, but . . .
 	$self->update_or_create_style_node();
 	$self->create_or_delete_extra_defs_node();
     }
@@ -834,7 +858,7 @@ sub stuff_all_layers_need {
     $self->{_dirty_} = 1;
 
     foreach my $map_area (@{$self->{_map_areas}}) {
-	$self->update_scale($map_area);
+	# $self->update_scale($map_area);
 	my $map_area_under_layer = $self->update_or_create_map_area_layer($map_area, { under => 1 });
 	my $map_area_layer = $self->update_or_create_map_area_layer($map_area);
 	$self->update_or_create_clip_path_node($map_area);
@@ -1265,248 +1289,6 @@ sub compose_style_string {
 
 ###############################################################################
 
-sub remove_grid {
-    my ($self) = @_;
-    $self->{_dirty_} = 1;
-    foreach my $map_area (@{$self->{_map_areas}}) {
-	my $map_area_layer = $self->update_or_create_map_area_layer($map_area);
-	my $grid_layer = $self->update_or_create_layer(name => "Grid",
-						       z_index => 9998,
-						       parent => $map_area_layer,
-						       no_create => 1);
-	if ($grid_layer) {
-	    $grid_layer->unbindNode();
-	}
-    }
-}
-
-sub remove_crop_lines {
-    my ($self) = @_;
-    $self->{_dirty_} = 1;
-    my $crop_lines_layer = $self->update_or_create_layer(name => "Crop Lines", no_create => 1);
-    if ($crop_lines_layer) {
-	$crop_lines_layer->unbindNode();
-    }
-    my $crop_marks_layer = $self->update_or_create_layer(name => "Crop Marks", no_create => 1);
-    if ($crop_marks_layer) {
-	$crop_marks_layer->unbindNode();
-    }
-}
-
-sub draw_crop_lines {
-    my ($self) = @_;
-
-    # FIXME: don't use longitude/latitude coordinates, just use SVG
-    # coordinates to determine where to plot the crop lines and crop
-    # marks.
-
-    return;
-
-    $self->init_xml();
-
-    $self->{_dirty_} = 1;
-    $self->remove_crop_lines(); # incase z-index changes
-
-    my $crop_lines = $self->{crop_lines};
-    my $crop_x = eval { $crop_lines->{x} } // 4;
-    my $crop_y = eval { $crop_lines->{y} } // 4;
-    my $crop_lines_class = eval { $crop_lines->{class} } // "crop-lines";
-
-    $self->stuff_all_layers_need();
-    my $map_area = $self->{_map_areas}->[0];
-    $self->update_scale($map_area);
-
-    my $crop_lines_layer = $self->update_or_create_layer(name => "Crop Lines",
-							 z_index => 9996,
-							 insensitive => 1,
-							 autogenerated => 1,
-							 children_autogenerated => 1);
-    $crop_lines_layer->removeChildNodes(); # OK
-
-    my $south_deg = $self->{converter}->{south_lat_deg}; my $y_south = $self->{converter}->lat_deg_to_y_px($south_deg);
-    my $north_deg = $self->{converter}->{north_lat_deg}; my $y_north = $self->{converter}->lat_deg_to_y_px($north_deg);
-    my $east_deg  = $self->{converter}->{east_lon_deg};  my $x_east = $self->{converter}->lon_deg_to_x_px($east_deg);
-    my $west_deg  = $self->{converter}->{west_lon_deg};  my $x_west = $self->{converter}->lon_deg_to_x_px($west_deg);
-
-    my $top    = 0;
-    my $bottom = $self->{paper_height_px};
-    my $left   = 0;
-    my $right  = $self->{paper_width_px};
-
-    # vertical lines, from left to right
-    foreach my $x (1 .. ($crop_x - 1)) {
-        my $id = $self->{_xml_debug_info} ? $self->new_id() : undef;
-	my $xx = $x_east + ($x_west - $x_east) * ($x / $crop_x);
-	my $path = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
-	my $d = sprintf("M %.2f,%.2f %.2f,%.2f", $xx, $top, $xx, $bottom);
-	$path->setAttribute("d", $d);
-	$path->setAttribute("class", $crop_lines_class);
-        $path->setAttribute("id", $id);
-	$crop_lines_layer->appendChild($path);
-    }
-
-    # horizontal lines, from top to bottom
-    foreach my $y (1 .. ($crop_y - 1)) {
-        my $id = $self->{_xml_debug_info} ? $self->new_id() : undef;
-	my $yy = $y_north + ($y_south - $y_north) * ($y / $crop_y);
-	my $path = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
-	my $d = sprintf("M %.2f,%.2f %.2f,%.2f", $left, $yy, $right, $yy);
-	$path->setAttribute("d", $d);
-	$path->setAttribute("class", $crop_lines_class);
-        $path->setAttribute("id", $id);
-	$crop_lines_layer->appendChild($path);
-    }
-
-    ### CROP MARKS ###
-
-    my $crop_marks = $self->{crop_marks};
-    my $crop_size = eval { $crop_marks->{size} } // 22.5;
-    my $crop_marks_class = eval { $crop_marks->{class} } // "crop-marks";
-
-    my $crop_marks_layer = $self->update_or_create_layer(name => "Crop Marks",
-							 z_index => 9997,
-							 insensitive => 1,
-							 autogenerated => 1,
-							 children_autogenerated => 1);
-    $crop_marks_layer->removeChildNodes(); # OK
-
-    # crop marks inside the map
-    foreach my $x (1 .. ($crop_x - 1)) {
-	foreach my $y (1 .. ($crop_y - 1)) {
-	    my $xx = $x_east + ($x_west - $x_east) * ($x / $crop_x);
-	    my $yy = $y_north + ($y_south - $y_north) * ($y / $crop_y);
-	    my $x1 = $xx - $crop_size;
-	    my $x2 = $xx + $crop_size;
-	    my $y1 = $yy - $crop_size;
-	    my $y2 = $yy + $crop_size;
-
-	    my $path1 = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
-	    my $d1    = sprintf("M %.2f,%.2f %.2f,%.2f", $xx, $y1, $xx, $y2);
-	    $path1->setAttribute("d", $d1);
-	    $path1->setAttribute("class", $crop_marks_class);
-	    $crop_marks_layer->appendChild($path1);
-
-	    my $path2 = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
-	    my $d2    = sprintf("M %.2f,%.2f %.2f,%.2f", $x1, $yy, $x2, $yy);
-	    $path2->setAttribute("d", $d2);
-	    $path2->setAttribute("class", $crop_marks_class);
-	    $crop_marks_layer->appendChild($path2);
-	}
-    }
-
-    # vertical lines, from left to right
-    foreach my $x (1 .. ($crop_x - 1)) {
-	my $xx = $x_east + ($x_west - $x_east) * ($x / $crop_x);
-
-	my $path1 = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
-	my $d1    = sprintf("M %.2f,%.2f %.2f,%.2f", $xx, $top, $xx, $y_north);
-
-	$path1->setAttribute("d", $d1);
-	$path1->setAttribute("class", $crop_marks_class);
-	$crop_marks_layer->appendChild($path1);
-
-	my $path2 = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
-	my $d2    = sprintf("M %.2f,%.2f %.2f,%.2f", $xx, $y_south, $xx, $bottom);
-
-	$path2->setAttribute("d", $d2);
-	$path2->setAttribute("class", $crop_marks_class);
-	$crop_marks_layer->appendChild($path2);
-    }
-
-    # horizontal lines, from top to bottom
-    foreach my $y (1 .. ($crop_y - 1)) {
-	my $yy = $y_north + ($y_south - $y_north) * ($y / $crop_y);
-
-	my $path1 = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
-	my $d1 = sprintf("M %.2f,%.2f %.2f,%.2f", $left, $yy, $x_west, $yy);
-
-	$path1->setAttribute("d", $d1);
-	$path1->setAttribute("class", $crop_marks_class);
-	$crop_marks_layer->appendChild($path1);
-
-	my $path2 = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
-	my $d2 = sprintf("M %.2f,%.2f %.2f,%.2f", $x_east, $yy, $right, $yy);
-
-	$path2->setAttribute("d", $d2);
-	$path2->setAttribute("class", $crop_marks_class);
-	$crop_marks_layer->appendChild($path2);
-    }
-
-}
-
-sub draw_grid {
-    my ($self) = @_;
-    my $grid = $self->{grid};
-    if (!$grid) { return; }
-
-    $self->init_xml();
-
-    $self->{_dirty_} = 1;
-
-    my $increment = $grid->{increment} // 0.01;
-    my $format = $grid->{format};
-    my $doc = $self->{_svg_doc};
-
-    $self->stuff_all_layers_need();
-
-    my $class = $grid->{class};
-    my $text_class   = $grid->{"text-class"};
-    my $text_2_class = $grid->{"text-2-class"};
-
-    foreach my $map_area (@{$self->{_map_areas}}) {
-	$self->update_scale($map_area);
-	my $map_area_layer = $self->update_or_create_map_area_layer($map_area);
-	my $grid_layer = $self->update_or_create_layer(name => "Grid",
-						       z_index => 9998,
-						       parent => $map_area_layer,
-						       insensitive => 1,
-						       autogenerated => 1,
-						       children_autogenerated => 1);
-	$grid_layer->removeChildNodes(); # OK
-	my $clipped_group = $self->find_or_create_clipped_group(parent => $grid_layer,
-								clip_path_id => $map_area->{clip_path_id});
-
-	# FIXME: do coordinate conversions for each point, not each x and each y.
-
-	my $south_deg = $self->south_outer_map_boundary_deg; my $y_south = $self->{converter}->lat_deg_to_y_px($south_deg);
-	my $north_deg = $self->north_outer_map_boundary_deg; my $y_north = $self->{converter}->lat_deg_to_y_px($north_deg);
-	my $east_deg = $self->east_outer_map_boundary_deg;   my $x_east = $self->{converter}->lon_deg_to_x_px($east_deg);
-	my $west_deg = $self->west_outer_map_boundary_deg;   my $x_west = $self->{converter}->lon_deg_to_x_px($west_deg);
-
-	for (my $lat_deg = int($south_deg / $increment) * $increment; $lat_deg <= $north_deg; $lat_deg += $increment) {
-	    my $lat_text = sprintf($format, $lat_deg);
-	    my $y = $self->{converter}->lat_deg_to_y_px($lat_deg);
-
-	    my $path = $doc->createElementNS($NS{"svg"}, "path");
-	    $path->setAttribute("d", sprintf("M %.2f,%.2f %.2f,%.2f", $x_west, $y, $x_east, $y));
-	    $path->setAttribute("class", $class);
-	    $clipped_group->appendChild($path);
-
-	    for (my $lon_deg = (int($west_deg / $increment) + 0.5) * $increment; $lon_deg <= $east_deg; $lon_deg += $increment) {
-		my $x = $self->{converter}->lon_deg_to_x_px($lon_deg);
-		my $text_node = $self->text_node(x => $x, y => $y, class => $text_2_class, text => $lat_text);
-		$clipped_group->appendChild($text_node);
-	    }
-	}
-
-	for (my $lon_deg = int($west_deg / $increment) * $increment; $lon_deg <= $east_deg; $lon_deg += $increment) {
-	    my $lon_text = sprintf($format, $lon_deg);
-	    my $x = $self->{converter}->lon_deg_to_x_px($lon_deg);
-
-	    my $path = $doc->createElementNS($NS{"svg"}, "path");
-	    $path->setAttribute("d", "M $x,$y_south $x,$y_north");
-	    $path->setAttribute("class", $class);
-	    $clipped_group->appendChild($path);
-
-	    for (my $lat_deg = (int($south_deg / $increment) + 0.5) * $increment; $lat_deg <= $north_deg; $lat_deg += $increment) {
-		my $y = $self->{converter}->lat_deg_to_y_px($lat_deg);
-		my $text_node = $self->text_node(x => $x, y => $y, class => $text_2_class, text => $lon_text);
-		$clipped_group->appendChild($text_node);
-	    }
-	}
-    }
-}
-
 sub circle_node {
     my ($self, %args) = @_;
     my $x = $args{x};
@@ -1926,6 +1708,7 @@ sub west_map_data_boundary_deg {
 	return ($self->{map_data_west_deg}  // $self->{west_deg});
     }
 }
+
 sub east_map_data_boundary_deg {
     my ($self) = @_;
     my $o = $self->{orientation};
@@ -1936,6 +1719,7 @@ sub east_map_data_boundary_deg {
 	return ($self->{map_data_east_deg}  // $self->{east_deg});
     }
 }
+
 sub north_map_data_boundary_deg {
     my ($self) = @_;
     my $o = $self->{orientation};
@@ -1946,6 +1730,7 @@ sub north_map_data_boundary_deg {
 	return ($self->{map_data_north_deg} // $self->{north_deg});
     }
 }
+
 sub south_map_data_boundary_deg {
     my ($self) = @_;
     my $o = $self->{orientation};
@@ -1959,50 +1744,22 @@ sub south_map_data_boundary_deg {
 
 sub west_outer_map_boundary_svg {
     my ($self) = @_;
-    return $self->{converter}->{left_x_px};
+    return $self->{paper_margin_px};
 }
+
 sub east_outer_map_boundary_svg {
     my ($self) = @_;
-    return $self->{converter}->{right_x_px};
+    return $self->{paper_width_px} - $self->{paper_margin_px};
 }
+
 sub north_outer_map_boundary_svg {
     my ($self) = @_;
-    return $self->{converter}->{top_y_px};
+    return $self->{paper_margin_px};
 }
+
 sub south_outer_map_boundary_svg {
     my ($self) = @_;
-    return $self->{converter}->{bottom_y_px};
-}
-
-sub update_scale {
-    my ($self, $map_area) = @_;
-
-    my $converter = Geo::MapMaker::CoordinateConverter->new();
-    $converter->set_paper_size_px($self->{paper_width_px}, $self->{paper_height_px});
-    $converter->set_paper_margin_px($self->{paper_margin_px});
-    $converter->set_fudge_factor_px($self->{fudge_factor_px});
-    $self->{converter} = $converter;
-
-    if (defined $self->{west_deg} && defined $self->{east_deg} && defined $self->{north_deg} && defined $self->{south_deg}) {
-	$self->{converter}->set_lon_lat_boundaries($self->{west_deg}, $self->{east_deg}, $self->{north_deg}, $self->{south_deg});
-	$self->{converter}->set_orientation(0);
-    } elsif (defined $self->{left_point} && defined $self->{right_point}) {
-	$self->{converter}->set_left_right_geographic_points($self->{left_point}->{longitude},
-							     $self->{left_point}->{latitude},
-							     $self->{right_point}->{longitude},
-							     $self->{right_point}->{latitude});
-    } elsif (defined $self->{top_point} && defined $self->{bottom_point}) {
-	$self->{converter}->set_top_bottom_geographic_points($self->{top_point}->{longitude},
-							     $self->{top_point}->{latitude},
-							     $self->{bottom_point}->{longitude},
-							     $self->{bottom_point}->{latitude});
-    } else {
-	die("You must specify a map area somehow.\n");
-	$self->{converter} = undef;
-    }
-
-    # FIXME: if we do inset maps again the CoordinateConverter and
-    # possibly this method will have to be modified to support them.
+    return $self->{paper_height_px} - $self->{paper_margin_px};
 }
 
 ###############################################################################
