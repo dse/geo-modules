@@ -413,12 +413,6 @@ sub load_map_tile_objects {
         # delete $node->{-version};
         # delete $node->{-visible};
         $node->{type} = 'node';
-
-        # if ($WATCH_OBJECT_ID) {
-        #     my $id = $node->{-id};
-        #     if ($WATCH_OBJECT_ID->{$id}) {
-        #     }
-        # }
     }
     $self->tdebug("  %d nodes\n", $nc);
 
@@ -433,12 +427,6 @@ sub load_map_tile_objects {
         # delete $way->{-version};
         # delete $way->{-visible};
         $way->{type} = 'way';
-
-        # if ($WATCH_OBJECT_ID) {
-        #     my $id = $way->{-id};
-        #     if ($WATCH_OBJECT_ID->{$id}) {
-        #     }
-        # }
     }
     $self->tdebug("  %d ways\n", $wc);
 
@@ -453,12 +441,6 @@ sub load_map_tile_objects {
         # delete $relation->{-version};
         # delete $relation->{-visible};
         $relation->{type} = 'relation';
-
-        # if ($WATCH_OBJECT_ID) {
-        #     my $id = $relation->{-id};
-        #     if ($WATCH_OBJECT_ID->{$id}) {
-        #     }
-        # }
     }
     $self->tdebug("  %d relations\n", $rc);
 
@@ -479,12 +461,6 @@ sub convert_map_tile_tags {
     }
     foreach my $way ($self->{_map_tile_ways}->objects) {
         $way->convert_tags();
-        # if ($WATCH_OBJECT_ID) {
-        #     my $id = $way->{-id};
-        #     if ($WATCH_OBJECT_ID->{$id}) {
-        #         say Dumper $way;
-        #     }
-        # }
     }
     foreach my $relation ($self->{_map_tile_relations}->objects) {
         $relation->convert_tags();
@@ -529,14 +505,6 @@ sub convert_coordinates {
                 foreach my $node (@{$way->{node_array}}) {
                     $node->{svg_coords}->[$map_area_index] ||= $self->convert_node_coordinates($node);
                 }
-                # if ($WATCH_OBJECT_ID) {
-                #     my $id = $way->{-id};
-                #     if ($WATCH_OBJECT_ID->{$id}) {
-                #         say "# <5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<5<";
-                #         say Dumper $way;
-                #         say "# >5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>5>";
-                #     }
-                # }
             }
             foreach my $node (grep { $_->{type} eq 'node' } $layer->{objects}->objects) {
                 $node->{svg_coords}->[$map_area_index] ||= $self->convert_node_coordinates($node);
@@ -594,8 +562,6 @@ sub draw {
                 my $attr = {};
                 $attr->{'data-name'} = $object->{tags}->{name} if defined $object->{tags}->{name};
 
-                # my $watch = $WATCH_OBJECT_ID && $WATCH_OBJECT_ID->{$object->{-id}};
-
                 my $svg_element;
                 if ($object->is_multipolygon_relation) {
                     my $path = $object->svg_object(map_area_index => $map_area_index);
@@ -617,11 +583,6 @@ sub draw {
                         id => $css_id,
                         map_area_index => $map_area_index,
                     );
-                    # if ($watch) {
-                    #     say "#<6>";
-                    #     say Dumper $svg_element;
-                    #     say "#</6>";
-                    # }
                 } elsif ($object->{type} eq 'way') {
                     my $polyline = $object->svg_object(map_area_index => $map_area_index);
                     next unless $polyline;
@@ -823,13 +784,6 @@ sub link_map_tile_objects {
             my $way = $self->find_persistent_object($layer, $way);
             $self->link_way_object($layer, $id, $way);
             $count += 1;
-            # if ($WATCH_OBJECT_ID) {
-            #     if ($WATCH_OBJECT_ID->{$id}) {
-            #         say "# <4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<4<";
-            #         say Dumper $way;
-            #         say "# >4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>4>";
-            #     }
-            # }
         }
     }
     $self->twarn("Done.  Linked %d objects.\n", $count);
@@ -889,12 +843,6 @@ sub link_relation_object {
             $relation->{way_hash}->{$id} = $way;
         } else {
             # do nothing
-        }
-        if ($way && eval { $self->$WATCH_OBJECT_ID->{$id} }) {
-            $self->log_warn("link_relation_object: relation id %s: way id %s: persistent object is %s\n",
-                            $relation_id,
-                            $id,
-                            $way);
         }
     }
 
