@@ -25,6 +25,12 @@ use fields qw(_osm_xml_filenames
               _object_tag_value_count
               _layer_object_count
 
+              osm_data_north_lat_deg
+              osm_data_south_lat_deg
+              osm_data_east_lon_deg
+              osm_data_west_lon_deg
+              osm_data_source
+
               _map_tile_nodes
               _map_tile_ways
               _map_tile_relations
@@ -68,7 +74,7 @@ our $WATCH_OBJECT_ID = {};
 
 sub update_openstreetmap {
     my ($self, $force) = @_;
-    my $source = $self->{map_data_source};
+    my $source = $self->{osm_data_source};
     if ($source) {
         $self->update_openstreetmap_from_source($force);
     } else {
@@ -78,7 +84,7 @@ sub update_openstreetmap {
 
 sub update_openstreetmap_from_source {
     my ($self, $force) = @_;
-    my $source = $self->{map_data_source};
+    my $source = $self->{osm_data_source};
     if (ref $source eq 'ARRAY' || !ref $source) {
         $self->update_openstreetmap_from_source_url($force);
     }
@@ -86,7 +92,7 @@ sub update_openstreetmap_from_source {
 
 sub update_openstreetmap_from_source_url {
     my ($self, $force) = @_;
-    my $source = $self->{map_data_source};
+    my $source = $self->{osm_data_source};
     my @source;
 
     if (ref $source eq 'ARRAY') {
@@ -826,6 +832,50 @@ sub link_way_object {
         }
     } else {
         $way->{is_closed} = 0;
+    }
+}
+
+sub west_osm_data_boundary_deg {
+    my ($self) = @_;
+    my $o = $self->{orientation};
+    if ($o) {
+	# FIXME
+	die("non-zero orientation not supported yet");
+    } else {
+	return ($self->{osm_data_west_lon_deg}  // $self->{west_lon_deg});
+    }
+}
+
+sub east_osm_data_boundary_deg {
+    my ($self) = @_;
+    my $o = $self->{orientation};
+    if ($o) {
+	# FIXME
+	die("non-zero orientation not supported yet");
+    } else {
+	return ($self->{osm_data_east_lon_deg}  // $self->{east_lon_deg});
+    }
+}
+
+sub north_osm_data_boundary_deg {
+    my ($self) = @_;
+    my $o = $self->{orientation};
+    if ($o) {
+	# FIXME
+	die("non-zero orientation not supported yet");
+    } else {
+	return ($self->{osm_data_north_lat_deg} // $self->{north_lat_deg});
+    }
+}
+
+sub south_osm_data_boundary_deg {
+    my ($self) = @_;
+    my $o = $self->{orientation};
+    if ($o) {
+	# FIXME
+	die("non-zero orientation not supported yet");
+    } else {
+	return ($self->{osm_data_south_lat_deg} // $self->{south_lat_deg});
     }
 }
 

@@ -89,8 +89,8 @@ BEGIN {
 
                   map_center_latitude
                   map_center_longitude
-                  map_scale
-                  map_scale_basis_latitude
+                  scale
+                  scale_basis_lat_deg
 
                   _map_center_lat_er
                   _map_center_lon_er
@@ -100,12 +100,6 @@ BEGIN {
                   _cos_lat
                   _px_scaled
                   _px_scaled_x
-
-		  map_data_north_lat_deg
-		  map_data_south_lat_deg
-		  map_data_east_lon_deg
-		  map_data_west_lon_deg
-                  map_data_source
 
 		  paper_width_px
 		  paper_height_px
@@ -184,8 +178,8 @@ sub new {
     {
         my $center_lat_deg  = delete $options{map_center_latitude}; # e.g., 38.2
         my $center_lon_deg  = delete $options{map_center_longitude}; # e.g., -85.7
-        my $scale           = delete $options{map_scale}; # 1:45,000 would be 45000
-        my $scale_basis_lat = delete $options{map_scale_basis_latitude};
+        my $scale           = delete $options{scale}; # 1:45,000 would be 45000
+        my $scale_basis_lat = delete $options{scale_basis_lat_deg};
 
         if (defined $center_lat_deg && defined $center_lon_deg && defined $scale) {
             my $actual_scale = $scale;
@@ -226,8 +220,8 @@ sub new {
             $self->{_map_center_lat_er} = $center_lat_er;
             $self->{map_center_latitude} = $center_lat_deg;
             $self->{map_center_longitude} = $center_lon_deg;
-            $self->{map_scale} = $scale;
-            $self->{map_scale_basis_latitude} = $scale_basis_lat;
+            $self->{scale} = $scale;
+            $self->{scale_basis_lat_deg} = $scale_basis_lat;
             $self->{_map_actual_scale} = $actual_scale;
 
             $self->{_center_x} = $self->{paper_width_px} / 2;
@@ -1689,50 +1683,6 @@ sub disable_layers {
 }
 
 ###############################################################################
-
-sub west_map_data_boundary_deg {
-    my ($self) = @_;
-    my $o = $self->{orientation};
-    if ($o) {
-	# FIXME
-	die("non-zero orientation not supported yet");
-    } else {
-	return ($self->{map_data_west_lon_deg}  // $self->{west_lon_deg});
-    }
-}
-
-sub east_map_data_boundary_deg {
-    my ($self) = @_;
-    my $o = $self->{orientation};
-    if ($o) {
-	# FIXME
-	die("non-zero orientation not supported yet");
-    } else {
-	return ($self->{map_data_east_lon_deg}  // $self->{east_lon_deg});
-    }
-}
-
-sub north_map_data_boundary_deg {
-    my ($self) = @_;
-    my $o = $self->{orientation};
-    if ($o) {
-	# FIXME
-	die("non-zero orientation not supported yet");
-    } else {
-	return ($self->{map_data_north_lat_deg} // $self->{north_lat_deg});
-    }
-}
-
-sub south_map_data_boundary_deg {
-    my ($self) = @_;
-    my $o = $self->{orientation};
-    if ($o) {
-	# FIXME
-	die("non-zero orientation not supported yet");
-    } else {
-	return ($self->{map_data_south_lat_deg} // $self->{south_lat_deg});
-    }
-}
 
 sub west_outer_map_boundary_svg {
     my ($self) = @_;
