@@ -87,14 +87,14 @@ BEGIN {
 		  east_lon_deg
 		  west_lon_deg
 
-                  map_center_latitude
-                  map_center_longitude
+                  center_lat_deg
+                  center_lon_deg
                   scale
                   scale_basis_lat_deg
 
-                  _map_center_lat_er
-                  _map_center_lon_er
-                  _map_actual_scale
+                  _center_lat_er
+                  _center_lon_er
+                  _actual_scale
                   _center_x
                   _center_y
                   _cos_lat
@@ -176,8 +176,8 @@ sub new {
                     $self->{paper_height_px} / PX_PER_IN);
 
     {
-        my $center_lat_deg  = delete $options{map_center_latitude}; # e.g., 38.2
-        my $center_lon_deg  = delete $options{map_center_longitude}; # e.g., -85.7
+        my $center_lat_deg  = delete $options{center_lat_deg}; # e.g., 38.2
+        my $center_lon_deg  = delete $options{center_lon_deg}; # e.g., -85.7
         my $scale           = delete $options{scale}; # 1:45,000 would be 45000
         my $scale_basis_lat = delete $options{scale_basis_lat_deg};
 
@@ -217,12 +217,12 @@ sub new {
             $self->{west_lon_deg}  = $west_lon_deg;
             $self->{east_lon_deg}  = $east_lon_deg;
 
-            $self->{_map_center_lat_er} = $center_lat_er;
-            $self->{map_center_latitude} = $center_lat_deg;
-            $self->{map_center_longitude} = $center_lon_deg;
+            $self->{_center_lat_er} = $center_lat_er;
+            $self->{center_lat_deg} = $center_lat_deg;
+            $self->{center_lon_deg} = $center_lon_deg;
             $self->{scale} = $scale;
             $self->{scale_basis_lat_deg} = $scale_basis_lat;
-            $self->{_map_actual_scale} = $actual_scale;
+            $self->{_actual_scale} = $actual_scale;
 
             $self->{_center_x} = $self->{paper_width_px} / 2;
             $self->{_center_y} = $self->{paper_height_px} / 2;
@@ -252,10 +252,10 @@ sub new {
 
 sub lon_lat_deg_to_svg {
     my ($self, $lon_deg, $lat_deg) = @_;
-    my $svg_x = $self->{_center_x} + ($lon_deg - $self->{map_center_longitude}) * D2R * $self->{_px_scaled_x};
+    my $svg_x = $self->{_center_x} + ($lon_deg - $self->{center_lon_deg}) * D2R * $self->{_px_scaled_x};
     my $lat_rad = $lat_deg * D2R;
     my $lat_er = log(abs((1 + sin($lat_rad)) / cos($lat_rad)));
-    my $svg_y = $self->{_center_y} - ($lat_er - $self->{_map_center_lat_er}) * $self->{_px_scaled_x};
+    my $svg_y = $self->{_center_y} - ($lat_er - $self->{_center_lat_er}) * $self->{_px_scaled_x};
     return ($svg_x, $svg_y);
 }
 
