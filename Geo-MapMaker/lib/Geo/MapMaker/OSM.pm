@@ -39,7 +39,6 @@ use fields qw(_osm_xml_filenames
               _map_tile_count);
 
 use Geo::MapMaker::Dumper qw(Dumper);
-use Geo::MapMaker::OSM::Collection;
 use Geo::MapMaker::OSM::Node;
 use Geo::MapMaker::OSM::Relation;
 use Geo::MapMaker::OSM::Way;
@@ -62,6 +61,7 @@ use Scalar::Util qw(looks_like_number);
 use Sort::Naturally;
 use Text::Trim;
 use XML::Fast;
+use Hash::Ordered;
 
 # can be a regexp or an arrayref of tile numbers
 our $TEST_WITH_LIMITED_TILES = 0;
@@ -246,8 +246,8 @@ sub draw_openstreetmap_maps {
     foreach my $layer (@{$self->{osm_layers}}) {
         $layer->{type} //= { way => 1, relation => 1 };
         $self->index_layer_tags($layer);
-        $layer->{persistent_objects} = Geo::MapMaker::OSM::Collection->new(); # persistent objects
-        $layer->{objects} = Geo::MapMaker::OSM::Collection->new(); # subset of persistent objects used directly
+        $layer->{persistent_objects} = Hash::Ordered->new(); # persistent objects
+        $layer->{objects} = Hash::Ordered->new(); # subset of persistent objects used directly
     }
 
     local $self->{_map_tile_number} = 0;
@@ -290,13 +290,13 @@ sub draw_openstreetmap_maps {
         $self->log_warn("done.\n");
 
         # all objects for each map tile
-        local $self->{_map_tile_nodes}     = Geo::MapMaker::OSM::Collection->new();
-        local $self->{_map_tile_ways}      = Geo::MapMaker::OSM::Collection->new();
-        local $self->{_map_tile_relations} = Geo::MapMaker::OSM::Collection->new();
+        local $self->{_map_tile_nodes}     = Hash::Ordered->new();
+        local $self->{_map_tile_ways}      = Hash::Ordered->new();
+        local $self->{_map_tile_relations} = Hash::Ordered->new();
 
         foreach my $layer (@{$self->{osm_layers}}) {
             # filtered objects for each map tile
-            $layer->{map_tile_objects} = Geo::MapMaker::OSM::Collection->new();
+            $layer->{map_tile_objects} = Hash::Ordered->new();
         }
 
         $self->load_map_tile_objects();
@@ -337,7 +337,7 @@ sub load_map_tile_objects {
     my $rc = 0;
     foreach my $node (@{$self->{_doc}->{osm}->[0]->{node}}) {
         $node = Geo::MapMaker::OSM::Node->new($node);
-        $self->{_map_tile_nodes}->add($node);
+        $self->{_map_tile_nodes}->set($node->{-id}, $node);
         $nc += 1;
         # delete $node->{-changeset};
         # delete $node->{-timestamp};
@@ -351,7 +351,7 @@ sub load_map_tile_objects {
 
     foreach my $way (@{$self->{_doc}->{osm}->[0]->{way}}) {
         $way = Geo::MapMaker::OSM::Way->new($way);
-        $self->{_map_tile_ways}->add($way);
+        $self->{_map_tile_ways}->set($way->{-id}, $way);
         $wc += 1;
         # delete $way->{-changeset};
         # delete $way->{-timestamp};
@@ -365,7 +365,7 @@ sub load_map_tile_objects {
 
     foreach my $relation (@{$self->{_doc}->{osm}->[0]->{relation}}) {
         $relation = Geo::MapMaker::OSM::Relation->new($relation);
-        $self->{_map_tile_relations}->add($relation);
+        $self->{_map_tile_relations}->set($relation->{-id}, $relation);
         $rc += 1;
         # delete $relation->{-changeset};
         # delete $relation->{-timestamp};
@@ -383,19 +383,19 @@ sub load_map_tile_objects {
 sub convert_map_tile_tags {
     my ($self) = @_;
     my $count =
-        $self->{_map_tile_nodes}->count() +
-        $self->{_map_tile_ways}->count() +
-        $self->{_map_tile_relations}->count();
+        (scalar $self->{_map_tile_nodes}->keys) +
+        (scalar $self->{_map_tile_ways}->keys) +
+        (scalar $self->{_map_tile_relations}->keys);
     $self->log_warn("Converting tags on %d objects ...\n", $count);
     if (grep { $_->{type}->{node} } @{$self->{osm_layers}}) {
-        foreach my $node ($self->{_map_tile_nodes}->objects) {
+        foreach my $node ($self->{_map_tile_nodes}->values) {
             $node->convert_tags();
         }
     }
-    foreach my $way ($self->{_map_tile_ways}->objects) {
+    foreach my $way ($self->{_map_tile_ways}->values) {
         $way->convert_tags();
     }
-    foreach my $relation ($self->{_map_tile_relations}->objects) {
+    foreach my $relation ($self->{_map_tile_relations}->values) {
         $relation->convert_tags();
     }
     $self->log_warn("Done.\n");
@@ -427,19 +427,19 @@ sub convert_coordinates {
     foreach my $map_area (@{$self->{_map_areas}}) {
         my $map_area_index = $map_area->{index};
         foreach my $layer (@{$self->{osm_layers}}) {
-            foreach my $relation (grep { $_->{type} eq 'relation' } $layer->{objects}->objects) {
+            foreach my $relation (grep { $_->{type} eq 'relation' } $layer->{objects}->values) {
                 foreach my $way (@{$relation->{way_array}}) {
                     foreach my $node (@{$way->{node_array}}) {
                         $node->{svg_coords}->[$map_area_index] ||= $self->convert_node_coordinates($node);
                     }
                 }
             }
-            foreach my $way (grep { $_->{type} eq 'way' } $layer->{objects}->objects) {
+            foreach my $way (grep { $_->{type} eq 'way' } $layer->{objects}->values) {
                 foreach my $node (@{$way->{node_array}}) {
                     $node->{svg_coords}->[$map_area_index] ||= $self->convert_node_coordinates($node);
                 }
             }
-            foreach my $node (grep { $_->{type} eq 'node' } $layer->{objects}->objects) {
+            foreach my $node (grep { $_->{type} eq 'node' } $layer->{objects}->values) {
                 $node->{svg_coords}->[$map_area_index] ||= $self->convert_node_coordinates($node);
             }
         }
@@ -473,7 +473,7 @@ sub draw {
             my $layer_id       = $layer->{id};
             my $layer_geometry = $layer->{geometry};
 
-            my @objects = $layer->{objects}->objects;
+            my @objects = $layer->{objects}->values;
             $self->log_warn("    Adding %d objects to layer $layer_name ...\n", scalar @objects);
             foreach my $object (@objects) {
 
@@ -536,9 +536,9 @@ sub collect_map_tile_layer_objects {
     $self->log_warn("Collecting objects for layers ...\n");
     foreach my $layer (@{$self->{osm_layers}}) {
         my @objects;
-        push(@objects, $self->{_map_tile_nodes}->objects)     if $layer->{type}->{node};
-        push(@objects, $self->{_map_tile_ways}->objects)      if $layer->{type}->{way};
-        push(@objects, $self->{_map_tile_relations}->objects) if $layer->{type}->{relation};
+        push(@objects, $self->{_map_tile_nodes}->values)     if $layer->{type}->{node};
+        push(@objects, $self->{_map_tile_ways}->values)      if $layer->{type}->{way};
+        push(@objects, $self->{_map_tile_relations}->values) if $layer->{type}->{relation};
         foreach my $object (@objects) {
             my $match = 0;
             my $object_index = $object->{index};
@@ -551,16 +551,15 @@ sub collect_map_tile_layer_objects {
             next unless $match;
 
             $object->{used} = 1;
-            # $object->{used_directly} = 1;
 
-            $layer->{persistent_objects}->add($object);
+            $layer->{persistent_objects}->or_equals($object->{-id}, $object);
 
             # objects used directly
-            $layer->{objects}->add($object);
+            $layer->{objects}->or_equals($object->{-id}, $object);
 
-            # current objects, from which we pull any ways not found
-            # in previously pulled relations
-            $layer->{map_tile_objects}->add_override($object);
+            # Current objects, from which we pull any ways not found
+            # in previously pulled relations.
+            $layer->{map_tile_objects}->set($object->{-id}, $object);
 
             $self->count_layer_object($layer, $object);
 
@@ -568,17 +567,17 @@ sub collect_map_tile_layer_objects {
         }
     }
     if (grep { $_->{type}->{node} } @{$self->{osm_layers}}) {
-        foreach my $node ($self->{_map_tile_nodes}->objects) {
+        foreach my $node ($self->{_map_tile_nodes}->values) {
             $self->count_object_tags($node, $node->{used} ? 1 : 0);
         }
     }
     if (grep { $_->{type}->{way} } @{$self->{osm_layers}}) {
-        foreach my $way ($self->{_map_tile_ways}->objects) {
+        foreach my $way ($self->{_map_tile_ways}->values) {
             $self->count_object_tags($way, $way->{used} ? 1 : 0);
         }
     }
     if (grep { $_->{type}->{relation} } @{$self->{osm_layers}}) {
-        foreach my $relation ($self->{_map_tile_relations}->objects) {
+        foreach my $relation ($self->{_map_tile_relations}->values) {
             $self->count_object_tags($relation, $relation->{used} ? 1 : 0);
         }
     }
@@ -702,13 +701,13 @@ sub link_map_tile_objects {
     $self->log_warn("Linking objects ...\n");
     my $count = 0;
     foreach my $layer (@{$self->{osm_layers}}) {
-        foreach my $relation (grep { $_->{type} eq 'relation' } $layer->{map_tile_objects}->objects) {
+        foreach my $relation (grep { $_->{type} eq 'relation' } $layer->{map_tile_objects}->values) {
             my $id = $relation->{-id};
             my $relation = $self->find_persistent_object($layer, $relation);
             $self->link_relation_object($layer, $id, $relation);
             $count += 1;
         }
-        foreach my $way (grep { $_->{type} eq 'way' } $layer->{map_tile_objects}->objects) {
+        foreach my $way (grep { $_->{type} eq 'way' } $layer->{map_tile_objects}->values) {
             my $id = $way->{-id};
             my $way = $self->find_persistent_object($layer, $way);
             $self->link_way_object($layer, $id, $way);
@@ -728,10 +727,10 @@ sub find_persistent_object {
         return $layer->{persistent_objects}->get($id);
     }
     my $id = $object->{-id};
-    if ($layer->{persistent_objects}->has($id)) {
+    if ($layer->{persistent_objects}->exists($id)) {
         return $layer->{persistent_objects}->get($id);
     }
-    $layer->{persistent_objects}->add($object);
+    $layer->{persistent_objects}->or_equals($object->{-id}, $object);
     return $object;
 }
 
