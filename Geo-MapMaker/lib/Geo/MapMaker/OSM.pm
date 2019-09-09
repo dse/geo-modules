@@ -446,8 +446,8 @@ sub convert_node_coordinates {
     my $lon_deg = 0 + $node->{-lon};
     my $lat_deg = 0 + $node->{-lat};
     my ($svgx, $svgy) = $self->lon_lat_deg_to_svg($lon_deg, $lat_deg);
-    my $xzone = $lon_deg < $self->{west_deg}  ? -1 : $lon_deg > $self->{east_deg}  ? 1 : 0;
-    my $yzone = $lat_deg < $self->{south_deg} ? -1 : $lat_deg > $self->{north_deg} ? 1 : 0;
+    my $xzone = $lon_deg < $self->{west_lon_deg}  ? -1 : $lon_deg > $self->{east_lon_deg}  ? 1 : 0;
+    my $yzone = $lat_deg < $self->{south_lat_deg} ? -1 : $lat_deg > $self->{north_lat_deg} ? 1 : 0;
     my $result = [$svgx, $svgy, $xzone, $yzone];
     return $result;
 }

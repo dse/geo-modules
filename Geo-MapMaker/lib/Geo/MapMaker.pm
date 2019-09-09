@@ -82,10 +82,10 @@ BEGIN {
 
 		  _scale_px_per_er
 
-		  north_deg
-		  south_deg
-		  east_deg
-		  west_deg
+		  north_lat_deg
+		  south_lat_deg
+		  east_lon_deg
+		  west_lon_deg
 
                   map_center_latitude
                   map_center_longitude
@@ -101,10 +101,10 @@ BEGIN {
                   _px_scaled
                   _px_scaled_x
 
-		  map_data_north_deg
-		  map_data_south_deg
-		  map_data_east_deg
-		  map_data_west_deg
+		  map_data_north_lat_deg
+		  map_data_south_lat_deg
+		  map_data_east_lon_deg
+		  map_data_west_lon_deg
                   map_data_source
 
 		  paper_width_px
@@ -112,14 +112,6 @@ BEGIN {
 		  paper_margin_px
 
 		  orientation
-
-		  left_point
-		  right_point
-		  top_point
-		  bottom_point
-
-                  osm_features_not_included_filename
-                  osm_objects_not_included_filename
 
                   _id_counter
                   _xml_debug_info
@@ -226,10 +218,10 @@ sub new {
 
             $self->log_warn("south and north latitudes %.6f %.6f\n", $south_lat_deg, $north_lat_deg);
 
-            $self->{south_deg} = $south_lat_deg;
-            $self->{north_deg} = $north_lat_deg;
-            $self->{west_deg}  = $west_lon_deg;
-            $self->{east_deg}  = $east_lon_deg;
+            $self->{south_lat_deg} = $south_lat_deg;
+            $self->{north_lat_deg} = $north_lat_deg;
+            $self->{west_lon_deg}  = $west_lon_deg;
+            $self->{east_lon_deg}  = $east_lon_deg;
 
             $self->{_map_center_lat_er} = $center_lat_er;
             $self->{map_center_latitude} = $center_lat_deg;
@@ -1705,7 +1697,7 @@ sub west_map_data_boundary_deg {
 	# FIXME
 	die("non-zero orientation not supported yet");
     } else {
-	return ($self->{map_data_west_deg}  // $self->{west_deg});
+	return ($self->{map_data_west_lon_deg}  // $self->{west_lon_deg});
     }
 }
 
@@ -1716,7 +1708,7 @@ sub east_map_data_boundary_deg {
 	# FIXME
 	die("non-zero orientation not supported yet");
     } else {
-	return ($self->{map_data_east_deg}  // $self->{east_deg});
+	return ($self->{map_data_east_lon_deg}  // $self->{east_lon_deg});
     }
 }
 
@@ -1727,7 +1719,7 @@ sub north_map_data_boundary_deg {
 	# FIXME
 	die("non-zero orientation not supported yet");
     } else {
-	return ($self->{map_data_north_deg} // $self->{north_deg});
+	return ($self->{map_data_north_lat_deg} // $self->{north_lat_deg});
     }
 }
 
@@ -1738,7 +1730,7 @@ sub south_map_data_boundary_deg {
 	# FIXME
 	die("non-zero orientation not supported yet");
     } else {
-	return ($self->{map_data_south_deg} // $self->{south_deg});
+	return ($self->{map_data_south_lat_deg} // $self->{south_lat_deg});
     }
 }
 
