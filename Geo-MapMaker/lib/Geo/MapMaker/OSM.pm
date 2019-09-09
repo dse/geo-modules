@@ -73,7 +73,7 @@ sub update_openstreetmap {
     if ($source) {
         $self->update_openstreetmap_from_source($force);
     } else {
-        $self->update_openstreetmap_from_osm_xml_api($force);
+        die("OSM XML API no longer supported\n");
     }
 }
 
@@ -127,82 +127,6 @@ sub update_openstreetmap_from_source_url {
 sub cache_filename {
     my ($self, $url) = @_;
     return sprintf('%s/.geo-mapmaker-osm/cache/%s', $ENV{HOME}, sha1_hex($url));
-}
-
-sub update_openstreetmap_from_osm_xml_api {
-    my ($self, $force) = @_;
-    $self->{_osm_xml_filenames} = [];
-    $self->_update_openstreetmap_from_osm_xml_api($force);
-}
-
-sub _update_openstreetmap_from_osm_xml_api {
-    my ($self, $force, $west_deg, $south_deg, $east_deg, $north_deg) = @_;
-
-    $west_deg  //= $self->west_map_data_boundary_deg();
-    $south_deg //= $self->south_map_data_boundary_deg();
-    $east_deg  //= $self->east_map_data_boundary_deg();
-    $north_deg //= $self->north_map_data_boundary_deg();
-
-    my $center_lat = ($north_deg + $south_deg) / 2;
-    my $center_lon = ($west_deg + $east_deg) / 2;
-
-    my $url = sprintf("http://api.openstreetmap.org/api/0.6/map?bbox=%.8f,%.8f,%.8f,%.8f",
-                      $west_deg, $south_deg, $east_deg, $north_deg);
-    my $txt_filename = sprintf("%s/.geo-mapmaker-osm/map_%.8f_%.8f_%.8f_%.8f_bbox.txt",
-                               $ENV{HOME}, $west_deg, $south_deg, $east_deg, $north_deg);
-    my $xml_filename = sprintf("%s/.geo-mapmaker-osm/map_%.8f_%.8f_%.8f_%.8f_bbox.xml",
-                               $ENV{HOME}, $west_deg, $south_deg, $east_deg, $north_deg);
-
-    mkpath(dirname($xml_filename));
-    my $status = eval { file_get_contents($txt_filename); };
-
-    if ($status && $status eq "split-up") {
-        $self->_update_openstreetmap_from_osm_xml_api($force, $west_deg,   $south_deg,  $center_lon, $center_lat);
-        $self->_update_openstreetmap_from_osm_xml_api($force, $center_lon, $south_deg,  $east_deg,   $center_lat);
-        $self->_update_openstreetmap_from_osm_xml_api($force, $west_deg,   $center_lat, $center_lon, $north_deg);
-        $self->_update_openstreetmap_from_osm_xml_api($force, $center_lon, $center_lat, $east_deg,   $north_deg);
-    } elsif (-e $xml_filename && !$force) {
-        $self->log_warn("Not updating $xml_filename\n    $url\n") if $self->{verbose};
-        push(@{$self->{_osm_xml_filenames}}, $xml_filename);
-    } elsif (-e $xml_filename && $force && -M $xml_filename < 1) {
-        $self->log_warn("Not updating $xml_filename\n    $url\n    (force in effect but less than 1 day old)\n") if $self->{verbose};
-        push(@{$self->{_osm_xml_filenames}}, $xml_filename);
-    } else {
-        my $ua = LWP::UserAgent->new();
-        print STDERR ("Downloading $url ... ");
-      try_again:
-        my $response = $ua->mirror($url, $xml_filename);
-        printf STDERR ("%s\n", $response->status_line());
-        my $rc = $response->code();
-        if ($rc == RC_NOT_MODIFIED) {
-            push(@{$self->{_osm_xml_filenames}}, $xml_filename);
-            # ok then
-        } elsif ($rc == 400) {	# Bad Request
-            file_put_contents($txt_filename, "split-up");
-            my $center_lat = ($north_deg + $south_deg) / 2;
-            my $center_lon = ($west_deg + $east_deg) / 2;
-            $self->_update_openstreetmap_from_osm_xml_api($force, $west_deg,   $south_deg,  $center_lon, $center_lat);
-            $self->_update_openstreetmap_from_osm_xml_api($force, $center_lon, $south_deg,  $east_deg,   $center_lat);
-            $self->_update_openstreetmap_from_osm_xml_api($force, $west_deg,   $center_lat, $center_lon, $north_deg);
-            $self->_update_openstreetmap_from_osm_xml_api($force, $center_lon, $center_lat, $east_deg,   $north_deg);
-        } elsif (is_success($rc)) {
-            push(@{$self->{_osm_xml_filenames}}, $xml_filename);
-            # ok then
-        } elsif ($rc == 509) {	# Bandwidth Exceeded
-            $self->log_warn("Waiting 30 seconds...\n");
-            sleep(30);
-            goto try_again;
-        } else {
-            croak(sprintf("Failure: %s => %s\n",
-                          $response->base(),
-                          $response->status_line()));
-        }
-    }
-}
-
-sub force_update_openstreetmap_from_osm_xml_api {
-    my ($self) = @_;
-    $self->update_openstreetmap_from_osm_xml_api(1);
 }
 
 sub update_or_create_openstreetmap_layer {
