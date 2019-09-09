@@ -32,33 +32,30 @@ use fields qw(_osm_xml_filenames
               _map_tile_number
               _map_tile_count);
 
-use LWP::Simple;                # RC_NOT_MODIFIED
-use List::MoreUtils qw(all uniq);
-use Sort::Naturally;
 use Geo::MapMaker::Dumper qw(Dumper);
-
-use Geo::MapMaker::SVG::Point;
-use Geo::MapMaker::SVG::PolyLine;
-use Geo::MapMaker::SVG::Path;
-
+use Geo::MapMaker::OSM::Collection;
 use Geo::MapMaker::OSM::Node;
 use Geo::MapMaker::OSM::Relation;
 use Geo::MapMaker::OSM::Way;
-use Geo::MapMaker::OSM::Collection;
-
+use Geo::MapMaker::SVG::Path;
+use Geo::MapMaker::SVG::Point;
+use Geo::MapMaker::SVG::PolyLine;
 use Geo::MapMaker::Util qw(normalize_space);
 
-use File::Slurper qw(read_text);
-use Path::Tiny;
-use Encode;
-use Scalar::Util qw(looks_like_number);
 use Digest::SHA qw(sha1_hex);
-use File::Path qw(make_path);
+use Encode;
 use File::Basename qw(dirname);
-use XML::Fast;
 use File::MMagic;
+use File::Path qw(make_path);
+use File::Slurper qw(read_text);
 use IO::Uncompress::AnyUncompress qw(anyuncompress);
+use LWP::Simple;                # RC_NOT_MODIFIED
+use List::MoreUtils qw(all uniq);
+use Path::Tiny;
+use Scalar::Util qw(looks_like_number);
+use Sort::Naturally;
 use Text::Trim;
+use XML::Fast;
 
 # can be a regexp or an arrayref of tile numbers
 our $TEST_WITH_LIMITED_TILES = 0;
@@ -449,14 +446,8 @@ sub convert_node_coordinates {
     my $lon_deg = 0 + $node->{-lon};
     my $lat_deg = 0 + $node->{-lat};
     my ($svgx, $svgy) = $self->lon_lat_deg_to_svg($lon_deg, $lat_deg);
-
-    my $west_svg  = $self->west_outer_map_boundary_svg;
-    my $east_svg  = $self->east_outer_map_boundary_svg;
-    my $north_svg = $self->north_outer_map_boundary_svg;
-    my $south_svg = $self->south_outer_map_boundary_svg;
-
-    my $xzone = ($svgx < $west_svg)  ? -1 : ($svgx > $east_svg)  ? 1 : 0;
-    my $yzone = ($svgy < $north_svg) ? -1 : ($svgy > $south_svg) ? 1 : 0;
+    my $xzone = $lon_deg < $self->{west_deg}  ? -1 : $lon_deg > $self->{east_deg}  ? 1 : 0;
+    my $yzone = $lat_deg < $self->{south_deg} ? -1 : $lat_deg > $self->{north_deg} ? 1 : 0;
     my $result = [$svgx, $svgy, $xzone, $yzone];
     return $result;
 }
@@ -673,6 +664,7 @@ sub write_object_tag_counts {
         }
     }
 }
+
 sub write_object_tag_value_counts {
     my ($self, $used_flag) = @_;
     my $fh;
