@@ -205,8 +205,8 @@ sub new {
 
             my $center_lat_rad = $center_lat_deg * D2R;
             my $center_lat_er = log(abs((1 + sin($center_lat_rad)) / cos($center_lat_rad)));
-            my $north_lat_er = $center_lat_er + $edge_from_center_y_er;
-            my $south_lat_er = $center_lat_er - $edge_from_center_y_er;
+            my $north_lat_er = $center_lat_er + $edge_from_center_y_er / $ccl;
+            my $south_lat_er = $center_lat_er - $edge_from_center_y_er / $ccl;
             my $north_lat_deg = (2 * atan(exp($north_lat_er)) - PI / 2) * 180 / PI;
             my $south_lat_deg = (2 * atan(exp($south_lat_er)) - PI / 2) * 180 / PI;
 
