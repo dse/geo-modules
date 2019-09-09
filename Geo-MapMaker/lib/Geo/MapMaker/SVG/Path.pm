@@ -78,13 +78,10 @@ sub stitch_polylines {
 
     my $polyline_count = scalar @{$self->{polylines}};
 
-    warn(sprintf("stitch_polylines: stitching %d polylines...\n", $polyline_count));
-
     # determine which polylines self-close
     for (my $i = 0; $i < $polyline_count; $i += 1) {
         my $polyline_i = $self->{polylines}->[$i];
         if ($polyline_i->is_self_closing()) {
-            warn("stitch_polylines:     #$i self-closes.\n");
             $self_closing{$i} = 1;
         }
     }
@@ -101,7 +98,6 @@ sub stitch_polylines {
                     # no more than two polylines may share an endpoint
                     return 0;
                 }
-                warn("stitch_polylines:     #$i ends where #$j starts.\n");
                 $stitch_forward{$i} = $j;
             }
         }
