@@ -46,6 +46,8 @@ use Geo::MapMaker::OSM::Relation;
 use Geo::MapMaker::OSM::Way;
 use Geo::MapMaker::OSM::Collection;
 
+use Geo::MapMaker::Util qw(normalize_space);
+
 use File::Slurper qw(read_text);
 use Path::Tiny;
 use Encode;
@@ -269,7 +271,7 @@ sub draw_openstreetmap_maps {
             }
         }
 
-        $self->twarn("Reading %s ...\n", $filename);
+        $self->log_warn("Reading %s ...\n", $filename);
 
         my $doc = $self->get_xml_string($filename);
 
@@ -279,10 +281,10 @@ sub draw_openstreetmap_maps {
             }
         }
 
-        $self->twarn("Parsing XML ...\n");
+        $self->log_warn("Parsing XML ...\n");
         local $self->{_doc} = xml2hash($doc, array => 1);
 
-        $self->twarn("done.\n");
+        $self->log_warn("done.\n");
 
         # all objects for each map tile
         local $self->{_map_tile_nodes}     = Geo::MapMaker::OSM::Collection->new();
@@ -323,10 +325,10 @@ sub draw_openstreetmap_maps {
 
 sub load_map_tile_objects {
     my $self = shift;
-    $self->twarn("Loading map tile objects (%d nodes, %d ways, and %d relations) ...\n",
-                 scalar @{$self->{_doc}->{osm}->[0]->{node}},
-                 scalar @{$self->{_doc}->{osm}->[0]->{way}},
-                 scalar @{$self->{_doc}->{osm}->[0]->{relation}});
+    $self->log_warn("Loading map tile objects (%d nodes, %d ways, and %d relations) ...\n",
+                    scalar @{$self->{_doc}->{osm}->[0]->{node}},
+                    scalar @{$self->{_doc}->{osm}->[0]->{way}},
+                    scalar @{$self->{_doc}->{osm}->[0]->{relation}});
     my $nc = 0;
     my $wc = 0;
     my $rc = 0;
@@ -342,7 +344,7 @@ sub load_map_tile_objects {
         # delete $node->{-visible};
         $node->{type} = 'node';
     }
-    $self->tdebug("  %d nodes\n", $nc);
+    $self->log_debug("  %d nodes\n", $nc);
 
     foreach my $way (@{$self->{_doc}->{osm}->[0]->{way}}) {
         $way = Geo::MapMaker::OSM::Way->new($way);
@@ -356,7 +358,7 @@ sub load_map_tile_objects {
         # delete $way->{-visible};
         $way->{type} = 'way';
     }
-    $self->tdebug("  %d ways\n", $wc);
+    $self->log_debug("  %d ways\n", $wc);
 
     foreach my $relation (@{$self->{_doc}->{osm}->[0]->{relation}}) {
         $relation = Geo::MapMaker::OSM::Relation->new($relation);
@@ -370,9 +372,9 @@ sub load_map_tile_objects {
         # delete $relation->{-visible};
         $relation->{type} = 'relation';
     }
-    $self->tdebug("  %d relations\n", $rc);
+    $self->log_debug("  %d relations\n", $rc);
 
-    $self->twarn("Done.\n");
+    $self->log_warn("Done.\n");
 }
 
 sub convert_map_tile_tags {
@@ -381,7 +383,7 @@ sub convert_map_tile_tags {
         $self->{_map_tile_nodes}->count() +
         $self->{_map_tile_ways}->count() +
         $self->{_map_tile_relations}->count();
-    $self->twarn("Converting tags on %d objects ...\n", $count);
+    $self->log_warn("Converting tags on %d objects ...\n", $count);
     if (grep { $_->{type}->{node} } @{$self->{osm_layers}}) {
         foreach my $node ($self->{_map_tile_nodes}->objects) {
             $node->convert_tags();
@@ -393,7 +395,7 @@ sub convert_map_tile_tags {
     foreach my $relation ($self->{_map_tile_relations}->objects) {
         $relation->convert_tags();
     }
-    $self->twarn("Done.\n");
+    $self->log_warn("Done.\n");
 }
 
 sub index_layer_tags {
@@ -418,7 +420,7 @@ sub index_layer_tags {
 
 sub convert_coordinates {
     my ($self) = @_;
-    $self->twarn("Converting coordinates ...\n");
+    $self->log_warn("Converting coordinates ...\n");
     foreach my $map_area (@{$self->{_map_areas}}) {
         my $map_area_index = $map_area->{index};
         foreach my $layer (@{$self->{osm_layers}}) {
@@ -439,7 +441,7 @@ sub convert_coordinates {
             }
         }
     }
-    $self->twarn("Done.\n");
+    $self->log_warn("Done.\n");
 }
 
 sub convert_node_coordinates {
@@ -463,11 +465,11 @@ use vars qw(%NS);
 
 sub draw {
     my ($self) = @_;
-    $self->twarn("Drawing into map ...\n");
+    $self->log_warn("Drawing into map ...\n");
     foreach my $map_area (@{$self->{_map_areas}}) {
         my $map_area_index = $map_area->{index};
         my $map_area_name = $map_area->{name};
-        $self->twarn("  Drawing into map area $map_area_index - $map_area_name ...\n");
+        $self->log_warn("  Drawing into map area $map_area_index - $map_area_name ...\n");
         foreach my $layer (@{$self->{osm_layers}}) {
             my $layer_name     = $layer->{name};
             my $layer_group    = $layer->{_map_area_group}[$map_area_index];
@@ -475,7 +477,7 @@ sub draw {
             my $layer_geometry = $layer->{geometry};
 
             my @objects = $layer->{objects}->objects;
-            $self->twarn("    Adding %d objects to layer $layer_name ...\n", scalar @objects);
+            $self->log_warn("    Adding %d objects to layer $layer_name ...\n", scalar @objects);
             foreach my $object (@objects) {
 
                 my $css_class_string = $object->css_class_string(
@@ -528,13 +530,13 @@ sub draw {
             }
         }
     }
-    $self->twarn("Done.\n");
+    $self->log_warn("Done.\n");
 }
 
 sub collect_map_tile_layer_objects {
     my ($self) = @_;
     my $count = 0;
-    $self->twarn("Collecting objects for layers ...\n");
+    $self->log_warn("Collecting objects for layers ...\n");
     foreach my $layer (@{$self->{osm_layers}}) {
         my @objects;
         push(@objects, $self->{_map_tile_nodes}->objects)     if $layer->{type}->{node};
@@ -582,7 +584,7 @@ sub collect_map_tile_layer_objects {
             $self->count_object_tags($relation, $relation->{used} ? 1 : 0);
         }
     }
-    $self->twarn("Done.  Added %d objects.\n", $count);
+    $self->log_warn("Done.  Added %d objects.\n", $count);
 }
 
 sub count_layer_object {
@@ -698,7 +700,7 @@ sub write_object_tag_value_counts {
 
 sub link_map_tile_objects {
     my ($self) = @_;
-    $self->twarn("Linking objects ...\n");
+    $self->log_warn("Linking objects ...\n");
     my $count = 0;
     foreach my $layer (@{$self->{osm_layers}}) {
         foreach my $relation (grep { $_->{type} eq 'relation' } $layer->{map_tile_objects}->objects) {
@@ -714,7 +716,7 @@ sub link_map_tile_objects {
             $count += 1;
         }
     }
-    $self->twarn("Done.  Linked %d objects.\n", $count);
+    $self->log_warn("Done.  Linked %d objects.\n", $count);
 }
 
 sub find_persistent_object {
@@ -833,38 +835,6 @@ sub link_way_object {
     } else {
         $way->{is_closed} = 0;
     }
-}
-
-sub tlog {
-    my ($self, $level, $format, @args) = @_;
-    return $self->log($level, $format, @args);
-}
-
-sub terror {
-    my ($self, $format, @args) = @_;
-    return $self->log(LOG_ERROR, $format, @args);
-}
-
-sub twarn {
-    my ($self, $format, @args) = @_;
-    return $self->log(LOG_WARN, $format, @args);
-}
-
-sub tinfo {
-    my ($self, $format, @args) = @_;
-    return $self->log(LOG_INFO, $format, @args);
-}
-
-sub tdebug {
-    my ($self, $format, @args) = @_;
-    return $self->log(LOG_DEBUG, $format, @args);
-}
-
-sub normalize_space {
-    my ($string) = @_;
-    $string = trim($string);
-    $string =~ s{\s+}{ }g;
-    return $string;
 }
 
 1;
