@@ -9,10 +9,8 @@ use Geo::MapMaker::Constants qw(:tags);
 use Sort::Naturally qw(nsort);
 
 sub new {
-    my ($class, $self) = @_;
-    $self ||= {};
-    bless($self, $class);
-    return $self;
+    my $class = shift;
+    return bless(shift, $class);
 }
 
 sub convert_tags {
@@ -84,31 +82,8 @@ sub css_class_string {
     my ($self, %args) = @_;
     my $layer = $args{layer};
     my @css_classes = $self->css_classes(%args);
-    my $css_class_string = $self->join_css_class(@css_classes);
+    my $css_class_string = join(' ', @css_classes);
     return $css_class_string;
-}
-
-sub escape_css_class_name {
-    my ($self, $class_name) = @_;
-    return unless defined $class_name;
-    $class_name =~ s{[ -\,\.\/\:-\@\[-\^\`\{-~]}
-                    {'\\' . $&}gex;
-    $class_name =~ s{[\t\r\n\v\f]}
-                    {'\\' . sprintf('%06x', ord($&)) . ' '}gex;
-    return $class_name;
-}
-
-sub split_css_class {
-    my ($self, $class) = @_;
-    $class =~ s{^\s+}{};
-    $class =~ s{\s+$}{};
-    $class =~ s{\s+}{ }g;
-    return split(' ', $class);
-}
-
-sub join_css_class {
-    my ($self, @class) = @_;
-    return join(' ', @class);
 }
 
 1;
