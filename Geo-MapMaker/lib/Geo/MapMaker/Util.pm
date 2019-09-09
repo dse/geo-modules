@@ -12,7 +12,10 @@ use base 'Exporter';
 use vars qw(@EXPORT @EXPORT_OK);
 
 @EXPORT = qw();
-@EXPORT_OK = qw(file_get_contents file_put_contents normalize_space);
+@EXPORT_OK = qw(file_get_contents
+                file_put_contents
+                normalize_space
+                escape_css_class_name);
 
 use Text::Trim;
 
@@ -29,11 +32,20 @@ sub file_put_contents {		# php-like lol
 }
 
 sub normalize_space {
-    my ($string) = @_;
+    my $string = shift;
     $string = trim($string);
     $string =~ s{\s+}{ }g;
     return $string;
 }
 
-1;
+sub escape_css_class_name {
+    my $class_name = shift;
+    return unless defined $class_name;
+    $class_name =~ s{[ -\,\.\/\:-\@\[-\^\`\{-~]}
+                    {'\\' . $&}gex;
+    $class_name =~ s{[\t\r\n\v\f]}
+                    {'\\' . sprintf('%06x', ord($&)) . ' '}gex;
+    return $class_name;
+}
 
+1;
