@@ -27,7 +27,7 @@ sub clear {
 sub add {
     my ($self, @objects) = @_;
     foreach my $object (@objects) {
-        next unless eval { $object->isa('Geo::MapMaker::OSM::Object') };
+        # next unless eval { $object->isa('Geo::MapMaker::OSM::Object') };
         my $id = $object->{-id};
         if (exists $self->{hash}->{$id}) {
             my $existing_object = $self->{hash}->{$id};
