@@ -262,7 +262,6 @@ sub draw_openstreetmap_maps {
         $self->stuff_all_layers_need();
 
         foreach my $map_area (@{$self->{_map_areas}}) {
-            $self->update_scale($map_area);
             my $prefix = $map_area->{id_prefix};
             my $map_area_layer = $self->update_or_create_map_area_layer($map_area);
             my $clip_path_id = $map_area->{clip_path_id};
@@ -526,7 +525,6 @@ sub convert_coordinates {
     my ($self) = @_;
     $self->twarn("Converting coordinates ...\n");
     foreach my $map_area (@{$self->{_map_areas}}) {
-        $self->update_scale($map_area);
         my $map_area_index = $map_area->{index};
         foreach my $layer (@{$self->{osm_layers}}) {
             foreach my $relation (grep { $_->{type} eq 'relation' } $layer->{objects}->objects) {
@@ -559,13 +557,15 @@ sub convert_coordinates {
 
 sub convert_node_coordinates {
     my ($self, $node) = @_;
+    my $lon_deg = 0 + $node->{-lon};
+    my $lat_deg = 0 + $node->{-lat};
+    my ($svgx, $svgy) = $self->lon_lat_deg_to_svg($lon_deg, $lat_deg);
+
     my $west_svg  = $self->west_outer_map_boundary_svg;
     my $east_svg  = $self->east_outer_map_boundary_svg;
     my $north_svg = $self->north_outer_map_boundary_svg;
     my $south_svg = $self->south_outer_map_boundary_svg;
-    my $lat = 0 + $node->{-lat};
-    my $lon = 0 + $node->{-lon};
-    my ($svgx, $svgy) = $self->{converter}->lon_lat_deg_to_x_y_px($lon, $lat);
+
     my $xzone = ($svgx < $west_svg)  ? -1 : ($svgx > $east_svg)  ? 1 : 0;
     my $yzone = ($svgy < $north_svg) ? -1 : ($svgy > $south_svg) ? 1 : 0;
     my $result = [$svgx, $svgy, $xzone, $yzone];
@@ -578,7 +578,6 @@ sub draw {
     my ($self) = @_;
     $self->twarn("Drawing into map ...\n");
     foreach my $map_area (@{$self->{_map_areas}}) {
-        $self->update_scale($map_area);
         my $map_area_index = $map_area->{index};
         my $map_area_name = $map_area->{name};
         $self->twarn("  Drawing into map area $map_area_index - $map_area_name ...\n");
