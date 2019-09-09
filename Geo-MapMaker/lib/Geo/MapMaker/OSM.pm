@@ -410,17 +410,16 @@ sub load_map_tile_objects {
     my $nc = 0;
     my $wc = 0;
     my $rc = 0;
-    my $order = 0;
     foreach my $node (@{$self->{_doc}->{osm}->[0]->{node}}) {
         $node = Geo::MapMaker::OSM::Node->new($node);
         $self->{_map_tile_nodes}->add($node);
         $nc += 1;
-        delete $node->{-changeset};
-        delete $node->{-timestamp};
-        delete $node->{-uid};
-        delete $node->{-user};
-        delete $node->{-version};
-        delete $node->{-visible};
+        # delete $node->{-changeset};
+        # delete $node->{-timestamp};
+        # delete $node->{-uid};
+        # delete $node->{-user};
+        # delete $node->{-version};
+        # delete $node->{-visible};
         $node->{type} = 'node';
 
         # if ($WATCH_OBJECT_ID) {
@@ -435,12 +434,12 @@ sub load_map_tile_objects {
         $way = Geo::MapMaker::OSM::Way->new($way);
         $self->{_map_tile_ways}->add($way);
         $wc += 1;
-        delete $way->{-changeset};
-        delete $way->{-timestamp};
-        delete $way->{-uid};
-        delete $way->{-user};
-        delete $way->{-version};
-        delete $way->{-visible};
+        # delete $way->{-changeset};
+        # delete $way->{-timestamp};
+        # delete $way->{-uid};
+        # delete $way->{-user};
+        # delete $way->{-version};
+        # delete $way->{-visible};
         $way->{type} = 'way';
 
         # if ($WATCH_OBJECT_ID) {
@@ -455,12 +454,12 @@ sub load_map_tile_objects {
         $relation = Geo::MapMaker::OSM::Relation->new($relation);
         $self->{_map_tile_relations}->add($relation);
         $rc += 1;
-        delete $relation->{-changeset};
-        delete $relation->{-timestamp};
-        delete $relation->{-uid};
-        delete $relation->{-user};
-        delete $relation->{-version};
-        delete $relation->{-visible};
+        # delete $relation->{-changeset};
+        # delete $relation->{-timestamp};
+        # delete $relation->{-uid};
+        # delete $relation->{-user};
+        # delete $relation->{-version};
+        # delete $relation->{-visible};
         $relation->{type} = 'relation';
 
         # if ($WATCH_OBJECT_ID) {
