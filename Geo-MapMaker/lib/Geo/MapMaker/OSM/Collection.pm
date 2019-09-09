@@ -27,7 +27,6 @@ sub clear {
 sub add {
     my ($self, @objects) = @_;
     foreach my $object (@objects) {
-        # next unless eval { $object->isa('Geo::MapMaker::OSM::Object') };
         my $id = $object->{-id};
         if (exists $self->{hash}->{$id}) {
             next;
@@ -42,7 +41,6 @@ sub add {
 sub add_override {
     my ($self, @objects) = @_;
     foreach my $object (@objects) {
-        # next unless eval { $object->isa('Geo::MapMaker::OSM::Object') };
         my $id = $object->{-id};
         if (exists $self->{hash}->{$id}) {
             my $index = $self->{index}->{$id};
