@@ -410,14 +410,35 @@ sub index_layer_tags {
         if (defined $v) {
             if (ref $v eq 'ARRAY') {
                 foreach my $v (@$v) {
-                    push(@$index, join($;, $k, $v));
+                    $self->index_layer_tag($k, $v);
                 }
-            } elsif ($v ne '') {
-                push(@$index, join($;, $k, $v));
+            } else {
+                $self->index_layer_tag($k, $v);
             }
         } else {
-            push(@$index, $k);
+            $self->index_layer_tag($k);
         }
+    }
+}
+
+sub index_layer_tag {
+    my ($self, $layer, $key, $value) = @_;
+    my $index = $layer->{index};
+    if (defined $value) {
+        if (substr($value, 0, 1) eq '!') {
+            my $value = substr($value, 1);
+            if ($value ne '') {
+                my $string = join($;, $key, $value);
+                # scalarref means negation
+                push(@$index, \$string);
+            }
+        } else {
+            if ($value ne '') {
+                push(@$index, join($;, $key, $value));
+            }
+        }
+    } else {
+        push(@$index, $key);
     }
 }
 
@@ -533,13 +554,16 @@ sub draw {
 sub object_matches_layer {
     my ($self, $object, $layer) = @_;
     my $object_index = $object->{index};
-  indexx:
     foreach my $index (@{$layer->{index}}) {
-        if (substr($index, 0, 1) eq '!' && $object_index->{substr($index, 1)}) {
-            return 0;
-        }
-        if ($object_index->{$index}) {
-            return 1;
+        if (ref $index eq 'SCALAR') {
+            # scalarref means negation
+            if ($object_index->{$$index}) {
+                return 0;
+            }
+        } else {
+            if ($object_index->{$index}) {
+                return 1;
+            }
         }
     }
     return;
@@ -697,10 +721,36 @@ sub write_object_tag_value_counts {
         foreach my $key (nsort keys %$subhash) {
             my $subsubhash = $subhash->{$key};
             foreach my $value (nsort keys %$subsubhash) {
+                my $selecting = scalar $self->layers_collecting($type, $key, $value);
                 printf $fh ("%6d  %-14s  %-22s  %s\n", $subsubhash->{$value}, $type, $key, normalize_space($value));
             }
         }
     }
+}
+
+sub layers_collecting {
+    my ($self, $type, $key, $value) = @_;
+    return grep { $self->layer_collects($_, $type, $key, $value) } @{$self->{osm_layers}};
+}
+
+sub layer_collects {
+    my ($self, $layer, $type, $key, $value) = @_;
+    if (index($key, $;) != -1) {
+        ($key, $value) = split($;, $key);
+    }
+    return 0 if !$layer->{type}->{$type};
+    my $object_index = {};
+    $object_index->{$key,$value} = 1 if defined $key && defined $value;
+    $object_index->{$key}        = 1 if defined $key;
+    foreach my $index (@{$layer->{index}}) {
+        if (substr($index, 0, 1) eq '!' && $object_index->{substr($index, 1)}) {
+            return 0;
+        }
+        if ($object_index->{$index}) {
+            return 1;
+        }
+    }
+    return;
 }
 
 sub link_map_tile_objects {
