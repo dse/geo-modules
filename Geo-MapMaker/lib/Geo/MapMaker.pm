@@ -122,8 +122,9 @@ use Sort::Naturally qw(nsort);
 use constant PI => 4 * CORE::atan2(1, 1);
 use constant D2R => PI / 180;
 use constant WGS84_ER_KM => 6378.1370;
-use constant PX_PER_IN => 90;
-use constant PX_PER_ER => 90 / 25.4 * 1_000_000 * WGS84_ER_KM;
+use constant PX_PER_IN => 96;
+use constant PX_PER_ER => PX_PER_IN / 25.4 * 1_000_000 * WGS84_ER_KM;
+use constant PT_PER_IN => 72;
 
 use POSIX qw(atan);
 
@@ -273,10 +274,10 @@ sub dim {
                     $}xi) {
         my ($px, $unit) = ($1, $2);
         if (defined $unit) {
-            $px *= PX_PER_IN        if $unit eq 'in';
-            $px *= PX_PER_IN / 25.4 if $unit eq 'mm';
-            $px *= PX_PER_IN / 2.54 if $unit eq 'cm';
-            $px *= PX_PER_IN / 72   if $unit eq 'pt';
+            $px *= PX_PER_IN             if $unit eq 'in';
+            $px *= PX_PER_IN / 25.4      if $unit eq 'mm';
+            $px *= PX_PER_IN / 2.54      if $unit eq 'cm';
+            $px *= PX_PER_IN / PT_PER_IN if $unit eq 'pt';
         }
         return $px;
     } else {
@@ -449,8 +450,8 @@ END
     $self->{_svg_doc} = $doc;
     $self->{_svg_doc_elt} = $doc_elt;
 
-    $doc_elt->setAttribute("width", sprintf("%.2f", $self->{paper_width_px}));
-    $doc_elt->setAttribute("height", sprintf("%.2f", $self->{paper_height_px}));
+    $doc_elt->setAttribute("width", sprintf("%.2fpt", $self->{paper_width_px} / PX_PER_IN * PT_PER_IN));
+    $doc_elt->setAttribute("height", sprintf("%.2fpt", $self->{paper_height_px} / PX_PER_IN * PT_PER_IN));
     $doc_elt->setNamespace($NS{"svg"}, "svg", 0);
 
     my $xpc = XML::LibXML::XPathContext->new($doc);
