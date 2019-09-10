@@ -530,6 +530,21 @@ sub draw {
     $self->log_warn("Done.\n");
 }
 
+sub object_matches_layer {
+    my ($self, $object, $layer) = @_;
+    my $object_index = $object->{index};
+  indexx:
+    foreach my $index (@{$layer->{index}}) {
+        if (substr($index, 0, 1) eq '!' && $object_index->{substr($index, 1)}) {
+            return 0;
+        }
+        if ($object_index->{$index}) {
+            return 1;
+        }
+    }
+    return;
+}
+
 sub collect_map_tile_layer_objects {
     my ($self) = @_;
     my $count = 0;
@@ -540,15 +555,7 @@ sub collect_map_tile_layer_objects {
         push(@objects, $self->{_map_tile_ways}->values)      if $layer->{type}->{way};
         push(@objects, $self->{_map_tile_relations}->values) if $layer->{type}->{relation};
         foreach my $object (@objects) {
-            my $match = 0;
-            my $object_index = $object->{index};
-            foreach my $index (@{$layer->{index}}) {
-                if ($object_index->{$index}) {
-                    $match = 1;
-                    last;
-                }
-            }
-            next unless $match;
+            next unless $self->object_matches_layer($layer);
 
             $object->{used} = 1;
 
