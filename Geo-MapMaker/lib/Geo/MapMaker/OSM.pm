@@ -109,9 +109,6 @@ sub update_openstreetmap_from_source_url {
             if (-e $filename && !$force) {
                 $self->log_warn("Not updating\n");
                 push(@{$self->{_osm_xml_filenames}}, $filename);
-            } elsif (-e $filename && $force && -M $filename < 1) {
-                $self->log_warn("Not updating (force in effect but file is less than 1 day old)\n");
-                push(@{$self->{_osm_xml_filenames}}, $filename);
             } else {
                 make_path(dirname($filename));
                 $self->log_warn("Downloading %s ...\n", $source);
@@ -410,13 +407,13 @@ sub index_layer_tags {
         if (defined $v) {
             if (ref $v eq 'ARRAY') {
                 foreach my $v (@$v) {
-                    $self->index_layer_tag($k, $v);
+                    $self->index_layer_tag($layer, $k, $v);
                 }
             } else {
-                $self->index_layer_tag($k, $v);
+                $self->index_layer_tag($layer, $k, $v);
             }
         } else {
-            $self->index_layer_tag($k);
+            $self->index_layer_tag($layer, $k);
         }
     }
 }
@@ -578,8 +575,11 @@ sub collect_map_tile_layer_objects {
         push(@objects, $self->{_map_tile_nodes}->values)     if $layer->{type}->{node};
         push(@objects, $self->{_map_tile_ways}->values)      if $layer->{type}->{way};
         push(@objects, $self->{_map_tile_relations}->values) if $layer->{type}->{relation};
+        $self->log_warn("  Checking %d objects in layer %s\n",
+                        scalar @objects, $layer->{name});
+        my $layer_object_count = 0;
         foreach my $object (@objects) {
-            next unless $self->object_matches_layer($layer);
+            next unless $self->object_matches_layer($object, $layer);
 
             $object->{used} = 1;
 
@@ -595,7 +595,9 @@ sub collect_map_tile_layer_objects {
             $self->count_layer_object($layer, $object);
 
             $count += 1;
+            $layer_object_count += 1;
         }
+        $self->log_warn("    matched %d objects\n", $layer_object_count);
     }
     if (grep { $_->{type}->{node} } @{$self->{osm_layers}}) {
         foreach my $node ($self->{_map_tile_nodes}->values) {
@@ -722,7 +724,7 @@ sub write_object_tag_value_counts {
             my $subsubhash = $subhash->{$key};
             foreach my $value (nsort keys %$subsubhash) {
                 my $selecting = scalar $self->layers_collecting($type, $key, $value);
-                printf $fh ("%6d  %-14s  %-22s  %s\n", $subsubhash->{$value}, $type, $key, normalize_space($value));
+                printf $fh ("%6d  %6d  %-14s  %-22s  %s\n", $subsubhash->{$value}, $selecting, $type, $key, normalize_space($value));
             }
         }
     }
@@ -730,7 +732,9 @@ sub write_object_tag_value_counts {
 
 sub layers_collecting {
     my ($self, $type, $key, $value) = @_;
-    return grep { $self->layer_collects($_, $type, $key, $value) } @{$self->{osm_layers}};
+    return grep {
+        $self->layer_collects($_, $type, $key, $value)
+    } @{$self->{osm_layers}};
 }
 
 sub layer_collects {
@@ -743,11 +747,15 @@ sub layer_collects {
     $object_index->{$key,$value} = 1 if defined $key && defined $value;
     $object_index->{$key}        = 1 if defined $key;
     foreach my $index (@{$layer->{index}}) {
-        if (substr($index, 0, 1) eq '!' && $object_index->{substr($index, 1)}) {
-            return 0;
-        }
-        if ($object_index->{$index}) {
-            return 1;
+        if (ref $index eq 'SCALAR') {
+            # scalarref means negation
+            if ($object_index->{$$index}) {
+                return 0;
+            }
+        } else {
+            if ($object_index->{$index}) {
+                return 1;
+            }
         }
     }
     return;
