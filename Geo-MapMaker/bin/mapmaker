@@ -208,7 +208,7 @@ sub cmd__force_openstreetmap_update {
     my ($self) = @_;
     my $mm = $self->{mapmaker};
     die("map MAPNAME must be specified.\n") unless $mm;
-    $mm->force_update_openstreetmap();
+    $mm->update_openstreetmap(1);
 }
 
 sub cmd__gtfs_repopulate_database {
