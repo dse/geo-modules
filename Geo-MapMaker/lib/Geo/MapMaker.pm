@@ -207,11 +207,9 @@ sub new {
                 defined $east_lon_deg && defined $west_lon_deg) {
             $self->set_from_boundaries($north_lat_deg, $south_lat_deg,
                                        $west_lon_deg, $east_lon_deg);
-            $self->show_settings();
         } elsif (defined $center_lat_deg && defined $center_lon_deg && defined $scale) {
             $self->set_from_center_and_scale($center_lat_deg, $center_lon_deg,
                                              $scale, $scale_basis_lat_deg);
-            $self->show_settings();
         } else {
             die(":-(\n");
         }
