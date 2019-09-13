@@ -104,6 +104,8 @@ BEGIN {
 		  paper_width_px
 		  paper_height_px
 		  paper_margin_px
+		  paper_margin_x_px
+		  paper_margin_y_px
 
 		  orientation
 
@@ -118,6 +120,7 @@ BEGIN {
 use fields @_FIELDS;
 
 use Sort::Naturally qw(nsort);
+use List::Util qw(max);
 
 use constant PI => 4 * CORE::atan2(1, 1);
 use constant D2R => PI / 180;
@@ -137,6 +140,8 @@ sub new {
     $self->{paper_width_px}  = PX_PER_IN * 8.5;
     $self->{paper_height_px} = PX_PER_IN * 11;
     $self->{paper_margin_px} = PX_PER_IN * 0.25;
+    $self->{paper_margin_x_px} = PX_PER_IN * 0.25;
+    $self->{paper_margin_y_px} = PX_PER_IN * 0.25;
     $self->{log_prefix} = '';
 
     foreach my $key (qw(verbose no_edit debug filename)) {
@@ -147,8 +152,6 @@ sub new {
 
     {
         my $pw = delete $options{paper_width};
-        my $ph = delete $options{paper_height};
-        my $pm = delete $options{paper_margin};
         if (defined $pw) {
             my $dim = $self->dim($pw);
             if (!defined $dim) {
@@ -156,6 +159,9 @@ sub new {
             }
             $self->{paper_width_px} = $dim;
         }
+    }
+    {
+        my $ph = delete $options{paper_height};
         if (defined $ph) {
             my $dim = $self->dim($ph);
             if (!defined $dim) {
@@ -163,12 +169,30 @@ sub new {
             }
             $self->{paper_height_px} = $dim;
         }
-        if (defined $pm) {
+    }
+    {
+        if (defined(my $pm = delete $options{paper_margin})) {
             my $dim = $self->dim($pm);
             if (!defined $dim) {
                 die("invalid paper_margin: $pm\n");
             }
             $self->{paper_margin_px} = $dim;
+            $self->{paper_margin_x_px} = $dim;
+            $self->{paper_margin_y_px} = $dim;
+        }
+        if (defined(my $pmx = delete $options{paper_margin_x})) {
+            my $dim = $self->dim($pmx);
+            if (!defined $dim) {
+                die("invalid paper_margin_x: $pmx\n");
+            }
+            $self->{paper_margin_x_px} = $dim;
+        }
+        if (defined(my $pmy = delete $options{paper_margin_y})) {
+            my $dim = $self->dim($pmy);
+            if (!defined $dim) {
+                die("invalid paper_margin_y: $pmy\n");
+            }
+            $self->{paper_margin_y_px} = $dim;
         }
     }
 
@@ -177,59 +201,25 @@ sub new {
                     $self->{paper_height_px} / PX_PER_IN);
 
     {
-        my $center_lat_deg  = delete $options{center_lat_deg}; # e.g., 38.2
-        my $center_lon_deg  = delete $options{center_lon_deg}; # e.g., -85.7
-        my $scale           = delete $options{scale}; # 1:45,000 would be 45000
-        my $scale_basis_lat = delete $options{scale_basis_lat_deg};
+        my $center_lat_deg      = delete $options{center_lat_deg}; # e.g., 38.2
+        my $center_lon_deg      = delete $options{center_lon_deg}; # e.g., -85.7
+        my $scale               = delete $options{scale}; # 1:45,000 would be 45000
+        my $scale_basis_lat_deg = delete $options{scale_basis_lat_deg};
 
-        if (defined $center_lat_deg && defined $center_lon_deg && defined $scale) {
-            my $actual_scale = $scale;
-            if (defined $scale_basis_lat) {
-                $self->log_info("1:%.2f at %.2f\n", $scale, $scale_basis_lat);
-                $actual_scale = $scale * cos($center_lat_deg * D2R) / cos($scale_basis_lat * D2R);
-                $self->log_info("1:%.2f at %.2f\n", $actual_scale, $center_lat_deg);
-            }
+        my $north_lat_deg       = delete $options{north_lat_deg};
+        my $south_lat_deg       = delete $options{south_lat_deg};
+        my $east_lon_deg        = delete $options{east_lon_deg};
+        my $west_lon_deg        = delete $options{west_lon_deg};
 
-            my $edge_from_center_x_px = $self->{paper_width_px}  / 2 - $self->{paper_margin_px};
-            my $edge_from_center_y_px = $self->{paper_height_px} / 2 - $self->{paper_margin_px};
-            my $edge_from_center_x_er = $edge_from_center_x_px * $actual_scale / PX_PER_ER;
-            my $edge_from_center_y_er = $edge_from_center_y_px * $actual_scale / PX_PER_ER;
-
-            $self->log_warn("edge from center %.2f %.2f px\n",
-                            $edge_from_center_x_px / PX_PER_IN,
-                            $edge_from_center_y_px / PX_PER_IN);
-
-            my $ccl = cos($center_lat_deg * D2R);
-            my $west_lon_deg = $center_lon_deg - $edge_from_center_x_px * $actual_scale / PX_PER_ER / D2R / $ccl;
-            my $east_lon_deg = $center_lon_deg + $edge_from_center_x_px * $actual_scale / PX_PER_ER / D2R / $ccl;
-            $self->log_warn("west and east longitudes %.6f %.6f\n", $west_lon_deg, $east_lon_deg);
-
-            my $center_lat_rad = $center_lat_deg * D2R;
-            my $center_lat_er = log(abs((1 + sin($center_lat_rad)) / cos($center_lat_rad)));
-            my $north_lat_er = $center_lat_er + $edge_from_center_y_er / $ccl;
-            my $south_lat_er = $center_lat_er - $edge_from_center_y_er / $ccl;
-            my $north_lat_deg = (2 * atan(exp($north_lat_er)) - PI / 2) * 180 / PI;
-            my $south_lat_deg = (2 * atan(exp($south_lat_er)) - PI / 2) * 180 / PI;
-
-            $self->log_warn("south and north latitudes %.6f %.6f\n", $south_lat_deg, $north_lat_deg);
-
-            $self->{south_lat_deg} = $south_lat_deg;
-            $self->{north_lat_deg} = $north_lat_deg;
-            $self->{west_lon_deg}  = $west_lon_deg;
-            $self->{east_lon_deg}  = $east_lon_deg;
-
-            $self->{_center_lat_er} = $center_lat_er;
-            $self->{center_lat_deg} = $center_lat_deg;
-            $self->{center_lon_deg} = $center_lon_deg;
-            $self->{scale} = $scale;
-            $self->{scale_basis_lat_deg} = $scale_basis_lat;
-            $self->{_actual_scale} = $actual_scale;
-
-            $self->{_center_x} = $self->{paper_width_px} / 2;
-            $self->{_center_y} = $self->{paper_height_px} / 2;
-            $self->{_cos_lat} = cos($center_lat_deg * D2R);
-            # $self->{_px_scaled} = PX_PER_ER / $actual_scale;
-            $self->{_px_scaled_x} = PX_PER_ER / $actual_scale * $self->{_cos_lat};
+        if (defined $north_lat_deg && defined $south_lat_deg &&
+                defined $east_lon_deg && defined $west_lon_deg) {
+            $self->set_from_boundaries($north_lat_deg, $south_lat_deg,
+                                       $west_lon_deg, $east_lon_deg);
+            $self->show_settings();
+        } elsif (defined $center_lat_deg && defined $center_lon_deg && defined $scale) {
+            $self->set_from_center_and_scale($center_lat_deg, $center_lon_deg,
+                                             $scale, $scale_basis_lat_deg);
+            $self->show_settings();
         } else {
             die(":-(\n");
         }
@@ -249,6 +239,116 @@ sub new {
     }
 
     return $self;
+}
+
+sub set_from_boundaries {
+    my ($self, $north_lat_deg, $south_lat_deg, $west_lon_deg, $east_lon_deg) = @_;
+
+    my $center_lon_deg = ($east_lon_deg + $west_lon_deg) / 2;
+
+    my $north_lat_rad = $north_lat_deg * D2R;
+    my $south_lat_rad = $south_lat_deg * D2R;
+    my $north_lat_er = log(abs((1 + sin($north_lat_rad)) / cos($north_lat_rad)));
+    my $south_lat_er = log(abs((1 + sin($south_lat_rad)) / cos($south_lat_rad)));
+    my $center_lat_er = ($north_lat_er + $south_lat_er) / 2;
+    my $center_lat_rad = (2 * atan(exp($center_lat_er)) - PI / 2);
+    my $center_lat_deg = $center_lat_rad * 180 / PI;
+
+    my $cos_center_lat = cos($center_lat_rad);
+
+    my $drawing_width_px  = $self->{paper_width_px}  - 2 * $self->{paper_margin_x_px};
+    my $drawing_height_px = $self->{paper_height_px} - 2 * $self->{paper_margin_y_px};
+
+    my $scale_x = ($east_lon_deg - $west_lon_deg) / $drawing_width_px * PX_PER_ER * D2R * $cos_center_lat;
+    my $scale_y = ($north_lat_er - $south_lat_er) / $drawing_height_px * PX_PER_ER * $cos_center_lat;
+    my $scale;
+    if ($scale_x > $scale_y) {
+        $scale = $scale_x;
+        $drawing_height_px = $drawing_height_px * $scale_y / $scale_x;
+        $self->{paper_margin_y_px} = ($self->{paper_height_px} - $drawing_height_px) / 2;
+    } else {
+        $scale = $scale_y;
+        $drawing_width_px = $drawing_width_px * $scale_x / $scale_y;
+        $self->{paper_margin_x_px} = ($self->{paper_width_px} - $drawing_width_px) / 2;
+    }
+
+    $self->{south_lat_deg} = $south_lat_deg;
+    $self->{north_lat_deg} = $north_lat_deg;
+    $self->{west_lon_deg}  = $west_lon_deg;
+    $self->{east_lon_deg}  = $east_lon_deg;
+
+    $self->{_center_lat_er} = $center_lat_er;
+    $self->{center_lat_deg} = $center_lat_deg;
+    $self->{center_lon_deg} = $center_lon_deg;
+    $self->{scale} = $scale;
+    $self->{scale_basis_lat_deg} = $center_lat_deg;
+    $self->{_actual_scale} = $scale;
+
+    $self->{_center_x} = $self->{paper_width_px} / 2;
+    $self->{_center_y} = $self->{paper_height_px} / 2;
+    $self->{_cos_lat} = cos($center_lat_deg * D2R);
+    $self->{_px_scaled_x} = PX_PER_ER / $scale * $self->{_cos_lat};
+}
+
+sub set_from_center_and_scale {
+    my ($self, $center_lat_deg, $center_lon_deg, $scale, $scale_basis_lat_deg) = @_;
+
+    my $actual_scale = $scale;
+    if (defined $scale_basis_lat_deg) {
+        $self->log_info("1:%.2f at %.2f\n", $scale, $scale_basis_lat_deg);
+        $actual_scale = $scale * cos($center_lat_deg * D2R) / cos($scale_basis_lat_deg * D2R);
+        $self->log_info("1:%.2f at %.2f\n", $actual_scale, $center_lat_deg);
+    }
+
+    my $center_lat_rad = $center_lat_deg * D2R;
+    my $cos_center_lat = cos($center_lat_rad);
+
+    my $edge_from_center_x_px = $self->{paper_width_px}  / 2 - $self->{paper_margin_x_px};
+    my $edge_from_center_y_px = $self->{paper_height_px} / 2 - $self->{paper_margin_y_px};
+    my $edge_from_center_x_er = $edge_from_center_x_px * $actual_scale / PX_PER_ER;
+    my $edge_from_center_y_er = $edge_from_center_y_px * $actual_scale / PX_PER_ER;
+
+    my $west_lon_deg = $center_lon_deg - $edge_from_center_x_px * $actual_scale / PX_PER_ER / D2R / $cos_center_lat;
+    my $east_lon_deg = $center_lon_deg + $edge_from_center_x_px * $actual_scale / PX_PER_ER / D2R / $cos_center_lat;
+
+    my $center_lat_er = log(abs((1 + sin($center_lat_rad)) / cos($center_lat_rad)));
+    my $north_lat_er = $center_lat_er + $edge_from_center_y_er / $cos_center_lat;
+    my $south_lat_er = $center_lat_er - $edge_from_center_y_er / $cos_center_lat;
+    my $north_lat_deg = (2 * atan(exp($north_lat_er)) - PI / 2) * 180 / PI;
+    my $south_lat_deg = (2 * atan(exp($south_lat_er)) - PI / 2) * 180 / PI;
+
+    $self->{south_lat_deg} = $south_lat_deg;
+    $self->{north_lat_deg} = $north_lat_deg;
+    $self->{west_lon_deg}  = $west_lon_deg;
+    $self->{east_lon_deg}  = $east_lon_deg;
+
+    $self->{_center_lat_er} = $center_lat_er;
+    $self->{center_lat_deg} = $center_lat_deg;
+    $self->{center_lon_deg} = $center_lon_deg;
+    $self->{scale} = $scale;
+    $self->{scale_basis_lat_deg} = $scale_basis_lat_deg;
+    $self->{_actual_scale} = $actual_scale;
+
+    $self->{_center_x} = $self->{paper_width_px} / 2;
+    $self->{_center_y} = $self->{paper_height_px} / 2;
+    $self->{_cos_lat} = cos($center_lat_deg * D2R);
+    $self->{_px_scaled_x} = PX_PER_ER / $actual_scale * $self->{_cos_lat};
+}
+
+sub show_settings {
+    my ($self) = @_;
+    foreach my $setting (qw(paper_width_px
+                            paper_height_px
+                            paper_margin_x_px
+                            paper_margin_y_px
+                            south_lat_deg
+                            north_lat_deg
+                            west_lon_deg
+                            east_lon_deg
+                            _actual_scale)) {
+        $self->log_warn("%s = %f\n", $setting, $self->{$setting});
+    }
+    exit 0;
 }
 
 sub lon_lat_deg_to_svg {
@@ -1687,22 +1787,22 @@ sub disable_layers {
 
 sub west_outer_map_boundary_svg {
     my ($self) = @_;
-    return $self->{paper_margin_px};
+    return $self->{paper_margin_x_px};
 }
 
 sub east_outer_map_boundary_svg {
     my ($self) = @_;
-    return $self->{paper_width_px} - $self->{paper_margin_px};
+    return $self->{paper_width_px} - $self->{paper_margin_x_px};
 }
 
 sub north_outer_map_boundary_svg {
     my ($self) = @_;
-    return $self->{paper_margin_px};
+    return $self->{paper_margin_y_px};
 }
 
 sub south_outer_map_boundary_svg {
     my ($self) = @_;
-    return $self->{paper_height_px} - $self->{paper_margin_px};
+    return $self->{paper_height_px} - $self->{paper_margin_y_px};
 }
 
 ###############################################################################
