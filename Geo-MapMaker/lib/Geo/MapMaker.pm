@@ -150,55 +150,47 @@ sub new {
         }
     }
 
-    {
-        my $pw = delete $options{paper_width};
-        if (defined $pw) {
-            my $dim = $self->dim($pw);
-            if (!defined $dim) {
-                die("invalid paper_width: $pw\n");
-            }
-            $self->{paper_width_px} = $dim;
+    if (defined(my $pw = delete $options{paper_width})) {
+        my $dim = $self->dim($pw);
+        if (!defined $dim) {
+            die("invalid paper_width: $pw\n");
         }
-    }
-    {
-        my $ph = delete $options{paper_height};
-        if (defined $ph) {
-            my $dim = $self->dim($ph);
-            if (!defined $dim) {
-                die("invalid paper_height: $ph\n");
-            }
-            $self->{paper_height_px} = $dim;
-        }
-    }
-    {
-        if (defined(my $pm = delete $options{paper_margin})) {
-            my $dim = $self->dim($pm);
-            if (!defined $dim) {
-                die("invalid paper_margin: $pm\n");
-            }
-            $self->{paper_margin_px} = $dim;
-            $self->{paper_margin_x_px} = $dim;
-            $self->{paper_margin_y_px} = $dim;
-        }
-        if (defined(my $pmx = delete $options{paper_margin_x})) {
-            my $dim = $self->dim($pmx);
-            if (!defined $dim) {
-                die("invalid paper_margin_x: $pmx\n");
-            }
-            $self->{paper_margin_x_px} = $dim;
-        }
-        if (defined(my $pmy = delete $options{paper_margin_y})) {
-            my $dim = $self->dim($pmy);
-            if (!defined $dim) {
-                die("invalid paper_margin_y: $pmy\n");
-            }
-            $self->{paper_margin_y_px} = $dim;
-        }
+        $self->{paper_width_px} = $dim;
     }
 
-    $self->log_warn("paper size %.2f %.2f\n",
-                    $self->{paper_width_px} / PX_PER_IN,
-                    $self->{paper_height_px} / PX_PER_IN);
+    if (defined(my $ph = delete $options{paper_height})) {
+        my $dim = $self->dim($ph);
+        if (!defined $dim) {
+            die("invalid paper_height: $ph\n");
+        }
+        $self->{paper_height_px} = $dim;
+    }
+
+    if (defined(my $pm = delete $options{paper_margin})) {
+        my $dim = $self->dim($pm);
+        if (!defined $dim) {
+            die("invalid paper_margin: $pm\n");
+        }
+        $self->{paper_margin_px} = $dim;
+        $self->{paper_margin_x_px} = $dim;
+        $self->{paper_margin_y_px} = $dim;
+    }
+
+    if (defined(my $pmx = delete $options{paper_margin_x})) {
+        my $dim = $self->dim($pmx);
+        if (!defined $dim) {
+            die("invalid paper_margin_x: $pmx\n");
+        }
+        $self->{paper_margin_x_px} = $dim;
+    }
+
+    if (defined(my $pmy = delete $options{paper_margin_y})) {
+        my $dim = $self->dim($pmy);
+        if (!defined $dim) {
+            die("invalid paper_margin_y: $pmy\n");
+        }
+        $self->{paper_margin_y_px} = $dim;
+    }
 
     {
         my $center_lat_deg      = delete $options{center_lat_deg}; # e.g., 38.2
