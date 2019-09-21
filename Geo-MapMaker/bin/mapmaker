@@ -159,6 +159,14 @@ sub cmd__map {
     $self->$method(@args);
 }
 
+sub cmd__clean {
+    my ($self) = @_;
+    my $mm = $self->{mapmaker};
+    die("map MAPNAME must be specified.\n") unless $mm;
+
+    $mm->clean();
+}
+
 sub cmd__gtfs_update {
     my ($self) = @_;
     my $mm = $self->{mapmaker};
