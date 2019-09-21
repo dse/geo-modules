@@ -490,6 +490,7 @@ sub draw {
             my $layer_group    = $layer->{_map_area_group}[$map_area_index];
             my $layer_id       = $layer->{id};
             my $layer_geometry = $layer->{geometry};
+            my $layer_object_class = $layer->{object_class};
 
             my @objects = $layer->{objects}->values;
             $self->log_warn("    Adding %d objects to layer $layer_name ...\n", scalar @objects);
@@ -498,6 +499,7 @@ sub draw {
                 my $css_class_string = $object->css_class_string(
                     layer => $layer,
                     map_area => $map_area,
+                    object_class => $layer_object_class,
                 );
 
                 my $css_id = $object->css_id(
