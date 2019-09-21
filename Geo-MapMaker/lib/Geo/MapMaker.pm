@@ -115,6 +115,8 @@ BEGIN {
 
                   no_edit
                   log_prefix
+
+                  pixels_per_inch
              );
 }
 use fields @_FIELDS;
@@ -127,6 +129,7 @@ use constant D2R => PI / 180;
 use constant WGS84_ER_KM => 6378.1370;
 use constant PX_PER_IN => 96;
 use constant PX_PER_ER => PX_PER_IN / 25.4 * 1_000_000 * WGS84_ER_KM;
+use constant IN_PER_ER => 1 / 25.4 * 1_000_000 * WGS84_ER_KM;
 use constant PT_PER_IN => 72;
 
 use POSIX qw(atan);
@@ -134,14 +137,15 @@ use POSIX qw(atan);
 sub new {
     my ($class, %options) = @_;
     my $self = fields::new($class);
+    $self->{pixels_per_inch} = 96;
     $self->{verbose} = 0;
     $self->{debug} = {};
     $self->{_cache} = {};
-    $self->{paper_width_px}  = PX_PER_IN * 8.5;
-    $self->{paper_height_px} = PX_PER_IN * 11;
-    $self->{paper_margin_px} = PX_PER_IN * 0.25;
-    $self->{paper_margin_x_px} = PX_PER_IN * 0.25;
-    $self->{paper_margin_y_px} = PX_PER_IN * 0.25;
+    $self->{paper_width_px}    = $self->{pixels_per_inch} * 8.5;
+    $self->{paper_height_px}   = $self->{pixels_per_inch} * 11;
+    $self->{paper_margin_px}   = $self->{pixels_per_inch} * 0.25;
+    $self->{paper_margin_x_px} = $self->{pixels_per_inch} * 0.25;
+    $self->{paper_margin_y_px} = $self->{pixels_per_inch} * 0.25;
     $self->{log_prefix} = '';
 
     foreach my $key (qw(verbose no_edit debug filename)) {
@@ -249,8 +253,10 @@ sub set_from_boundaries {
     my $drawing_width_px  = $self->{paper_width_px}  - 2 * $self->{paper_margin_x_px};
     my $drawing_height_px = $self->{paper_height_px} - 2 * $self->{paper_margin_y_px};
 
-    my $scale_x = ($east_lon_deg - $west_lon_deg) / $drawing_width_px * PX_PER_ER * D2R * $cos_center_lat;
-    my $scale_y = ($north_lat_er - $south_lat_er) / $drawing_height_px * PX_PER_ER * $cos_center_lat;
+    my $px_per_er = $self->{pixels_per_inch} * IN_PER_ER;
+
+    my $scale_x = ($east_lon_deg - $west_lon_deg) / $drawing_width_px * $px_per_er * D2R * $cos_center_lat;
+    my $scale_y = ($north_lat_er - $south_lat_er) / $drawing_height_px * $px_per_er * $cos_center_lat;
     my $scale;
     if ($scale_x > $scale_y) {
         $scale = $scale_x;
@@ -277,7 +283,7 @@ sub set_from_boundaries {
     $self->{_center_x} = $self->{paper_width_px} / 2;
     $self->{_center_y} = $self->{paper_height_px} / 2;
     $self->{_cos_lat} = cos($center_lat_deg * D2R);
-    $self->{_px_scaled_x} = PX_PER_ER / $scale * $self->{_cos_lat};
+    $self->{_px_scaled_x} = $px_per_er / $scale * $self->{_cos_lat};
 }
 
 sub set_from_center_and_scale {
@@ -293,13 +299,15 @@ sub set_from_center_and_scale {
     my $center_lat_rad = $center_lat_deg * D2R;
     my $cos_center_lat = cos($center_lat_rad);
 
+    my $px_per_er = $self->{pixels_per_inch} * IN_PER_ER;
+
     my $edge_from_center_x_px = $self->{paper_width_px}  / 2 - $self->{paper_margin_x_px};
     my $edge_from_center_y_px = $self->{paper_height_px} / 2 - $self->{paper_margin_y_px};
-    my $edge_from_center_x_er = $edge_from_center_x_px * $actual_scale / PX_PER_ER;
-    my $edge_from_center_y_er = $edge_from_center_y_px * $actual_scale / PX_PER_ER;
+    my $edge_from_center_x_er = $edge_from_center_x_px * $actual_scale / $px_per_er;
+    my $edge_from_center_y_er = $edge_from_center_y_px * $actual_scale / $px_per_er;
 
-    my $west_lon_deg = $center_lon_deg - $edge_from_center_x_px * $actual_scale / PX_PER_ER / D2R / $cos_center_lat;
-    my $east_lon_deg = $center_lon_deg + $edge_from_center_x_px * $actual_scale / PX_PER_ER / D2R / $cos_center_lat;
+    my $west_lon_deg = $center_lon_deg - $edge_from_center_x_px * $actual_scale / $px_per_er / D2R / $cos_center_lat;
+    my $east_lon_deg = $center_lon_deg + $edge_from_center_x_px * $actual_scale / $px_per_er / D2R / $cos_center_lat;
 
     my $center_lat_er = log(abs((1 + sin($center_lat_rad)) / cos($center_lat_rad)));
     my $north_lat_er = $center_lat_er + $edge_from_center_y_er / $cos_center_lat;
@@ -322,7 +330,7 @@ sub set_from_center_and_scale {
     $self->{_center_x} = $self->{paper_width_px} / 2;
     $self->{_center_y} = $self->{paper_height_px} / 2;
     $self->{_cos_lat} = cos($center_lat_deg * D2R);
-    $self->{_px_scaled_x} = PX_PER_ER / $actual_scale * $self->{_cos_lat};
+    $self->{_px_scaled_x} = $px_per_er / $actual_scale * $self->{_cos_lat};
 }
 
 sub show_settings {
@@ -354,6 +362,7 @@ use Regexp::Common qw(number);
 
 sub dim {
     my ($self, $value) = @_;
+    my $px_per_in = $self->{pixels_per_inch};
     if ($value =~ m{^
                     \s*
                     ($RE{num}{real})
@@ -364,10 +373,10 @@ sub dim {
                     $}xi) {
         my ($px, $unit) = ($1, $2);
         if (defined $unit) {
-            $px *= PX_PER_IN             if $unit eq 'in';
-            $px *= PX_PER_IN / 25.4      if $unit eq 'mm';
-            $px *= PX_PER_IN / 2.54      if $unit eq 'cm';
-            $px *= PX_PER_IN / PT_PER_IN if $unit eq 'pt';
+            $px *= $px_per_in             if $unit eq 'in';
+            $px *= $px_per_in / 25.4      if $unit eq 'mm';
+            $px *= $px_per_in / 2.54      if $unit eq 'cm';
+            $px *= $px_per_in / PT_PER_IN if $unit eq 'pt';
         }
         return $px;
     } else {
@@ -540,8 +549,10 @@ END
     $self->{_svg_doc} = $doc;
     $self->{_svg_doc_elt} = $doc_elt;
 
-    $doc_elt->setAttribute("width", sprintf("%.2fpt", $self->{paper_width_px} / PX_PER_IN * PT_PER_IN));
-    $doc_elt->setAttribute("height", sprintf("%.2fpt", $self->{paper_height_px} / PX_PER_IN * PT_PER_IN));
+    my $px_per_in = $self->{pixels_per_inch};
+
+    $doc_elt->setAttribute("width", sprintf("%.2fpt", $self->{paper_width_px} / $px_per_in * PT_PER_IN));
+    $doc_elt->setAttribute("height", sprintf("%.2fpt", $self->{paper_height_px} / $px_per_in * PT_PER_IN));
     $doc_elt->setNamespace($NS{"svg"}, "svg", 0);
 
     my $xpc = XML::LibXML::XPathContext->new($doc);
@@ -1770,6 +1781,34 @@ sub disable_layers {
 	    $self->{_dirty_} = 1;
 	    $layer->setAttribute("style", "display:none");
 	}
+    }
+}
+
+sub clean {
+    my ($self) = @_;
+    $self->init_xml();
+
+    my $doc = $self->{_svg_doc};
+    foreach my $node ($doc->findnodes('//svg:style[@mapmaker:autogenerated]')) {
+        $node->unbindNode();
+    }
+    foreach my $node ($doc->findnodes('//svg:defs[@id="geoMapmakerExtraDefs"]')) {
+        $node->unbindNode();
+    }
+    foreach my $node ($doc->findnodes('//svg:defs[@id="geoMapmakerDefs"]')) {
+        $node->unbindNode();
+    }
+    foreach my $node ($doc->findnodes('//svg:style[@id="geoMapmakerStyles"]')) {
+        $node->unbindNode();
+    }
+    foreach my $node ($doc->findnodes('//svg:clipPath[@mapmaker:autogenerated]')) {
+        $node->unbindNode();
+    }
+    foreach my $node ($doc->findnodes('//svg:path[@mapmaker:autogenerated]')) {
+        $node->unbindNode();
+    }
+    foreach my $node ($doc->findnodes('//svg:g[@mapmaker:autogenerated]')) {
+        $node->unbindNode();
     }
 }
 
