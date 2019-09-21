@@ -7,6 +7,7 @@ use lib "$ENV{HOME}/git/dse.d/geo-modules/Geo-MapMaker/lib";
 use Geo::MapMaker::Constants qw(:tags);
 
 use Sort::Naturally qw(nsort);
+use Text::Trim;
 
 sub new {
     my $class = shift;
@@ -69,6 +70,10 @@ sub css_classes {
         next unless $TAG_NAME_WHITELIST->{$k} || $TAG_NAME_VALUE_WHITELIST->{"${k}=${v}"};
         push(@css_classes, "osm-tag-${k}");
         push(@css_classes, "osm-tag-${k}-${v}");
+    }
+    my $object_class = $args{object_class};
+    if (defined $object_class && $object_class =~ m{\S}) {
+        push(@css_classes, split(' ', trim($object_class)));
     }
     return @css_classes;
 }
