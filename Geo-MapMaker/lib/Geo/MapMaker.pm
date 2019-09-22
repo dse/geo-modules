@@ -926,7 +926,9 @@ sub update_or_create_border_layer {
     return $border;
 }
 
-sub update_styles {
+sub update_styles { goto &update_css; }
+
+sub update_css {
     my ($self) = @_;
 
     $self->init_xml();
