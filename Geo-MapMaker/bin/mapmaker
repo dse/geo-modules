@@ -75,8 +75,8 @@ where COMMAND is one of:
     gtfs-repopulate-database
     force-gtfs-repopulate-database
     draw-osm-maps
-    draw-transit-routes
-    draw-transit-stops
+    draw-gtfs-routes
+    draw-gtfs-stops
     update-styles
     save-as FILENAME
     just-rewrite
@@ -249,26 +249,29 @@ sub cmd__draw_osm_maps {
     $mm->draw_osm_maps(@args);
 }
 
-sub cmd__draw_transit_routes {
+sub cmd__draw_transit_routes { goto &cmd__draw_gtfs_routes; }
+sub cmd__draw_transit_stops  { goto &cmd__draw_gtfs_stops;  }
+
+sub cmd__draw_gtfs_routes {
     my ($self, @routes) = @_;
     my $mm = $self->{mapmaker};
     die("map MAPNAME must be specified.\n") unless $mm;
     my @gtfs = $mm->gtfs();
     if (!scalar(@gtfs)) {
-	die("map refers to no transit data.\n");
+	die("map refers to no gtfs data.\n");
     }
-    $mm->draw_transit_routes(@routes);
+    $mm->draw_gtfs_routes(@routes);
 }
 
-sub cmd__draw_transit_stops {
+sub cmd__draw_gtfs_stops {
     my ($self) = @_;
     my $mm = $self->{mapmaker};
     die("map MAPNAME must be specified.\n") unless $mm;
     my @gtfs = $mm->gtfs();
     if (!scalar(@gtfs)) {
-	die("map refers to no transit data.\n");
+	die("map refers to no gtfs data.\n");
     }
-    $mm->draw_transit_stops();
+    $mm->draw_gtfs_stops();
 }
 
 sub cmd__update_styles {
