@@ -77,7 +77,7 @@ where COMMAND is one of:
     draw-osm-maps
     draw-gtfs-routes
     draw-gtfs-stops
-    update-styles
+    update-css
     save-as FILENAME
     just-rewrite
     enable-layers LAYER ...
@@ -87,8 +87,9 @@ END
 }
 
 sub cmd__draw_openstreetmap_maps    { goto &cmd__draw_osm_maps;    }
-sub cmd__openstreetmap_update       { goto *cmd__osm_update;       }
-sub cmd__force_openstreetmap_update { goto *cmd__force_osm_update; }
+sub cmd__openstreetmap_update       { goto &cmd__osm_update;       }
+sub cmd__force_openstreetmap_update { goto &cmd__force_osm_update; }
+sub cmd__update_styles              { goto &cmd__update_css;       }
 
 sub run {
     my ($self, @args) = @_;
@@ -274,11 +275,11 @@ sub cmd__draw_gtfs_stops {
     $mm->draw_gtfs_stops();
 }
 
-sub cmd__update_styles {
+sub cmd__update_css {
     my ($self) = @_;
     my $mm = $self->{mapmaker};
     die("map MAPNAME must be specified.\n") unless $mm;
-    $mm->update_styles();
+    $mm->update_css();
 }
 
 sub cmd__save_as {
