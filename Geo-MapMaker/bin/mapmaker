@@ -62,29 +62,33 @@ sub cmd__help {
     my ($self) = @_;
     print(<<"END");
 usage:
-	$0 [ OPTION ... ] list-maps
-	$0 [ OPTION ... ] FILENAME COMMAND [ \; COMMAND ... ]
+    $0 [ OPTION ... ] list-maps
+    $0 [ OPTION ... ] FILENAME COMMAND [ \; COMMAND ... ]
 options:
-	-h, --help               display this message
-	    --show-stack-traces  show stack traces
+    -h, --help               display this message
+        --show-stack-traces  show stack traces
 where COMMAND is one of:
-	openstreetmap-update
-	force-openstreetmap-update
-	gtfs-update
-	force-gtfs-update
-	gtfs-repopulate-database
-	force-gtfs-repopulate-database
-	draw-openstreetmap-maps
-	draw-transit-routes
-	draw-transit-stops
-	update-styles
-	save-as FILENAME
-        just-rewrite
-	enable-layers LAYER ...
-	disable-layers LAYER ...
-	list-layers
+    osm-update
+    force-osm-update
+    gtfs-update
+    force-gtfs-update
+    gtfs-repopulate-database
+    force-gtfs-repopulate-database
+    draw-osm-maps
+    draw-transit-routes
+    draw-transit-stops
+    update-styles
+    save-as FILENAME
+    just-rewrite
+    enable-layers LAYER ...
+    disable-layers LAYER ...
+    list-layers
 END
 }
+
+sub cmd__draw_openstreetmap_maps    { goto &cmd__draw_osm_maps;    }
+sub cmd__openstreetmap_update       { goto *cmd__osm_update;       }
+sub cmd__force_openstreetmap_update { goto *cmd__force_osm_update; }
 
 sub run {
     my ($self, @args) = @_;
@@ -151,9 +155,9 @@ sub cmd__map {
     }
     my $mapmaker = Geo::MapMaker->new(
         filename => $mapname, $mapinfo ? %$mapinfo : (),
-        verbose => $self->{verbose},
-        debug => $self->{debug},
-        no_edit => $self->{dry_run},
+        verbose  => $self->{verbose},
+        debug    => $self->{debug},
+        no_edit  => $self->{dry_run},
     );
     $self->{mapmaker} = $mapmaker;
     $self->$method(@args);
@@ -198,25 +202,17 @@ sub cmd__force_gtfs_update {
 }
 
 sub cmd__osm_update {
-    goto *cmd__openstreetmap_update;
-}
-
-sub cmd__openstreetmap_update {
     my ($self) = @_;
     my $mm = $self->{mapmaker};
     die("map MAPNAME must be specified.\n") unless $mm;
-    $mm->update_openstreetmap();
+    $mm->update_osm();
 }
 
 sub cmd__force_osm_update {
-    goto *cmd__force_openstreetmap_update;
-}
-
-sub cmd__force_openstreetmap_update {
     my ($self) = @_;
     my $mm = $self->{mapmaker};
     die("map MAPNAME must be specified.\n") unless $mm;
-    $mm->update_openstreetmap(1);
+    $mm->update_osm(1);
 }
 
 sub cmd__gtfs_repopulate_database {
@@ -245,12 +241,12 @@ sub cmd__force_gtfs_repopulate_database {
     }
 }
 
-sub cmd__draw_openstreetmap_maps {
+sub cmd__draw_osm_maps {
     my ($self, @args) = @_;
     my $mm = $self->{mapmaker};
     die("map MAPNAME must be specified.\n") unless $mm;
-    $mm->update_openstreetmap();
-    $mm->draw_openstreetmap_maps(@args);
+    $mm->update_osm();
+    $mm->draw_osm_maps(@args);
 }
 
 sub cmd__draw_transit_routes {
