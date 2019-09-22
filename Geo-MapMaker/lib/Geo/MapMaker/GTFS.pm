@@ -21,6 +21,7 @@ use fields qw(
 		 transit_orig_route_color_mapping
 		 transit_trip_exceptions
                  transit_exclude_shape_id
+                 transit_stop_r
 	    );
 
 # set to 0 to turn off path simplifying
@@ -425,10 +426,10 @@ sub draw_gtfs_stops {
 	my $class_2      = "transit-stop_2";
 	my $has_style_2  = $self->has_style_2(class => $class);
 	my $r   = $self->get_style_property(class => $class,
-					    property => "r") // 1.0;
+					    property => "r") // $self->{transit_stop_r} // 1.0;
 	my $r_2 = $self->get_style_property(class => $class,
 					    style_attr_name => "style_2",
-					    property => "r") // 0.5;
+					    property => "r") // $self->{transit_stop_r} // 0.5;
 
 	foreach my $map_area (@{$self->{_map_areas}}) {
 	    my $west_svg  = $self->west_outer_map_boundary_svg;
