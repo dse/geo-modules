@@ -127,8 +127,6 @@ use List::Util qw(max);
 use constant PI => 4 * CORE::atan2(1, 1);
 use constant D2R => PI / 180;
 use constant WGS84_ER_KM => 6378.1370;
-use constant PX_PER_IN => 96;
-use constant PX_PER_ER => PX_PER_IN / 25.4 * 1_000_000 * WGS84_ER_KM;
 use constant IN_PER_ER => 1 / 25.4 * 1_000_000 * WGS84_ER_KM;
 use constant PT_PER_IN => 72;
 
@@ -231,6 +229,8 @@ sub new {
 	my $mapmaker_yaml_filename = $self->mapmaker_yaml_filename($filename);
 	$self->load_mapmaker_yaml($mapmaker_yaml_filename);
     }
+
+    $self->show_settings();
 
     return $self;
 }
@@ -343,10 +343,12 @@ sub show_settings {
                             north_lat_deg
                             west_lon_deg
                             east_lon_deg
+                            center_lat_deg
+                            center_lon_deg
+                            scale
                             _actual_scale)) {
         $self->log_warn("%s = %f\n", $setting, $self->{$setting});
     }
-    exit 0;
 }
 
 sub lon_lat_deg_to_svg {
@@ -476,6 +478,9 @@ BEGIN {
     $NS{"inkscape"} = "http://www.inkscape.org/namespaces/inkscape";
     $NS{"sodipodi"} = "http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd";
     $NS{"mapmaker"} = "http://webonastick.com/namespaces/geo-mapmaker";
+    $NS{"cc"}       = "http://creativecommons.org/ns#";
+    $NS{"dc"}       = "http://purl.org/dc/elements/1.1/";
+    $NS{"rdf"}      = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
 }
 
 sub init_xml {
@@ -501,35 +506,17 @@ sub init_xml {
 <!-- Not created with Inkscape (http://www.inkscape.org/) -->
 <!-- (However, a very early version of this template was.) -->
 <svg
+   xmlns="http://www.w3.org/2000/svg"
    xmlns:dc="http://purl.org/dc/elements/1.1/"
    xmlns:cc="http://creativecommons.org/ns#"
    xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
    xmlns:svg="http://www.w3.org/2000/svg"
-   xmlns="http://www.w3.org/2000/svg"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:mapmaker="http://webonastick.com/namespaces/geo-mapmaker"
-   width="765"
-   height="990"
-   id="svg2"
    version="1.1"
    sodipodi:docname="Map"
    mapmaker:version="1">
-  <sodipodi:namedview
-     id="base"
-     pagecolor="#ffffff"
-     bordercolor="#666666"
-     borderopacity="1.0"
-     inkscape:pageopacity="0.0"
-     inkscape:pageshadow="2"
-     inkscape:zoom="1"
-     inkscape:cx="0" inkscape:cy="0"
-     inkscape:document-units="px"
-     inkscape:current-layer="layer1"
-     showgrid="false"
-     inkscape:not-window-width="600" inkscape:not-window-height="600"
-     inkscape:not-window-x="0" inkscape:not-window-y="0"
-     inkscape:window-maximized="1" />
   <metadata>
     <rdf:RDF>
       <cc:Work rdf:about="">
@@ -551,26 +538,23 @@ END
 
     my $px_per_in = $self->{pixels_per_inch};
 
-    $doc_elt->setAttribute("width", sprintf("%.2fpt", $self->{paper_width_px} / $px_per_in * PT_PER_IN));
+    $doc_elt->setAttribute("width",  sprintf("%.2fpt", $self->{paper_width_px} / $px_per_in * PT_PER_IN));
     $doc_elt->setAttribute("height", sprintf("%.2fpt", $self->{paper_height_px} / $px_per_in * PT_PER_IN));
     $doc_elt->setNamespace($NS{"svg"}, "svg", 0);
+    $doc_elt->setAttribute('viewBox', sprintf('%.2f %.2f %.2f %.2f',
+                                              0, 0,
+                                              $self->{paper_width_px},
+                                              $self->{paper_height_px}));
 
     my $xpc = XML::LibXML::XPathContext->new($doc);
     $xpc->registerNs("svg"      => $NS{"svg"});
     $xpc->registerNs("inkscape" => $NS{"inkscape"});
     $xpc->registerNs("sodipodi" => $NS{"sodipodi"});
     $xpc->registerNs("mapmaker" => $NS{"mapmaker"});
+    $xpc->registerNs("dc"       => $NS{"dc"});
+    $xpc->registerNs("cc"       => $NS{"cc"});
+    $xpc->registerNs("rdf"      => $NS{"rdf"});
     $self->{_xpc} = $xpc;
-
-    if ($doc_is_new) {
-	my ($view) = $doc->findnodes("//sodipodi:namedview[\@id='base']");
-	if ($view) {
-	    $view->setAttributeNS($NS{"inkscape"}, "inkscape:cx",
-				  sprintf("%.2f", $self->{paper_width_px} / 2));
-	    $view->setAttributeNS($NS{"inkscape"}, "inkscape:cy",
-				  sprintf("%.2f", $self->{paper_height_px} / 2));
-	}
-    }
 
     # keep dox with the old namespace working
     $doc_elt->setAttributeNS("http://www.w3.org/2000/xmlns/", "xmlns:mapmaker", $NS{"mapmaker"});
@@ -1383,7 +1367,7 @@ sub circle_node {
     my ($self, %args) = @_;
     my $x = $args{x};
     my $y = $args{y};
-    my $r = $args{r} // 1.0;
+    my $r = $args{r};
     my $class = $args{class};
     my $title = $args{title};
 
@@ -1397,7 +1381,7 @@ sub circle_node {
     $circle_node->setAttribute("cx", sprintf("%.2f", $x));
     $circle_node->setAttribute("cy", sprintf("%.2f", $y));
     $circle_node->setAttribute("class", $class);
-    $circle_node->setAttribute("r", sprintf("%.2f", $r));
+    $circle_node->setAttribute("r", sprintf("%.2f", $r)) if defined $r;
     $circle_node->setAttribute("title", $title) if defined $title && $title =~ /\S/;
     $circle_node->setAttribute("id", $id) if defined $id;
 
