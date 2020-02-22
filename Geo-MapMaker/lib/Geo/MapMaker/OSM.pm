@@ -498,6 +498,10 @@ sub draw {
             my $layer_geometry = $layer->{geometry};
             my $layer_object_class = $layer->{object_class};
 
+            my $position       = $layer->{position};
+            my $position_dx    = eval { $position->{left} };
+            my $position_dy    = eval { $position->{top} };
+
             my @objects = $layer->{objects}->values;
             $self->log_warn("    Adding %d objects to layer $layer_name ...\n", scalar @objects);
             foreach my $object (@objects) {
@@ -520,6 +524,8 @@ sub draw {
                     my $path = $object->svg_object(map_area_index => $map_area_index);
                     next unless $path;
                     $svg_element = $self->svg_path(
+                        position_dx => $position_dx,
+                        position_dy => $position_dy,
                         path => $path,
                         class => $css_class_string,
                         attr => $attr,
@@ -530,6 +536,8 @@ sub draw {
                     my $path = $object->svg_object(map_area_index => $map_area_index);
                     next unless $path;
                     $svg_element = $self->svg_path(
+                        position_dx => $position_dx,
+                        position_dy => $position_dy,
                         path => $path,
                         class => $css_class_string,
                         attr => $attr,
@@ -540,6 +548,8 @@ sub draw {
                     my $polyline = $object->svg_object(map_area_index => $map_area_index);
                     next unless $polyline;
                     $svg_element = $self->svg_path(
+                        position_dx => $position_dx,
+                        position_dy => $position_dy,
                         polyline => $polyline,
                         class => $css_class_string,
                         attr => $attr,

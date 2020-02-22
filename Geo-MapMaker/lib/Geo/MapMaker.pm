@@ -956,8 +956,10 @@ sub new_id {
 sub svg_path {
     my ($self, %args) = @_;
     my $is_closed = $args{is_closed};
-
+    my $position_dx = $args{position_dx};
+    my $position_dy = $args{position_dy};
     my $id = $args{id};
+
     if ($self->{_xml_debug_info}) {
         $id //= $self->new_id();
     }
@@ -965,12 +967,23 @@ sub svg_path {
     my $d;
     if ($args{path}) {
         my $path = Geo::MapMaker::SVG::Path->object($args{path});
-        $d = $path->as_string;
+        $d = $path->as_string(
+            position_dx => $position_dx,
+            position_dy => $position_dy,
+        );
     } elsif ($args{polyline}) {
         my $polyline = Geo::MapMaker::SVG::Path->object($args{polyline});
-        $d = $polyline->as_string;
+        $d = $polyline->as_string(
+            position_dx => $position_dx,
+            position_dy => $position_dy,
+        );
     } elsif ($args{points}) {
-        $d = $self->legacy_points_to_path($is_closed, @{$args{points}});
+        $d = $self->points_to_path(
+            position_dx => $position_dx,
+            position_dy => $position_dy,
+            closed => $is_closed,
+            points => $args{points}
+        );
     }
     my $path = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
     $path->setAttribute("d", $d);
@@ -999,14 +1012,17 @@ sub legacy_polygon {
 sub legacy_polyline {
     my ($self, %args) = @_;
     my $is_closed = $args{is_closed} ? 1 : 0;
-
     my $id = $args{id};
+
     if ($self->{_xml_debug_info}) {
         $id //= $self->new_id();
     }
 
     my $path = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
-    $path->setAttribute("d", $self->legacy_points_to_path($is_closed, @{$args{points}}));
+    $path->setAttribute("d", $self->points_to_path(
+        closed => $is_closed,
+        points => $args{points}
+    ));
     $path->setAttribute("class", $args{class}) if defined $args{class};
     $path->setAttribute("id", $id) if defined $id;
     $path->setAttributeNS($NS{"mapmaker"}, "mapmaker:shape-id", $args{shape_id}) if defined $args{shape_id};
@@ -1019,8 +1035,32 @@ sub legacy_polyline {
             $path->setAttribute($key, $args{attr}->{$key});
         }
     }
-
     return $path;
+}
+
+sub points_to_path {
+    my ($self, %args) = @_;
+    my $closed = $args{is_closed};
+    my @points = @{$args{points}};
+    my $position_dx = $args{position_dx};
+    my $position_dy = $args{position_dy};
+
+    my @coords = map { [ int($_->[POINT_X] * 100 + 0.5) / 100,
+			 int($_->[POINT_Y] * 100 + 0.5) / 100 ] } @points;
+    if (defined $position_dx || defined $position_dy) {
+        foreach my $coord (@coords) {
+            $coord->[0] += $position_dx if defined $position_dx;
+            $coord->[1] += $position_dy if defined $position_dy;
+        }
+    }
+    my $result = sprintf("m %.2f,%.2f", @{$coords[0]});
+    for (my $i = 1; $i < scalar(@coords); $i += 1) {
+	$result .= sprintf(" %.2f,%.2f",
+			   $coords[$i][POINT_X] - $coords[$i - 1][POINT_X],
+			   $coords[$i][POINT_Y] - $coords[$i - 1][POINT_Y]);
+    }
+    $result .= " z" if $closed;
+    return $result;
 }
 
 sub legacy_points_to_path {

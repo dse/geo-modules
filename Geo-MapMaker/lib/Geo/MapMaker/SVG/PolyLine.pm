@@ -60,23 +60,29 @@ sub points {
 
 sub as_string {
     my ($self, %args) = @_;
+    my $position_dx = $args{position_dx};
+    my $position_dy = $args{position_dy};
     my $is_first = $args{is_first} // 1;
-    my $is_only  = $args{is_only}  // 1;
+    my $is_only  = $args{is_only} // 1;
     my $result;
     my $count = scalar @{$self->{points}};
     for (my $i = 0; $i < $count; $i += 1) {
         my $point = $self->{points}->[$i];
+        my $x = $point->X;
+        my $y = $point->Y;
+        $x += $position_dx if defined $position_dx;
+        $y += $position_dy if defined $position_dy;
         my $prev_point = ($i > 0) ? $self->{points}->[$i - 1] : undef;
         my ($dx, $dy) = ($i > 0) ? $point->DX_DY($prev_point) : (undef, undef);
         if ($is_first || $is_only) {
             if ($i == 0) {
-                $result = sprintf('m %.2f,%.2f', $point->X, $point->Y);
+                $result = sprintf('m %.2f,%.2f', $x, $y);
             } else {
                 $result .= sprintf(' %.2f,%.2f', $dx, $dy);
             }
         } else {
             if ($i == 0) {
-                $result = sprintf('M %.2f,%.2f', $point->X, $point->Y);
+                $result = sprintf('M %.2f,%.2f', $x, $y);
             } elsif ($i == 1) {
                 $result .= sprintf(' l %.2f,%.2f', $dx, $dy);
             } else {
@@ -88,9 +94,12 @@ sub as_string {
         if ($is_only) {
             $result .= ' z';
         } else {
-            $result .= sprintf(' L %.2f,%.2f',
-                               $self->{points}->[0]->X,
-                               $self->{points}->[0]->Y);
+            my $point0 = $self->{points}->[0];
+            my $x = $point0->X;
+            my $y = $point0->Y;
+            $x += $position_dx if defined $position_dx;
+            $y += $position_dy if defined $position_dy;
+            $result .= sprintf(' L %.2f,%.2f', $x, $y);
         }
     }
     return $result;

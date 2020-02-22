@@ -58,14 +58,20 @@ sub polylines {
 
 sub as_string {
     my ($self, %args) = @_;
+    my $position_dx = $args{position_dx};
+    my $position_dy = $args{position_dy};
     my $count = scalar @{$self->{polylines}};
     my $is_only = ($count == 1);
     my @result;
     for (my $i = 0; $i < $count; $i += 1) {
         my $polyline = $self->{polylines}->[$i];
         my $is_first = ($i == 0);
-        push(@result, $polyline->as_string(is_first => $is_first,
-                                           is_only => $is_only));
+        push(@result, $polyline->as_string(
+            position_dx => $position_dx,
+            position_dy => $position_dy,
+            is_first => $is_first,
+            is_only => $is_only
+        ));
     }
     my $result = join(' ', @result);
     return $result;
