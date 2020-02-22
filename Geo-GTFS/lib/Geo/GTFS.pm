@@ -48,6 +48,8 @@ use fields qw(url
               _dir
               _zip_filename
               _sqlite_filename
+              agency_name
+              feed_url
               aliases
               aliases_filename);
 
@@ -128,6 +130,7 @@ use Text::CSV;
 use URI;
 use XML::LibXML;
 use YAML::Syck;
+use Time::ParseDate qw(parsedate);
 
 # accepts either an alias or a URL.
 sub get_url {
@@ -1096,6 +1099,73 @@ sub get_stops_by_trip_id {
 END
     return $self->selectall($sql, {}, $trip_id);
 }
+
+sub get_agency_id {
+    my ($self) = @_;
+    my $name = $self->{agency_name};
+    my $sql = <<"END";
+        select id
+        from geo_gtfs_agency
+        where name = ?
+END
+    my $sth = $self->dbh->prepare($sql);
+    $sth->execute($name);
+    return $sth->fetchrow_hashref();
+}
+
+sub get_feed_id {
+    my ($self) = @_;
+    my $name = $self->{agency_name};
+    my $url  = $self->{feed_url};
+    my $sql = <<"END";
+        select geo_gtfs_feed.id as id
+        from geo_gtfs_feed
+        join geo_gtfs_agency on geo_gtfs_feed.geo_gtfs_agency_id = geo_gtfs_agency.id
+        where geo_gtfs_feed.url = :1
+            and geo_gtfs_agency.name = :2
+            and geo_gtfs_feed.is_active != 0
+END
+    my $sth = $self->dbh->prepare($sql);
+    $sth->execute($url, $name);
+    my ($id) = $sth->fetchrow_array;
+    return $id;
+}
+
+sub get_feed_instance_id {
+    my ($self, $date) = @_;
+    my $name = $self->{agency_name};
+    my $url  = $self->{feed_url};
+    my $time_t = parsedate($date);
+    if (!defined $time_t) {
+        die("invalid date: $date");
+    }
+    my $yyyymmdd = strftime('%Y%m%d', localtime($time_t));
+    my $sql = <<"END";
+            select distinct geo_gtfs_feed_instance.id as id, last_modified
+            from geo_gtfs_feed_instance
+            join geo_gtfs_feed on geo_gtfs_feed_instance.geo_gtfs_feed_id = geo_gtfs_feed.id
+            join geo_gtfs_agency on geo_gtfs_feed.geo_gtfs_agency_id = geo_gtfs_agency.id
+            join gtfs_calendar on gtfs_calendar.geo_gtfs_feed_instance_id = geo_gtfs_feed_instance.id
+            where geo_gtfs_feed.url = :1
+                and geo_gtfs_agency.name = :2
+                and start_date <= :3 and end_date >= :3
+                and (({weekDay} = 1) or
+                     (sunday = 0 and monday = 0 and tuesday = 0 and wednesday = 0 and
+                      thursday = 0 and friday = 0 and saturday = 0))
+                order by last_modified desc
+            limit 1
+END
+    my $wday = (localtime($time_t))[6];
+    my @weekday = qw(sunday monday tuesday wednesday thursday friday saturday);
+    my $weekday = $weekday[$wday];
+    $sql =~ s{\{weekDay\}}{$weekday}g;
+    my $sth = $self->dbh->prepare($sql);
+    $sth->execute($url, $name, $date);
+    my $row = $sth->fetchrow_hashref();
+    return $row->{id};
+}
+
+
 
 =head1 SEE ALSO
 
