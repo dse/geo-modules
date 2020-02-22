@@ -34,6 +34,7 @@ Getopt::Long::GetOptions("show-stack-traces" => sub { $SIG{__DIE__} = \&Carp::co
                                      $shell->{debug}->{$_} = 1;  }
                              }
 			 },
+                         'yaml' => sub { $shell->{format} = 'yaml'; },
 			 "h|help" => sub { $shell->help(); exit(0); })
     or die("Type '$0 --help' for help.\n");
 
@@ -82,7 +83,7 @@ commands:
 	kml URL|ALIAS           -- write a KML file to stdout.
 	stops-kml URL|ALIAS     --   same but only include stops
 	routes-kml URL|ALIAS    --   same but only include routes
-				
+
 	kml-file-set URL|ALIAS FILENAME -- write set of KML files.
         	FILENAME is only used as a base filename.
 END
@@ -100,6 +101,12 @@ sub run {
         return undef;
     }
     $self->$method(@args);
+}
+
+sub format {
+    my $self = shift;
+    return $self->{format} unless scalar @_;
+    return $self->{format} = shift;
 }
 
 sub method {
@@ -204,12 +211,26 @@ sub cmd__list_agencies {
     print Dump(@agencies);
 }
 
+sub cmd__list_service_ids {
+    my ($self, $url_or_alias, $route, $date) = @_;
+    my $gtfs = $self->gtfs_object($url_or_alias);
+}
+
 sub cmd__list_routes {
     my ($self, $url_or_alias) = @_;
     my $gtfs = $self->gtfs_object($url_or_alias);
 
     my @routes = $gtfs->select_all_routes();
-    print Dump(@routes);
+    if (defined $self->{format}) {
+        print Dump(@routes);
+    } else {
+        foreach my $route (@routes) {
+            printf("%s - %s (%s)\n",
+                   $route->{route_short_name},
+                   $route->{route_long_name},
+                   $route->{route_desc});
+        }
+    }
 }
 
 1;
