@@ -318,3 +318,28 @@ sub cmd__list_layers {
     $mm->list_layers();
 }
 
+sub cmd__duplicate_layer {
+    my ($self, $layerName, $newLayerName, $newLayerId, $relation) = @_;
+    my $mm = $self->{mapmaker};
+    die("map MAPNAME must be specified.\n") unless $mm;
+    die("LAYERNAME must be specified.\n") unless $layerName;
+    die("NEWLAYERNAME must be specified.\n") unless $newLayerName;
+    die("NEWLAYERID must be specified.\n") unless $newLayerId;
+    die("RELATION must be specified.\n") unless $relation;
+    $mm->duplicate_layer(
+        name     => $layerName,
+        new_name => $newLayerName,
+        new_id   => $newLayerId,
+        relation => $relation
+    );
+}
+
+sub cmd__set_filename {
+    my ($self, $filename) = @_;
+    my $mm = $self->{mapmaker};
+    die("map MAPNAME must be specified.\n") unless $mm;
+    die("FILENAME must be specified.\n") unless $filename;
+    $mm->{filename} = $filename;
+    $mm->{no_edit} = 0;
+    $mm->{_dirty_} = 1;
+}
