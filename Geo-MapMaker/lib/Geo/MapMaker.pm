@@ -1,6 +1,7 @@
 package Geo::MapMaker;
 use warnings;
 use strict;
+use feature 'say';
 
 use lib "$ENV{HOME}/git/dse.d/geo-modules/Geo-MapMaker/lib";
 use Geo::MapMaker::Constants qw(:all);
@@ -57,35 +58,35 @@ affecting manually-edited layers.
 our @_FIELDS;
 BEGIN {
     @_FIELDS = qw(filename
-		  _read_filename
+                  _read_filename
 
-		  classes
+                  classes
                   css
 
-		  layers
-		  route_colors
-		  route_overrides
-		  inset_maps
-		  _map_areas
-		  _parser
-		  _svg_doc
-		  _svg_doc_elt
-		  _xpc
+                  layers
+                  route_colors
+                  route_overrides
+                  inset_maps
+                  _map_areas
+                  _parser
+                  _svg_doc
+                  _svg_doc_elt
+                  _xpc
 
-		  _cache
-		  include
-		  _dirty_
-		  debug
-		  verbose
+                  _cache
+                  include
+                  _dirty_
+                  debug
+                  verbose
 
-		  extra_defs
+                  extra_defs
 
-		  _scale_px_per_er
+                  _scale_px_per_er
 
-		  north_lat_deg
-		  south_lat_deg
-		  east_lon_deg
-		  west_lon_deg
+                  north_lat_deg
+                  south_lat_deg
+                  east_lon_deg
+                  west_lon_deg
 
                   center_lat_deg
                   center_lon_deg
@@ -101,13 +102,13 @@ BEGIN {
                   _px_scaled
                   _px_scaled_x
 
-		  paper_width_px
-		  paper_height_px
-		  paper_margin_px
-		  paper_margin_x_px
-		  paper_margin_y_px
+                  paper_width_px
+                  paper_height_px
+                  paper_margin_px
+                  paper_margin_x_px
+                  paper_margin_y_px
 
-		  orientation
+                  orientation
 
                   _id_counter
                   _xml_debug_info
@@ -218,16 +219,16 @@ sub new {
     }
 
     while (my ($k, $v) = each(%options)) {
-	if ($self->can($k)) {
-	    $self->$k($v);
-	} else {
-	    $self->{$k} = $v;
-	}
+        if ($self->can($k)) {
+            $self->$k($v);
+        } else {
+            $self->{$k} = $v;
+        }
     }
 
     if (defined(my $filename = $self->{filename})) {
-	my $mapmaker_yaml_filename = $self->mapmaker_yaml_filename($filename);
-	$self->load_mapmaker_yaml($mapmaker_yaml_filename);
+        my $mapmaker_yaml_filename = $self->mapmaker_yaml_filename($filename);
+        $self->load_mapmaker_yaml($mapmaker_yaml_filename);
     }
 
     $self->show_settings();
@@ -399,21 +400,21 @@ sub load_mapmaker_yaml {
     my $data = eval { -e $filename && LoadFile($filename); };
     if ($@) { warn($@); }
     if ($data) {
-	while (my ($k, $v) = each(%$data)) {
-	    if ($k eq "INCLUDE" || $k eq "include") {
-		if (ref($v) eq "ARRAY") {
-		    foreach my $f (@$v) {
-			$self->include_mapmaker_yaml($f, $filename);
-		    }
-		} else {
-		    $self->include_mapmaker_yaml($v, $filename);
-		}
-	    } elsif ($k eq "gtfs") {
-		$self->gtfs($v);
-	    } else {
-		$self->{$k} = $v;
-	    }
-	}
+        while (my ($k, $v) = each(%$data)) {
+            if ($k eq "INCLUDE" || $k eq "include") {
+                if (ref($v) eq "ARRAY") {
+                    foreach my $f (@$v) {
+                        $self->include_mapmaker_yaml($f, $filename);
+                    }
+                } else {
+                    $self->include_mapmaker_yaml($v, $filename);
+                }
+            } elsif ($k eq "gtfs") {
+                $self->gtfs($v);
+            } else {
+                $self->{$k} = $v;
+            }
+        }
     }
 }
 
@@ -459,7 +460,7 @@ sub include_mapmaker_yaml_file {
 sub DESTROY {
     my ($self) = @_;
     if ($self->{_dirty_}) {
-	$self->save();
+        $self->save();
     }
 }
 
@@ -485,23 +486,26 @@ BEGIN {
 
 sub init_xml {
     my ($self) = @_;
+
+    # avoid re-reading a file
     if (defined($self->{_read_filename}) and
-	  defined($self->{filename}) and
-	    ($self->{_read_filename} eq $self->{filename})) {
-	return;
+          defined($self->{filename}) and
+            ($self->{_read_filename} eq $self->{filename})) {
+        return;
     }
+
     my $parser = XML::LibXML->new();
     $parser->keep_blanks(0);
     my $doc = eval {
-	$self->diag("Parsing $self->{filename} ... ");
-	my $d = $parser->parse_file($self->{filename});
-	$self->diag("Done.\n");
-	return $d;
+        $self->diag("Parsing $self->{filename} ... ");
+        my $d = $parser->parse_file($self->{filename});
+        $self->diag("Done.\n");
+        return $d;
     };
     my $doc_is_new = 0;
     if (!$doc) {
-	$doc_is_new = 1;
-	$doc = $parser->parse_string(<<'END');
+        $doc_is_new = 1;
+        $doc = $parser->parse_string(<<'END');
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!-- Not created with Inkscape (http://www.inkscape.org/) -->
 <!-- (However, a very early version of this template was.) -->
@@ -513,7 +517,7 @@ sub init_xml {
    xmlns:svg="http://www.w3.org/2000/svg"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
-   xmlns:mapmaker="http://webonastick.com/namespaces/geo-mapmaker"
+   xmlns:mapmaker="http://webonastick.com/namespaces/geo-mapmaker"
    version="1.1"
    sodipodi:docname="Map"
    mapmaker:version="1">
@@ -560,29 +564,30 @@ END
     $doc_elt->setAttributeNS("http://www.w3.org/2000/xmlns/", "xmlns:mapmaker", $NS{"mapmaker"});
 
     $self->{_map_areas} = [ { is_main => 1, name => "Main Map" },
-			    eval { @{$self->{inset_maps}} } ];
+                            eval { @{$self->{inset_maps}} } ];
 
     $self->add_indexes_to_array($self->{_map_areas});
 
     foreach my $map_area (@{$self->{_map_areas}}) {
-	my $id = $map_area->{id};
-	my $index = $map_area->{index};
-	if ($index == 0) {
-	    $map_area->{clip_path_id} = "main_area_clip_path";
-	} elsif (defined $id) {
-	    $map_area->{clip_path_id} = "inset_${id}_clip_path";
-	} else {
-	    $map_area->{clip_path_id} = "inset${index}_clip_path";
-	}
-	if ($index == 0) {
-	    $map_area->{id_prefix} = "";
-	} elsif (defined $id) {
-	    $map_area->{id_prefix} = $id . "_";
-	} else {
-	    $map_area->{id_prefix} = "ma" . $index . "_";
-	}
+        my $id = $map_area->{id};
+        my $index = $map_area->{index};
+        if ($index == 0) {
+            $map_area->{clip_path_id} = "main_area_clip_path";
+        } elsif (defined $id) {
+            $map_area->{clip_path_id} = "inset_${id}_clip_path";
+        } else {
+            $map_area->{clip_path_id} = "inset${index}_clip_path";
+        }
+        if ($index == 0) {
+            $map_area->{id_prefix} = "";
+        } elsif (defined $id) {
+            $map_area->{id_prefix} = $id . "_";
+        } else {
+            $map_area->{id_prefix} = "ma" . $index . "_";
+        }
     }
 
+    # avoid re-reading
     $self->{_read_filename} = $self->{filename};
 
     $self->upgrade_mapmaker_version();
@@ -603,20 +608,20 @@ sub upgrade_mapmaker_version {
     my $old_version = $version;
     $self->log_warn("Document is at mapmaker:version $version.  Checking for upgrades...\n");
     while (TRUE) {
-	my $next_version = $version + 1;
-	my $sub_name = "upgrade_mapmaker_version_from_${version}_to_${next_version}";
-	last if (!(exists &$sub_name));
-	$self->log_warn("  Upgrading from version ${version} to version ${next_version}...\n");
-	$self->$sub_name();
-	$version = $next_version;
-	$doc_elt->setAttributeNS($NS{"mapmaker"}, "version", $version);
-	$self->{_dirty_} = 1;
-	$self->log_warn("  Done.\n");
+        my $next_version = $version + 1;
+        my $sub_name = "upgrade_mapmaker_version_from_${version}_to_${next_version}";
+        last if (!(exists &$sub_name));
+        $self->log_warn("  Upgrading from version ${version} to version ${next_version}...\n");
+        $self->$sub_name();
+        $version = $next_version;
+        $doc_elt->setAttributeNS($NS{"mapmaker"}, "version", $version);
+        $self->{_dirty_} = 1;
+        $self->log_warn("  Done.\n");
     }
     if ($old_version eq $version) {
-	$self->log_warn("No upgrades necessary.\n");
+        $self->log_warn("No upgrades necessary.\n");
     } else {
-	$self->log_warn("All upgrades complete.\n");
+        $self->log_warn("All upgrades complete.\n");
     }
 }
 
@@ -629,8 +634,8 @@ sub add_indexes_to_array {
     my ($self, $array_ref) = @_;
     my $index = 0;
     foreach my $o (@{$array_ref}) {
-	$o->{index} = $index;
-	$index += 1;
+        $o->{index} = $index;
+        $index += 1;
     }
 }
 
@@ -641,7 +646,7 @@ sub clip_path_d {
     my $top    = $self->north_outer_map_boundary_svg();
     my $bottom = $self->south_outer_map_boundary_svg();
     my $d = sprintf("M %.2f %.2f H %.2f V %.2f H %.2f Z",
-		    $left, $top, $right, $bottom, $left);
+                    $left, $top, $right, $bottom, $left);
     return $d;
 }
 
@@ -651,10 +656,10 @@ sub find_or_create_defs_node {
     my $doc_elt = $doc->documentElement();
     my ($defs) = $doc->findnodes("/*/svg:defs[\@id='geoMapmakerDefs']");
     if (!$defs) {
-	$self->{_dirty_} = 1;
-	$defs = $doc->createElementNS($NS{"svg"}, "defs");
-	$defs->setAttribute("id", "geoMapmakerDefs");
-	$doc_elt->insertBefore($defs, $doc_elt->firstChild());
+        $self->{_dirty_} = 1;
+        $defs = $doc->createElementNS($NS{"svg"}, "defs");
+        $defs->setAttribute("id", "geoMapmakerDefs");
+        $doc_elt->insertBefore($defs, $doc_elt->firstChild());
     }
     return $defs;
 }
@@ -665,21 +670,21 @@ sub create_or_delete_extra_defs_node {
     my $doc_elt = $doc->documentElement();
 
     if (defined $self->{extra_defs}) {
-	my ($extra_defs) = $doc->findnodes("/*/svg:defs[\@id='geoMapmakerExtraDefs']");
-	if (!$extra_defs) {
-	    $self->{_dirty_} = 1;
-	    $extra_defs = $doc->createElementNS($NS{"svg"}, "defs");
-	    $extra_defs->setAttribute("id", "geoMapmakerExtraDefs");
-	    $extra_defs->appendWellBalancedChunk($self->{extra_defs});
-	    $doc_elt->insertAfter($extra_defs, $self->find_or_create_defs_node());
-	}
-	return $extra_defs;
+        my ($extra_defs) = $doc->findnodes("/*/svg:defs[\@id='geoMapmakerExtraDefs']");
+        if (!$extra_defs) {
+            $self->{_dirty_} = 1;
+            $extra_defs = $doc->createElementNS($NS{"svg"}, "defs");
+            $extra_defs->setAttribute("id", "geoMapmakerExtraDefs");
+            $extra_defs->appendWellBalancedChunk($self->{extra_defs});
+            $doc_elt->insertAfter($extra_defs, $self->find_or_create_defs_node());
+        }
+        return $extra_defs;
     } else {
-	my ($extra_defs) = $doc->findnodes("/*/svg:defs[\@id='geoMapmakerExtraDefs']");
-	if ($extra_defs) {
-	    $extra_defs->unbindNode();
-	}
-	return;
+        my ($extra_defs) = $doc->findnodes("/*/svg:defs[\@id='geoMapmakerExtraDefs']");
+        if ($extra_defs) {
+            $extra_defs->unbindNode();
+        }
+        return;
     }
 }
 
@@ -689,37 +694,37 @@ sub update_or_create_style_node {
     my $defs = $self->find_or_create_defs_node();
     my ($style) = $defs->findnodes("svg:style[\@mapmaker:autogenerated]");
     if (!$style) {
-	$self->{_dirty_} = 1;
-	$style = $self->create_element("svg:style",
-				       autogenerated => 1,
-				       children_autogenerated => 1);
-	$style->setAttribute("type", "text/css");
-	$defs->appendChild($style);
+        $self->{_dirty_} = 1;
+        $style = $self->create_element("svg:style",
+                                       autogenerated => 1,
+                                       children_autogenerated => 1);
+        $style->setAttribute("type", "text/css");
+        $defs->appendChild($style);
     }
     $style->setAttribute("id", "geoMapmakerStyles");
 
     my $contents = "\n";
 
     $contents .= <<'END';
-	.WHITE { fill: #fff; }
-	.MAP_BORDER { fill: none !important; stroke-linejoin: square !important; }
+        .WHITE { fill: #fff; }
+        .MAP_BORDER { fill: none !important; stroke-linejoin: square !important; }
         .CLOSED { stroke-linecap: round; stroke-linejoin: round; }
-	.OPEN   { fill: none !important; stroke-linecap: round; stroke-linejoin: round; }
+        .OPEN   { fill: none !important; stroke-linecap: round; stroke-linejoin: round; }
         .MPR    { fill-rule: evenodd !important; stroke-linecap: round; stroke-linejoin: round; }
         .NMPR   { fill: none !important; stroke-linecap: round; stroke-linejoin: round; }
-	.TEXT_NODE_BASE {
-		text-align: center;
-		text-anchor: middle;
-	}
+        .TEXT_NODE_BASE {
+                text-align: center;
+                text-anchor: middle;
+        }
 END
 
     foreach my $class (sort keys %{$self->{classes}}) {
-	my $css        = $self->compose_style_string(class => $class);
-	my $css_2      = $self->compose_style_string(class => $class, style_attr_name => "style_2");
-	my $css_BRIDGE = $self->compose_style_string(class => $class, style_attr_name => "style_BRIDGE");
-	$contents .= "\t.${class}   { $css }\n";
-	$contents .= "\t.${class}_2 { $css_2 }\n"      if $self->has_style_2(class => $class);
-	$contents .= "\t.${class}_2 { $css_BRIDGE }\n" if $self->has_style_BRIDGE(class => $class);
+        my $css        = $self->compose_style_string(class => $class);
+        my $css_2      = $self->compose_style_string(class => $class, style_attr_name => "style_2");
+        my $css_BRIDGE = $self->compose_style_string(class => $class, style_attr_name => "style_BRIDGE");
+        $contents .= "\t.${class}   { $css }\n";
+        $contents .= "\t.${class}_2 { $css_2 }\n"      if $self->has_style_2(class => $class);
+        $contents .= "\t.${class}_2 { $css_BRIDGE }\n" if $self->has_style_BRIDGE(class => $class);
     }
 
     if (defined $self->{css}) {
@@ -747,26 +752,26 @@ sub update_or_create_clip_path_node {
     $self->{_dirty_} = 1;
     ($cpnode, @others) = $defs->findnodes("svg:clipPath[\@id='$clip_path_id']");
     if (!$cpnode) {
-	$cpnode = $doc->createElementNS($NS{"svg"}, "clipPath");
-	$cpnode->setAttribute("id", $clip_path_id);
-	$defs->appendChild($cpnode);
+        $cpnode = $doc->createElementNS($NS{"svg"}, "clipPath");
+        $cpnode->setAttribute("id", $clip_path_id);
+        $defs->appendChild($cpnode);
     }
     $cpnode->setAttributeNS($NS{"mapmaker"}, "autogenerated", "true");
     foreach my $other (@others) {
-	$other->unbindNode();
+        $other->unbindNode();
     }
 
     ($path, @others) = $cpnode->findnodes("svg:path");
     if (!$path) {
-	$path = $doc->createElementNS($NS{"svg"}, "path");
-	$cpnode->appendChild($path);
+        $path = $doc->createElementNS($NS{"svg"}, "path");
+        $cpnode->appendChild($path);
     }
     $path->setAttribute("id" => $clip_path_path_id);
     $path->setAttributeNS($NS{"mapmaker"}, "autogenerated" => "true");
     $path->setAttribute("d" => $self->clip_path_d());
     $path->setAttributeNS($NS{"inkscape"}, "connector-curvature" => 0);
     foreach my $other (@others) {
-	$other->unbindNode();
+        $other->unbindNode();
     }
 
     return $cpnode;
@@ -776,11 +781,11 @@ sub find_layer_insertion_point {
     my ($self) = @_;
     my $doc = $self->{_svg_doc};
     my ($insertion_point) = $doc->findnodes(<<'END');
-		/svg:svg/svg:g
-			[@inkscape:groupmode="layer"]
-			[not(@mapmaker:autogenerated) and
-			 not(@mapmaker:inset-map) and
-			 not(@mapmaker:main-map)]
+                /svg:svg/svg:g
+                        [@inkscape:groupmode="layer"]
+                        [not(@mapmaker:autogenerated) and
+                         not(@mapmaker:inset-map) and
+                         not(@mapmaker:main-map)]
 END
     return $insertion_point;
 }
@@ -798,45 +803,45 @@ sub update_or_create_map_area_layer {
     my $more_options = {};
 
     if ($under) {
-	$more_options->{but_before} = $layer_name;
-	$layer_name .= " (under)";
+        $more_options->{but_before} = $layer_name;
+        $layer_name .= " (under)";
     } else {
-	$more_options->{but_after} = $layer_name . " (under)";
+        $more_options->{but_after} = $layer_name . " (under)";
     }
 
     $self->{_dirty_} = 1;
 
     my $class = $options->{class};
     if (defined $class) {
-	$class .= " mapAreaLayer";
+        $class .= " mapAreaLayer";
     } else {
-	$class = "mapAreaLayer";
+        $class = "mapAreaLayer";
     }
     if ($map_area->{is_main}) {
-	$class .= " mainMapAreaLayer";
+        $class .= " mainMapAreaLayer";
     } else {
-	$class .= " insetMapAreaLayer";
+        $class .= " insetMapAreaLayer";
     }
 
     my $id;
     if ($map_area->{is_main}) {
-	$id = $options->{id} // "mapAreaLayer_main";
+        $id = $options->{id} // "mapAreaLayer_main";
     } else {
-	$id = $options->{id} // "mapAreaLayer_" . $map_area->{id};
+        $id = $options->{id} // "mapAreaLayer_" . $map_area->{id};
     }
 
     my $map_area_layer = $self->update_or_create_layer(%$options,
-						       %$more_options,
-						       class           => $class,
-						       id              => $id,
-						       name            => $layer_name,
-						       parent          => $doc_elt,
-						       insertion_point => $insertion_point,
-						       autogenerated   => 1);
+                                                       %$more_options,
+                                                       class           => $class,
+                                                       id              => $id,
+                                                       name            => $layer_name,
+                                                       parent          => $doc_elt,
+                                                       insertion_point => $insertion_point,
+                                                       autogenerated   => 1);
     if ($map_area->{is_main}) {
-	$map_area_layer->setAttributeNS($NS{"mapmaker"}, "main-map", "true");
+        $map_area_layer->setAttributeNS($NS{"mapmaker"}, "main-map", "true");
     } else {
-	$map_area_layer->setAttributeNS($NS{"mapmaker"}, "inset-map", "true");
+        $map_area_layer->setAttributeNS($NS{"mapmaker"}, "inset-map", "true");
     }
     return $map_area_layer;
 }
@@ -845,21 +850,21 @@ sub update_or_create_background_layer {
     my ($self, $map_area, $map_layer) = @_;
     $self->{_dirty_} = 1;
     my $background = $self->update_or_create_layer(name => "Background Color",
-						   class => "backgroundColorLayer",
-						   id => $map_area->{id_prefix} . "backgroundColorLayer",
-						   z_index => 1,
-						   parent => $map_layer,
-						   insensitive => 1,
-						   autogenerated => 1,
-						   children_autogenerated => 1);
+                                                   class => "backgroundColorLayer",
+                                                   id => $map_area->{id_prefix} . "backgroundColorLayer",
+                                                   z_index => 1,
+                                                   parent => $map_layer,
+                                                   insensitive => 1,
+                                                   autogenerated => 1,
+                                                   children_autogenerated => 1);
     $background->removeChildNodes(); # OK
     my $rect = $self->rectangle(x      => $self->west_outer_map_boundary_svg,
-				y      => $self->north_outer_map_boundary_svg,
-				width  => $self->east_outer_map_boundary_svg - $self->west_outer_map_boundary_svg,
-				height => $self->south_outer_map_boundary_svg - $self->north_outer_map_boundary_svg,
-				class  => "map-background BACKGROUND",
-				id     => $map_area->{id_prefix} . "map-background"
-			       );
+                                y      => $self->north_outer_map_boundary_svg,
+                                width  => $self->east_outer_map_boundary_svg - $self->west_outer_map_boundary_svg,
+                                height => $self->south_outer_map_boundary_svg - $self->north_outer_map_boundary_svg,
+                                class  => "map-background BACKGROUND",
+                                id     => $map_area->{id_prefix} . "map-background"
+                               );
     $background->appendChild($rect);
     return $background;
 }
@@ -868,21 +873,21 @@ sub update_or_create_white_layer {
     my ($self, $map_area, $map_layer) = @_;
     $self->{_dirty_} = 1;
     my $background = $self->update_or_create_layer(name => "White Background",
-						   class => "whiteBackgroundLayer",
-						   id => $map_area->{id_prefix} . "whiteBackgroundLayer",
-						   z_index => 0,
-						   parent => $map_layer,
-						   insensitive => 1,
-						   autogenerated => 1,
-						   children_autogenerated => 1);
+                                                   class => "whiteBackgroundLayer",
+                                                   id => $map_area->{id_prefix} . "whiteBackgroundLayer",
+                                                   z_index => 0,
+                                                   parent => $map_layer,
+                                                   insensitive => 1,
+                                                   autogenerated => 1,
+                                                   children_autogenerated => 1);
     $background->removeChildNodes(); # OK
     my $rect = $self->rectangle(x      => $self->west_outer_map_boundary_svg,
-				y      => $self->north_outer_map_boundary_svg,
-				width  => $self->east_outer_map_boundary_svg - $self->west_outer_map_boundary_svg,
-				height => $self->south_outer_map_boundary_svg - $self->north_outer_map_boundary_svg,
-				class  => "map-white WHITE",
-				id     => $map_area->{id_prefix} . "whiteRect"
-			       );
+                                y      => $self->north_outer_map_boundary_svg,
+                                width  => $self->east_outer_map_boundary_svg - $self->west_outer_map_boundary_svg,
+                                height => $self->south_outer_map_boundary_svg - $self->north_outer_map_boundary_svg,
+                                class  => "map-white WHITE",
+                                id     => $map_area->{id_prefix} . "whiteRect"
+                               );
     $background->appendChild($rect);
     return $background;
 }
@@ -891,21 +896,21 @@ sub update_or_create_border_layer {
     my ($self, $map_area, $map_layer) = @_;
     $self->{_dirty_} = 1;
     my $border = $self->update_or_create_layer(name => "Border",
-					       class => "borderLayer",
-					       id => $map_area->{id_prefix} . "borderLayer",
-					       z_index => 9999,
-					       parent => $map_layer,
-					       insensitive => 1,
-					       autogenerated => 1,
-					       children_autogenerated => 1);
+                                               class => "borderLayer",
+                                               id => $map_area->{id_prefix} . "borderLayer",
+                                               z_index => 9999,
+                                               parent => $map_layer,
+                                               insensitive => 1,
+                                               autogenerated => 1,
+                                               children_autogenerated => 1);
     $border->removeChildNodes(); # OK
     my $rect = $self->rectangle(x      => $self->west_outer_map_boundary_svg,
-				y      => $self->north_outer_map_boundary_svg,
-				width  => $self->east_outer_map_boundary_svg - $self->west_outer_map_boundary_svg,
-				height => $self->south_outer_map_boundary_svg - $self->north_outer_map_boundary_svg,
-				class  => "map-border MAP_BORDER",
-				id     => $map_area->{id_prefix} . "map-border"
-			       );
+                                y      => $self->north_outer_map_boundary_svg,
+                                width  => $self->east_outer_map_boundary_svg - $self->west_outer_map_boundary_svg,
+                                height => $self->south_outer_map_boundary_svg - $self->north_outer_map_boundary_svg,
+                                class  => "map-border MAP_BORDER",
+                                id     => $map_area->{id_prefix} . "map-border"
+                               );
     $border->appendChild($rect);
     return $border;
 }
@@ -920,9 +925,9 @@ sub update_css {
     $self->{_dirty_} = 1;
     $self->stuff_all_layers_need();
     foreach my $map_area (@{$self->{_map_areas}}) {
-	# $self->update_scale($map_area); # don't think this is necessary, but . . .
-	$self->update_or_create_style_node();
-	$self->create_or_delete_extra_defs_node();
+        # $self->update_scale($map_area); # don't think this is necessary, but . . .
+        $self->update_or_create_style_node();
+        $self->create_or_delete_extra_defs_node();
     }
 }
 
@@ -932,15 +937,15 @@ sub stuff_all_layers_need {
     $self->{_dirty_} = 1;
 
     foreach my $map_area (@{$self->{_map_areas}}) {
-	# $self->update_scale($map_area);
-	my $map_area_under_layer = $self->update_or_create_map_area_layer($map_area, { under => 1 });
-	my $map_area_layer = $self->update_or_create_map_area_layer($map_area);
-	$self->update_or_create_clip_path_node($map_area);
-	$self->update_or_create_white_layer($map_area, $map_area_under_layer);
-	$self->update_or_create_background_layer($map_area, $map_area_under_layer);
-	$self->update_or_create_style_node();
-	$self->create_or_delete_extra_defs_node();
-	$self->update_or_create_border_layer($map_area, $map_area_layer);
+        # $self->update_scale($map_area);
+        my $map_area_under_layer = $self->update_or_create_map_area_layer($map_area, { under => 1 });
+        my $map_area_layer = $self->update_or_create_map_area_layer($map_area);
+        $self->update_or_create_clip_path_node($map_area);
+        $self->update_or_create_white_layer($map_area, $map_area_under_layer);
+        $self->update_or_create_background_layer($map_area, $map_area_under_layer);
+        $self->update_or_create_style_node();
+        $self->create_or_delete_extra_defs_node();
+        $self->update_or_create_border_layer($map_area, $map_area_layer);
     }
 }
 
@@ -1046,7 +1051,7 @@ sub points_to_path {
     my $position_dy = $args{position_dy};
 
     my @coords = map { [ int($_->[POINT_X] * 100 + 0.5) / 100,
-			 int($_->[POINT_Y] * 100 + 0.5) / 100 ] } @points;
+                         int($_->[POINT_Y] * 100 + 0.5) / 100 ] } @points;
     if (defined $position_dx || defined $position_dy) {
         foreach my $coord (@coords) {
             $coord->[0] += $position_dx if defined $position_dx;
@@ -1055,9 +1060,9 @@ sub points_to_path {
     }
     my $result = sprintf("m %.2f,%.2f", @{$coords[0]});
     for (my $i = 1; $i < scalar(@coords); $i += 1) {
-	$result .= sprintf(" %.2f,%.2f",
-			   $coords[$i][POINT_X] - $coords[$i - 1][POINT_X],
-			   $coords[$i][POINT_Y] - $coords[$i - 1][POINT_Y]);
+        $result .= sprintf(" %.2f,%.2f",
+                           $coords[$i][POINT_X] - $coords[$i - 1][POINT_X],
+                           $coords[$i][POINT_Y] - $coords[$i - 1][POINT_Y]);
     }
     $result .= " z" if $closed;
     return $result;
@@ -1066,12 +1071,12 @@ sub points_to_path {
 sub legacy_points_to_path {
     my ($self, $closed, @points) = @_;
     my @coords = map { [ int($_->[POINT_X] * 100 + 0.5) / 100,
-			 int($_->[POINT_Y] * 100 + 0.5) / 100 ] } @points;
+                         int($_->[POINT_Y] * 100 + 0.5) / 100 ] } @points;
     my $result = sprintf("m %.2f,%.2f", @{$coords[0]});
     for (my $i = 1; $i < scalar(@coords); $i += 1) {
-	$result .= sprintf(" %.2f,%.2f",
-			   $coords[$i][POINT_X] - $coords[$i - 1][POINT_X],
-			   $coords[$i][POINT_Y] - $coords[$i - 1][POINT_Y]);
+        $result .= sprintf(" %.2f,%.2f",
+                           $coords[$i][POINT_X] - $coords[$i - 1][POINT_X],
+                           $coords[$i][POINT_Y] - $coords[$i - 1][POINT_Y]);
     }
     $result .= " z" if $closed;
     return $result;
@@ -1089,8 +1094,8 @@ sub find_or_create_clipped_group {
     my $parent = $args{parent};
 
     if ($parent) {
-	my ($group) = $parent->findnodes("svg:g[\@clip-path='url(#${clip_path_id})' and \@clip-rule='nonzero']");
-	return $group if $group;
+        my ($group) = $parent->findnodes("svg:g[\@clip-path='url(#${clip_path_id})' and \@clip-rule='nonzero']");
+        return $group if $group;
     }
 
     $self->{_dirty_} = 1;
@@ -1102,7 +1107,7 @@ sub find_or_create_clipped_group {
     $group->setAttribute("style", $args{style}) if defined $args{style};
     $group->setAttribute("id", $id) if defined $id;
     if ($parent) {
-	$parent->appendChild($group);
+        $parent->appendChild($group);
     }
 
     if (eval { ref $args{attr} eq 'HASH' }) {
@@ -1112,6 +1117,37 @@ sub find_or_create_clipped_group {
     }
 
     return $group;
+}
+
+sub find_layer {
+    my ($self, %args) = @_;
+    $self->init_xml();
+    my $name       = $args{name};
+    my $id         = $args{id};
+    my $name_or_id = $args{name_or_id};
+    my $doc        = $self->{_svg_doc_elt};
+
+    my $layer;
+    if (defined $id) {
+        ($layer) = $doc->findnodes(sprintf(
+            "//svg:g[\@id='%s']", $id
+        ));
+        return $layer if $layer; # $layer \m/ (..) \m/
+    }
+    if (defined $name_or_id) {
+        ($layer) = $doc->findnodes(sprintf(
+            "//svg:g[\@id='%s' or \@inkscape:label='%s']",
+            $name_or_id, $name_or_id
+        ));
+        return $layer if $layer;
+    }
+    if (defined $name) {
+        ($layer) = $doc->findnodes(sprintf(
+            "//svg:g[\@inkscape:label='%s']", $name
+        ));
+        return $layer if $layer;
+    }
+    return;
 }
 
 sub update_or_create_layer {
@@ -1142,80 +1178,80 @@ sub update_or_create_layer {
 
     my $search_prefix = "";
     if ($recurse) {
-	if ($no_create) {
-	    $search_prefix = ".//";
-	} else {
-	    die("Cannot use recurse option without no_create option.");
-	}
+        if ($no_create) {
+            $search_prefix = ".//";
+        } else {
+            die("Cannot use recurse option without no_create option.");
+        }
     }
 
     my $layer;
     if (!$layer && defined $id) {
-	($layer) = $parent->findnodes($search_prefix . "svg:g[\@id='$id']");
+        ($layer) = $parent->findnodes($search_prefix . "svg:g[\@id='$id']");
     }
     if (!$layer && defined $name) {
-	($layer) = $parent->findnodes($search_prefix . "svg:g[\@inkscape:label='$name']");
+        ($layer) = $parent->findnodes($search_prefix . "svg:g[\@inkscape:label='$name']");
     }
     if (!$layer && !$no_create) {
-	$self->{_dirty_} = 1;
-	$layer = $self->{_svg_doc}->createElementNS($NS{"svg"}, "g");
-	if ($insertion_point) {
-	    if (defined $but_before) {
-		my $new = $insertion_point->findnodes("previous-sibling::node()[\@inkscape::label='$but_before']");
-		if ($new) {
-		    $insertion_point = $new;
-		}
-	    }
-	    if (defined $but_after) {
-		my $new = $insertion_point->findnodes("next-sibling::node()[\@inkscape::label='$but_after']/next-sibling::node()[1]");
-		if ($new) {
-		    $insertion_point = $new;
-		}
-	    }
-	    $parent->insertBefore($layer, $insertion_point);
-	} elsif (defined $z_index) {
-	    my $prefix = "";
-	    my @below = $parent->findnodes("svg:g[\@inkscape:groupmode='layer' and \@mapmaker:z-index and \@mapmaker:z-index < $z_index]");
-	    my @above = $parent->findnodes("svg:g[\@inkscape:groupmode='layer' and \@mapmaker:z-index and \@mapmaker:z-index > $z_index]");
-	    if (scalar(@below)) {
-		$parent->insertAfter($layer, $below[-1]);
-	    } elsif (scalar(@above)) {
-		$parent->insertBefore($layer, $above[0]);
-	    } else {
-		$parent->appendChild($layer);
-	    }
-	} else {
-	    $parent->appendChild($layer);
-	}
+        $self->{_dirty_} = 1;
+        $layer = $self->{_svg_doc}->createElementNS($NS{"svg"}, "g");
+        if ($insertion_point) {
+            if (defined $but_before) {
+                my $new = $insertion_point->findnodes("previous-sibling::node()[\@inkscape::label='$but_before']");
+                if ($new) {
+                    $insertion_point = $new;
+                }
+            }
+            if (defined $but_after) {
+                my $new = $insertion_point->findnodes("next-sibling::node()[\@inkscape::label='$but_after']/next-sibling::node()[1]");
+                if ($new) {
+                    $insertion_point = $new;
+                }
+            }
+            $parent->insertBefore($layer, $insertion_point);
+        } elsif (defined $z_index) {
+            my $prefix = "";
+            my @below = $parent->findnodes("svg:g[\@inkscape:groupmode='layer' and \@mapmaker:z-index and \@mapmaker:z-index < $z_index]");
+            my @above = $parent->findnodes("svg:g[\@inkscape:groupmode='layer' and \@mapmaker:z-index and \@mapmaker:z-index > $z_index]");
+            if (scalar(@below)) {
+                $parent->insertAfter($layer, $below[-1]);
+            } elsif (scalar(@above)) {
+                $parent->insertBefore($layer, $above[0]);
+            } else {
+                $parent->appendChild($layer);
+            }
+        } else {
+            $parent->appendChild($layer);
+        }
     }
     if ($layer && !$no_modify) {
-	$self->{_dirty_} = 1;
-	$layer->setAttributeNS($NS{"inkscape"}, "groupmode", "layer");
-	if (defined $id) {
-	    $layer->setAttribute("id", $id);
-	} else {
-	    $layer->removeAttribute("id");
-	}
-	if (defined $class) {
-	    $layer->setAttribute("class", $class);
-	} else {
-	    $layer->removeAttribute("class");
-	}
-	if (defined $style) {
-	    $layer->setAttribute("style", $style);
-	} else {
-	    $layer->removeAttribute("style");
-	}
-	if (defined $name) {
-	    $layer->setAttributeNS($NS{"inkscape"}, "label", $name);
-	} else {
-	    $layer->removeAttributeNS($NS{"inkscape"}, "label");
-	}
-	if (defined $z_index) {
-	    $layer->setAttributeNS($NS{"mapmaker"}, "z-index", $z_index);
-	} else {
-	    $layer->removeAttributeNS($NS{"mapmaker"}, "z-index");
-	}
+        $self->{_dirty_} = 1;
+        $layer->setAttributeNS($NS{"inkscape"}, "groupmode", "layer");
+        if (defined $id) {
+            $layer->setAttribute("id", $id);
+        } else {
+            $layer->removeAttribute("id");
+        }
+        if (defined $class) {
+            $layer->setAttribute("class", $class);
+        } else {
+            $layer->removeAttribute("class");
+        }
+        if (defined $style) {
+            $layer->setAttribute("style", $style);
+        } else {
+            $layer->removeAttribute("style");
+        }
+        if (defined $name) {
+            $layer->setAttributeNS($NS{"inkscape"}, "label", $name);
+        } else {
+            $layer->removeAttributeNS($NS{"inkscape"}, "label");
+        }
+        if (defined $z_index) {
+            $layer->setAttributeNS($NS{"mapmaker"}, "z-index", $z_index);
+        } else {
+            $layer->removeAttributeNS($NS{"mapmaker"}, "z-index");
+        }
         if ($self->{disable_read_only}) {
             $layer->removeAttributeNS($NS{"sodipodi"}, "insensitive");
         } else {
@@ -1225,16 +1261,16 @@ sub update_or_create_layer {
                 $layer->removeAttributeNS($NS{"sodipodi"}, "insensitive");
             }
         }
-	if ($autogenerated) {
-	    $layer->setAttributeNS($NS{"mapmaker"}, "autogenerated", "true");
-	} else {
-	    $layer->removeAttributeNS($NS{"mapmaker"}, "autogenerated");
-	}
-	if ($children_autogenerated) {
-	    $layer->setAttributeNS($NS{"mapmaker"}, "children-autogenerated", "true");
-	} else {
-	    $layer->removeAttributeNS($NS{"mapmaker"}, "children-autogenerated");
-	}
+        if ($autogenerated) {
+            $layer->setAttributeNS($NS{"mapmaker"}, "autogenerated", "true");
+        } else {
+            $layer->removeAttributeNS($NS{"mapmaker"}, "autogenerated");
+        }
+        if ($children_autogenerated) {
+            $layer->setAttributeNS($NS{"mapmaker"}, "children-autogenerated", "true");
+        } else {
+            $layer->removeAttributeNS($NS{"mapmaker"}, "children-autogenerated");
+        }
     }
     return $layer;
 }
@@ -1251,24 +1287,24 @@ sub create_element {
 
     my $prefix;
     if ($name =~ m{:}) {
-	$prefix = $`;
-	$name = $';
+        $prefix = $`;
+        $name = $';
     }
     my $element;
     if (defined $prefix) {
-	if (defined $NS{$prefix}) {
-	    $element = $self->{_svg_doc}->createElementNS($NS{$prefix}, $name);
-	} else {
-	    $self->log_warn("create_element: prefix '$prefix' is not supported.  ($prefix:$name)");
-	}
+        if (defined $NS{$prefix}) {
+            $element = $self->{_svg_doc}->createElementNS($NS{$prefix}, $name);
+        } else {
+            $self->log_warn("create_element: prefix '$prefix' is not supported.  ($prefix:$name)");
+        }
     } else {
-	$self->log_warn("create_element: prefix must be specified.  ($name)");
+        $self->log_warn("create_element: prefix must be specified.  ($name)");
     }
     if ($autogenerated) {
-	$element->setAttributeNS($NS{"mapmaker"}, "mapmaker:autogenerated", "true");
+        $element->setAttributeNS($NS{"mapmaker"}, "mapmaker:autogenerated", "true");
     }
     if ($children_autogenerated) {
-	$element->setAttributeNS($NS{"mapmaker"}, "mapmaker:children-autogenerated", "true");
+        $element->setAttributeNS($NS{"mapmaker"}, "mapmaker:children-autogenerated", "true");
     }
     $element->setAttribute("class", $args{class}) if defined $args{class};
     $element->setAttribute("style", $args{style}) if defined $args{style};
@@ -1296,7 +1332,7 @@ sub rectangle {
     my $top    = $args{y};
     my $bottom = $args{y} + $args{height};
     my $d = sprintf("M %.2f %.2f H %.2f V %.2f H %.2f Z",
-		    $left, $top, $right, $bottom, $left);
+                    $left, $top, $right, $bottom, $left);
     my $path = $self->{_svg_doc}->createElementNS($NS{"svg"}, "path");
     $path->setAttribute("d", $d);
     $path->setAttribute("class",  $args{class}) if defined $args{class};
@@ -1326,20 +1362,20 @@ sub get_style_hashes {
 
     my @style;
     foreach my $class (@class) {
-	my $hash;
-	eval { $hash = $self->{classes}->{$class}->{$style_attr_name}; };
-	if ($hash) {
-	    if (wantarray) {
-		push(@style, $hash);
-	    } else {
-		return $hash;
-	    }
-	}
+        my $hash;
+        eval { $hash = $self->{classes}->{$class}->{$style_attr_name}; };
+        if ($hash) {
+            if (wantarray) {
+                push(@style, $hash);
+            } else {
+                return $hash;
+            }
+        }
     }
     if (wantarray) {
-	return @style;
+        return @style;
     } else {
-	return;
+        return;
     }
 }
 
@@ -1353,22 +1389,22 @@ sub compose_style_hash {
     @class = grep { /\S/ } map { split(/\s+/, $_) } @class;
 
     my @hash = $self->get_style_hashes(class => $class,
-				       style_attr_name => $style_attr_name);
+                                       style_attr_name => $style_attr_name);
     foreach my $hash (@hash) {
-	if ($hash) {
-	    %style = (%style, %$hash);
-	}
+        if ($hash) {
+            %style = (%style, %$hash);
+        }
     }
 
     if (scalar(keys(%style))) {
-	if ($args{open}) {
-	    $style{"fill"}              = "none";
-	    $style{"stroke-linecap"}  //= "round";
-	    $style{"stroke-linejoin"} //= "round";
-	}
-	if ($args{scale} && exists $style{"stroke-width"}) {
-	    $style{"stroke-width"} *= $args{scale};
-	}
+        if ($args{open}) {
+            $style{"fill"}              = "none";
+            $style{"stroke-linecap"}  //= "round";
+            $style{"stroke-linejoin"} //= "round";
+        }
+        if ($args{scale} && exists $style{"stroke-width"}) {
+            $style{"stroke-width"} *= $args{scale};
+        }
     }
     return \%style;
 }
@@ -1395,10 +1431,10 @@ sub compose_style_string {
     my ($self, %args) = @_;
     my $style = $self->compose_style_hash(%args);
     return join(";",
-		map { $_ . ":" . $style->{$_} }
-		  sort
-		    grep { $_ ne "r" }
-		      keys %$style);
+                map { $_ . ":" . $style->{$_} }
+                  sort
+                    grep { $_ ne "r" }
+                      keys %$style);
 }
 
 ###############################################################################
@@ -1472,12 +1508,12 @@ sub text_node {
 sub erase_autogenerated_content_within {
     my ($self, $element) = @_;
     if ($element->getAttributeNS($NS{mapmaker}, "children-autogenerated")) {
-	$self->{_dirty_} = 1;
-	$element->removeChildNodes();
+        $self->{_dirty_} = 1;
+        $element->removeChildNodes();
     } else {
-	foreach my $child ($element->childNodes()) {
-	    $self->erase_autogenerated_content($child);
-	}
+        foreach my $child ($element->childNodes()) {
+            $self->erase_autogenerated_content($child);
+        }
     }
 }
 
@@ -1485,15 +1521,15 @@ sub erase_autogenerated_content_within {
 sub erase_autogenerated_content {
     my ($self, $element) = @_;
     if ($element->getAttributeNS($NS{mapmaker}, "autogenerated")) {
-	$self->{_dirty_} = 1;
-	$element->unbindNode();
+        $self->{_dirty_} = 1;
+        $element->unbindNode();
     } elsif ($element->getAttributeNS($NS{mapmaker}, "children-autogenerated")) {
-	$self->{_dirty_} = 1;
-	$element->removeChildNodes();
+        $self->{_dirty_} = 1;
+        $element->removeChildNodes();
     } else {
-	foreach my $child ($element->childNodes()) {
-	    $self->erase_autogenerated_content($child);
-	}
+        foreach my $child ($element->childNodes()) {
+            $self->erase_autogenerated_content($child);
+        }
     }
 }
 
@@ -1508,16 +1544,16 @@ sub find_chunks {
 
     foreach my $shape (@shapes) {
         my $path = $shape->{points};
-	foreach my $coord (@$path) {
-	    next unless ref($coord) eq "ARRAY";
-	    my $key = join($;, @$coord);
-	    if (!$coords2id{$key}) {
-		$coords2id{$key} = $idcount;
-		$id2coords[$idcount] = [@$coord];
-		++$idcount;
-	    }
-	    $coord = $coords2id{$key};
-	}
+        foreach my $coord (@$path) {
+            next unless ref($coord) eq "ARRAY";
+            my $key = join($;, @$coord);
+            if (!$coords2id{$key}) {
+                $coords2id{$key} = $idcount;
+                $id2coords[$idcount] = [@$coord];
+                ++$idcount;
+            }
+            $coord = $coords2id{$key};
+        }
     }
 
     my @chunks = ();
@@ -1534,20 +1570,20 @@ sub find_chunks {
 
     my $work_on_new_chunk = sub {
         my %args = @_;
-	my @points    = @{$args{points}};
-	$chunk_id_counter += 1;
-	$working_chunk_id = $chunk_id_counter;
-	$working_chunk = $chunks[$working_chunk_id] = {
+        my @points    = @{$args{points}};
+        $chunk_id_counter += 1;
+        $working_chunk_id = $chunk_id_counter;
+        $working_chunk = $chunks[$working_chunk_id] = {
             shape_id_hash => {},
             points => [@points]
         };
 
-	for (my $i = 0; $i < scalar(@points) - 1; $i += 1) {
-	    my $A = $points[$i];
-	    my $B = $points[$i + 1];
-	    $which_chunk_id{$A, $B} = [$working_chunk_id, 1];
-	    $which_chunk_id{$B, $A} = [$working_chunk_id, -1];
-	}
+        for (my $i = 0; $i < scalar(@points) - 1; $i += 1) {
+            my $A = $points[$i];
+            my $B = $points[$i + 1];
+            $which_chunk_id{$A, $B} = [$working_chunk_id, 1];
+            $which_chunk_id{$B, $A} = [$working_chunk_id, -1];
+        }
 
         my $shape_id = $args{shape_id};
         if ($working_chunk && defined $shape_id) {
@@ -1559,21 +1595,21 @@ sub find_chunks {
         my %args = @_;
         my $chunk_id = $args{chunk_id};
         my $direction = $args{direction} // 1;
-	if ($direction == 1) {
-	    $working_chunk_id = $chunk_id;
-	    $working_chunk = $chunks[$chunk_id];
-	} elsif ($direction == -1) {
-	    $working_chunk_id = $chunk_id;
-	    $working_chunk = $chunks[$chunk_id];
-	    @{$chunks[$chunk_id]->{points}} =
+        if ($direction == 1) {
+            $working_chunk_id = $chunk_id;
+            $working_chunk = $chunks[$chunk_id];
+        } elsif ($direction == -1) {
+            $working_chunk_id = $chunk_id;
+            $working_chunk = $chunks[$chunk_id];
+            @{$chunks[$chunk_id]->{points}} =
                 reverse @{$chunks[$chunk_id]->{points}};
-	    my @k = keys(%which_chunk_id);
-	    foreach my $k (@k) {
-		if ($which_chunk_id{$k}[0] == $chunk_id) {
-		    $which_chunk_id{$k}[1] *= -1;
-		}
-	    }
-	}
+            my @k = keys(%which_chunk_id);
+            foreach my $k (@k) {
+                if ($which_chunk_id{$k}[0] == $chunk_id) {
+                    $which_chunk_id{$k}[1] *= -1;
+                }
+            }
+        }
 
         my $shape_id = $args{shape_id};
         if ($working_chunk && defined $shape_id) {
@@ -1584,14 +1620,14 @@ sub find_chunks {
     my $append_to_working_chunk = sub {
         my %args = @_;
         my @points = @{$args{points}};
-	my $A;
-	foreach my $B (@points) {
-	    $A //= $working_chunk->{points}->[-1];
-	    push(@{$working_chunk->{points}}, $B);
-	    $which_chunk_id{$A, $B} = [$working_chunk_id, 1];
-	    $which_chunk_id{$B, $A} = [$working_chunk_id, -1];
-	    $A = $B;
-	}
+        my $A;
+        foreach my $B (@points) {
+            $A //= $working_chunk->{points}->[-1];
+            push(@{$working_chunk->{points}}, $B);
+            $which_chunk_id{$A, $B} = [$working_chunk_id, 1];
+            $which_chunk_id{$B, $A} = [$working_chunk_id, -1];
+            $A = $B;
+        }
 
         my $shape_id = $args{shape_id};
         if ($working_chunk && defined $shape_id) {
@@ -1600,114 +1636,114 @@ sub find_chunks {
     };
 
     for (my $i = 0; $i < scalar(@shapes); $i += 1) {
-	my $shape = $shapes[$i];
+        my $shape = $shapes[$i];
         my $shape_id = $shape->{shape_id};
         my $path = $shape->{points};
-	$working_chunk_id = undef;
-	$working_chunk = undef;
-	for (my $j = 0; $j < scalar(@$path) - 1; $j += 1) {
-	    my $A = $path->[$j];
-	    my $B = $path->[$j + 1];
-	    if (!defined $working_chunk_id) {
+        $working_chunk_id = undef;
+        $working_chunk = undef;
+        for (my $j = 0; $j < scalar(@$path) - 1; $j += 1) {
+            my $A = $path->[$j];
+            my $B = $path->[$j + 1];
+            if (!defined $working_chunk_id) {
                 # start of path is segment A-B
-		my ($chunk_id, $direction) = eval { @{$which_chunk_id{$A, $B}} };
-		my $chunk = defined($chunk_id) ? $chunks[$chunk_id] : undef;
-		if (!defined $chunk_id) {
-		    $work_on_new_chunk->(shape_id => $shape_id,
+                my ($chunk_id, $direction) = eval { @{$which_chunk_id{$A, $B}} };
+                my $chunk = defined($chunk_id) ? $chunks[$chunk_id] : undef;
+                if (!defined $chunk_id) {
+                    $work_on_new_chunk->(shape_id => $shape_id,
                                          points => [$A, $B]);
-		} elsif ($direction == 1) {
-		    # existing chunk contains A-B segment
-		    my $A_index = firstidx { $_ == $A } @{$chunk->{points}};
-		    if ($A_index == 0) {
-			# existing chunk starts with A-B
-			$work_on_existing_chunk->(shape_id => $shape_id,
+                } elsif ($direction == 1) {
+                    # existing chunk contains A-B segment
+                    my $A_index = firstidx { $_ == $A } @{$chunk->{points}};
+                    if ($A_index == 0) {
+                        # existing chunk starts with A-B
+                        $work_on_existing_chunk->(shape_id => $shape_id,
                                                   chunk_id => $chunk_id);
-		    } else {
-			# existing chunk has segments before A-B
-			# split it into      ...-A and A-B-...
-			#               (existing)     (new chunk)
-			my $new_chunk = {
+                    } else {
+                        # existing chunk has segments before A-B
+                        # split it into      ...-A and A-B-...
+                        #               (existing)     (new chunk)
+                        my $new_chunk = {
                             points => [
                                 $A, splice(@{$chunks[$chunk_id]->{points}}, $A_index + 1)
                             ]
                         };
-			$work_on_new_chunk->(shape_id => $shape_id,
+                        $work_on_new_chunk->(shape_id => $shape_id,
                                              points => $new_chunk->{points});
-			# working chunk is now A-B-...
-		    }
-		} elsif ($direction == -1) {
-		    # existing chunk contains B-A segment
-		    my $B_index = firstidx { $_ == $B } @{$chunk->{points}};
-		    if ($B_index == scalar(@{$chunks[$chunk_id]->{points}}) - 2) {
-			# existing chunk ends at B-A
-			$work_on_existing_chunk->(shape_id => $shape_id,
+                        # working chunk is now A-B-...
+                    }
+                } elsif ($direction == -1) {
+                    # existing chunk contains B-A segment
+                    my $B_index = firstidx { $_ == $B } @{$chunk->{points}};
+                    if ($B_index == scalar(@{$chunks[$chunk_id]->{points}}) - 2) {
+                        # existing chunk ends at B-A
+                        $work_on_existing_chunk->(shape_id => $shape_id,
                                                   chunk_id => $chunk_id,
                                                   direction => -1);
-			# working chunk is now A-B-...
-		    } else {
-			# existing chunk has segments after B-A
-			# split it into ...-B-A and A-...
-			#                 (new)     (existing)
+                        # working chunk is now A-B-...
+                    } else {
+                        # existing chunk has segments after B-A
+                        # split it into ...-B-A and A-...
+                        #                 (new)     (existing)
                         my @points = (splice(@{$chunks[$chunk_id]->{points}}, 0, $B_index + 1), $A);
-			$work_on_new_chunk->(shape_id => $shape_id,
+                        $work_on_new_chunk->(shape_id => $shape_id,
                                              points => [reverse @points]);
-			# working chunk is now A-B-...
-		    }
-		}
-	    } else {
-				# path: ...-Z-A-B-...
-				# working chunk has ...-Z-A-...
-		my ($chunk_id, $direction) = eval { @{$which_chunk_id{$A, $B}} };
-		if (!defined $chunk_id) {
-		    # no existing chunk has A-B (or B-A) segment
-		    if ($working_chunk->{points}->[-1] == $A) {
-			# working chunk ends with A
-			$append_to_working_chunk->(shape_id => $shape_id,
+                        # working chunk is now A-B-...
+                    }
+                }
+            } else {
+                                # path: ...-Z-A-B-...
+                                # working chunk has ...-Z-A-...
+                my ($chunk_id, $direction) = eval { @{$which_chunk_id{$A, $B}} };
+                if (!defined $chunk_id) {
+                    # no existing chunk has A-B (or B-A) segment
+                    if ($working_chunk->{points}->[-1] == $A) {
+                        # working chunk ends with A
+                        $append_to_working_chunk->(shape_id => $shape_id,
                                                    points => [$B]);
-		    } else {
-			my $A_index = firstidx { $_ == $A } @{$working_chunk->{points}};
-			# working chunk has stuff after A.
-			# split it into      ...-A and A-...
-			#               (existing)     (new)
-			my @points = ($A, splice(@{$working_chunk->{points}}, $A_index + 1));
-			$work_on_new_chunk->(shape_id => $shape_id,
+                    } else {
+                        my $A_index = firstidx { $_ == $A } @{$working_chunk->{points}};
+                        # working chunk has stuff after A.
+                        # split it into      ...-A and A-...
+                        #               (existing)     (new)
+                        my @points = ($A, splice(@{$working_chunk->{points}}, $A_index + 1));
+                        $work_on_new_chunk->(shape_id => $shape_id,
                                              points => \@points);
-			$work_on_new_chunk->(shape_id => $shape_id,
+                        $work_on_new_chunk->(shape_id => $shape_id,
                                              points => [$A, $B]);
-		    }
-		} elsif ($direction == 1) {
-		    # an existing chunk has A-B segment
-		    if ($working_chunk_id == $chunk_id) {
-			# current working chunk is existing chunk so it has ...-Z-A-B-...
-			$work_on_existing_chunk->(shape_id => $shape_id,
+                    }
+                } elsif ($direction == 1) {
+                    # an existing chunk has A-B segment
+                    if ($working_chunk_id == $chunk_id) {
+                        # current working chunk is existing chunk so it has ...-Z-A-B-...
+                        $work_on_existing_chunk->(shape_id => $shape_id,
                                                   chunk_id => $chunk_id);
-		    } else {
-			# working chunk has ...-Z-A-...
-			# existing chunk has ...-A-B-...
-			$work_on_existing_chunk->(shape_id => $shape_id,
+                    } else {
+                        # working chunk has ...-Z-A-...
+                        # existing chunk has ...-A-B-...
+                        $work_on_existing_chunk->(shape_id => $shape_id,
                                                   chunk_id => $chunk_id);
-		    }
-		} else {
-		    # an existing chunk has B-A segment
-		    if ($working_chunk_id == $chunk_id) {
-			# current working chunk with ...-Z-A-...
-			# is same as existing chunk with ...-B-A-Z-...
-			$work_on_existing_chunk->(shape_id => $shape_id,
+                    }
+                } else {
+                    # an existing chunk has B-A segment
+                    if ($working_chunk_id == $chunk_id) {
+                        # current working chunk with ...-Z-A-...
+                        # is same as existing chunk with ...-B-A-Z-...
+                        $work_on_existing_chunk->(shape_id => $shape_id,
                                                   chunk_id => $chunk_id,
                                                   direction => -1);
-		    } else {
-			# working chunk has ...-Z-A-...
-			# existing chunk has ...-B-A-...
-			$work_on_existing_chunk->(shape_id => $shape_id,
+                    } else {
+                        # working chunk has ...-Z-A-...
+                        # existing chunk has ...-B-A-...
+                        $work_on_existing_chunk->(shape_id => $shape_id,
                                                   chunk_id => $chunk_id,
                                                   direction => -1);
-		    }
-		}
-	    }
-	}
+                    }
+                }
+            }
+        }
     }
     foreach my $chunk (@chunks) {
-	@{$chunk->{points}} = map { $id2coords[$_] } @{$chunk->{points}};
+        @{$chunk->{points}} = map { $id2coords[$_] } @{$chunk->{points}};
     }
     return @chunks;
 }
@@ -1721,17 +1757,17 @@ sub save {
     }
 
     if (!defined $filename) {
-	if (!(defined($self->{_read_filename}) and
-		defined($self->{filename}) and
-		  ($self->{_read_filename} eq $self->{filename}))) {
-	    return;
-	}
+        if (!(defined($self->{_read_filename}) and
+                defined($self->{filename}) and
+                  ($self->{_read_filename} eq $self->{filename}))) {
+            return;
+        }
     }
 
     $filename //= $self->{filename};
 
     if (!defined $filename && !$self->{_dirty_}) {
-	return;
+        return;
     }
 
     open(my $fh, ">", $filename) or die("cannot write $filename: $!\n");
@@ -1773,10 +1809,10 @@ sub list_layers {
     $self->init_xml();
     my $xpath = "//svg:g[\@inkscape:label]";
     foreach my $layer ($self->{_svg_doc}->findnodes($xpath)) {
-	my $path = $layer->nodePath();;
-	my $count =()= $path =~ m{/}g;
-	print("  " x $count,
-	      $layer->getAttributeNS($NS{inkscape}, "label"), "\n");
+        my $path = $layer->nodePath();;
+        my $count =()= $path =~ m{/}g;
+        print("  " x $count,
+              $layer->getAttributeNS($NS{inkscape}, "label"), "\n");
     }
 }
 
@@ -1784,14 +1820,14 @@ sub enable_layers {
     my ($self, @layer_name) = @_;
     $self->init_xml();
     foreach my $layer_name (@layer_name) {
-	my $layer = $self->update_or_create_layer(no_create => 1,
-						  no_modify => 1,
-						  recurse => 1,
-						  name => $layer_name);
-	if ($layer) {
-	    $self->{_dirty_} = 1;
-	    $layer->setAttribute("style", "display:inline");
-	}
+        my $layer = $self->update_or_create_layer(no_create => 1,
+                                                  no_modify => 1,
+                                                  recurse => 1,
+                                                  name => $layer_name);
+        if ($layer) {
+            $self->{_dirty_} = 1;
+            $layer->setAttribute("style", "display:inline");
+        }
     }
 }
 
@@ -1799,14 +1835,53 @@ sub disable_layers {
     my ($self, @layer_name) = @_;
     $self->init_xml();
     foreach my $layer_name (@layer_name) {
-	my $layer = $self->update_or_create_layer(no_create => 1,
-						  no_modify => 1,
-						  recurse => 1,
-						  name => $layer_name);
-	if ($layer) {
-	    $self->{_dirty_} = 1;
-	    $layer->setAttribute("style", "display:none");
-	}
+        my $layer = $self->update_or_create_layer(no_create => 1,
+                                                  no_modify => 1,
+                                                  recurse => 1,
+                                                  name => $layer_name);
+        if ($layer) {
+            $self->{_dirty_} = 1;
+            $layer->setAttribute("style", "display:none");
+        }
+    }
+}
+
+sub duplicate_layer {
+    my ($self, %args) = @_;
+    my $name     = $args{name};
+    my $newName  = $args{new_name};
+    my $newId    = $args{new_id};
+    my $relation = $args{relation} // 'above';
+
+    { my @args = %args; warn(">>> @args\n"); }
+
+    my $layer = $self->find_layer(name_or_id => $name);
+    if (!$layer) {
+        die("no such layer: $name\n");
+    }
+
+    my $newLayer = $layer->cloneNode(1);
+    $newLayer->setAttributeNS($NS{"inkscape"}, "label", $newName);
+    if (defined $newId) {
+        $newLayer->setAttribute("id", $newId);
+    } else {
+        $newLayer->removeAttribute("id");
+    }
+
+    my @nodesWithId = $newLayer->findnodes('.//*[@id]');
+    warn(sprintf("%d nodes with an id found in %s\n", scalar(@nodesWithId), $name));
+
+    foreach my $nodeWithId (@nodesWithId) {
+        my $id = $nodeWithId->getAttribute('id');
+        say $id;
+    }
+
+    if ($relation eq 'below' || $relation eq 'before' || $relation eq 'under') {
+        $layer->parentNode->insertBefore($newLayer, $layer);
+    } elsif ($relation eq 'above' || $relation eq 'after' || $relation eq 'over') {
+        $layer->parentNode->insertAfter($newLayer, $layer);
+    } else {
+        die("relation must be specified: below, before, above, or after\n");
     }
 }
 
@@ -1939,4 +2014,3 @@ use Geo::MapMaker::OSM;
 use Geo::MapMaker::GTFS;
 
 1;
-
