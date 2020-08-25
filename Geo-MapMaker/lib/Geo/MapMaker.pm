@@ -62,6 +62,7 @@ BEGIN {
 
                   classes
                   css
+                  css_file
 
                   layers
                   route_colors
@@ -124,6 +125,7 @@ use fields @_FIELDS;
 
 use Sort::Naturally qw(nsort);
 use List::Util qw(max);
+use Path::Tiny qw(path);
 
 use constant PI => 4 * CORE::atan2(1, 1);
 use constant D2R => PI / 180;
@@ -727,7 +729,9 @@ END
         $contents .= "\t.${class}_2 { $css_BRIDGE }\n" if $self->has_style_BRIDGE(class => $class);
     }
 
-    if (defined $self->{css}) {
+    if (defined $self->{css_file}) {
+        $contents .= path($self->{css_file})->slurp();
+    } elsif (defined $self->{css}) {
         $contents .= $self->{css};
     }
 
@@ -1197,13 +1201,13 @@ sub update_or_create_layer {
         $layer = $self->{_svg_doc}->createElementNS($NS{"svg"}, "g");
         if ($insertion_point) {
             if (defined $but_before) {
-                my $new = $insertion_point->findnodes("previous-sibling::node()[\@inkscape::label='$but_before']");
+                my ($new) = $insertion_point->findnodes("preceding-sibling::node()[\@inkscape:label='$but_before']");
                 if ($new) {
                     $insertion_point = $new;
                 }
             }
             if (defined $but_after) {
-                my $new = $insertion_point->findnodes("next-sibling::node()[\@inkscape::label='$but_after']/next-sibling::node()[1]");
+                my ($new) = $insertion_point->findnodes("following-sibling::node()[\@inkscape:label='$but_after']/following-sibling::node()[1]");
                 if ($new) {
                     $insertion_point = $new;
                 }
@@ -1454,16 +1458,17 @@ sub circle_node {
 
     my $doc = $self->{_svg_doc};
     my $circle_node = $doc->createElementNS($NS{"svg"}, "circle");
-    $circle_node->setAttribute("cx", sprintf("%.2f", $x));
-    $circle_node->setAttribute("cy", sprintf("%.2f", $y));
-    $circle_node->setAttribute("class", $class);
+    $circle_node->setAttribute("cx", sprintf("%.2f", $x)) if defined $x;
+    $circle_node->setAttribute("cy", sprintf("%.2f", $y)) if defined $y;
+    $circle_node->setAttribute("class", $class) if defined $class;
     $circle_node->setAttribute("r", sprintf("%.2f", $r)) if defined $r;
     $circle_node->setAttribute("title", $title) if defined $title && $title =~ /\S/;
     $circle_node->setAttribute("id", $id) if defined $id;
 
     if (eval { ref $args{attr} eq 'HASH' }) {
         foreach my $key (nsort keys %{$args{attr}}) {
-            $circle_node->setAttribute($key, $args{attr}->{$key});
+            my $value = $args{attr}->{$key};
+            $circle_node->setAttribute($key, $value) if defined $value;
         }
     }
 
