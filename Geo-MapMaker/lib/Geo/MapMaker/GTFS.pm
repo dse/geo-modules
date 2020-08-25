@@ -422,14 +422,8 @@ sub draw_gtfs_stops {
 
 	$self->diagf("Drawing transit stops for %s ... ", $gtfs->{data}->{name});
 
-	my $class        = "transit-stop";
-	my $class_2      = "transit-stop_2";
-	my $has_style_2  = $self->has_style_2(class => $class);
-	my $r   = $self->get_style_property(class => $class,
-					    property => "r") // $self->{transit_stop_r} // 1.0;
-	my $r_2 = $self->get_style_property(class => $class,
-					    style_attr_name => "style_2",
-					    property => "r") // $self->{transit_stop_r} // 0.5;
+	my $class = "transit-stop";
+	my $r = $self->get_style_property(class => $class, property => "r") // $self->{transit_stop_r} // 1.0;
 
 	foreach my $map_area (@{$self->{_map_areas}}) {
 	    my $west_svg  = $self->west_outer_map_boundary_svg;
@@ -476,11 +470,6 @@ sub draw_gtfs_stops {
 
 	    foreach my $stop ($self->get_gtfs_stops($gtfs)) {
 		$plot->($stop, $class, $r);
-	    }
-	    if ($has_style_2) {
-		foreach my $stop ($self->get_gtfs_stops($gtfs)) {
-		    $plot->($stop, $class_2, $r_2, "_2");
-		}
 	    }
 	}
 	$self->diag("done.\n");
