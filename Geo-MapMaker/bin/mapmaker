@@ -326,12 +326,17 @@ sub cmd__duplicate_layer {
     die("NEWLAYERNAME must be specified.\n") unless $newLayerName;
     die("NEWLAYERID must be specified.\n") unless $newLayerId;
     die("RELATION must be specified.\n") unless $relation;
-    $mm->duplicate_layer(
-        name     => $layerName,
-        new_name => $newLayerName,
-        new_id   => $newLayerId,
-        relation => $relation
-    );
+    eval {
+        $mm->duplicate_layer(
+            name     => $layerName,
+            new_name => $newLayerName,
+            new_id   => $newLayerId,
+            relation => $relation
+        );
+    };
+    if ($@) {
+        warn($@);
+    }
 }
 
 sub cmd__set_filename {
