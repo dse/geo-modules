@@ -39,19 +39,28 @@ the repopulate (or force_repopulate) method is called.
 
 =cut
 
-use fields qw(url
-              gtfs_dir
-              data
-              verbose
-              debug
-              _dbh
-              _dir
-              _zip_filename
-              _sqlite_filename
-              agency_name
-              feed_url
-              aliases
-              aliases_filename);
+use fields (
+    'url',
+    'gtfs_dir',
+    'data',
+    'verbose',
+    'debug',
+    '_dbh',
+    '_dir',
+    '_zip_filename',
+    '_sqlite_filename',
+    'agency_name',
+    'feed_url',
+    'aliases',
+    'aliases_filename',
+    '_cached_shape_points',
+    'center_lon_deg',
+    'center_lat_deg',
+    'center_lon_rad',
+    'center_lat_rad',           # cosine scales x coordinates when computing
+    'center_x_proj',
+    'center_y_proj',
+);
 
 =head1 CONSTRUCTOR
 
@@ -131,6 +140,7 @@ use URI;
 use XML::LibXML;
 use YAML::Syck;
 use Time::ParseDate qw(parsedate);
+use Data::Dumper qw(Dumper);
 
 # accepts either an alias or a URL.
 sub get_url {
@@ -758,6 +768,9 @@ sub kml_document {
     my $Document = $self->new_kml_document(name        => $name,
                                            description => $description);
 
+    $self->compute_center();
+    $self->compute_points_in_m();
+
     if ($args{stops_only}) {
         $self->add_kml_stops($Document);
     } elsif ($args{routes_only}) {
@@ -921,22 +934,188 @@ sub add_kml_route {
     foreach my $shape_id (@shape_ids) {
         my $LineString = $MultiGeometry->addNewChild(undef, "LineString");
         $LineString->appendTextChild("tessellate", 1);
-        my @points = $self->select_shape_points($shape_id);
+        my @points = $self->cached_shape_points($shape_id);
         $LineString->appendTextChild("description", "shape_id: $shape_id");
         my $coordinates = "";
+
+        @points = $self->compress_point_list(@points);
+
         foreach my $point (@points) {
-            $coordinates .=
-                sprintf("%f,%f,0\n",
-                        $point->{shape_pt_lon},
-                        $point->{shape_pt_lat});
+            $coordinates .= sprintf("%f,%f,0\n",
+                                    $point->{shape_pt_lon},
+                                    $point->{shape_pt_lat});
         }
-        {
-            $coordinates = "\n" . $coordinates;
-            $coordinates =~ s{^}{" " x 14}gem;
-            $coordinates .= " " x 12;
-        }
+        $coordinates = "\n" . $coordinates;
+        $coordinates =~ s{^}{" " x 14}gem;
+        $coordinates .= " " x 12;
         $LineString->appendTextChild("coordinates", $coordinates);
     }
+}
+
+use constant COMPRESS_DISTANCE_M => 3;
+
+sub compress_point_list {
+    my ($self, @points) = @_;
+    my $npoints;
+    my $count_removed = 0;
+
+    $self->add_m_to_points(@points);
+
+    $npoints = scalar @points;
+    my %dup;
+    for (my $i = 1; $i < $npoints; $i += 1) {
+        if (($points[$i]->{'x_m'} == $points[$i - 1]->{'x_m'}) &&
+            ($points[$i]->{'y_m'} == $points[$i - 1]->{'y_m'})) {
+            $dup{$i} = 1;
+        }
+    }
+
+    foreach my $k (sort { $b <=> $a } keys %dup) {
+        $count_removed += 1;
+        splice(@points, $k, 1);
+    }
+
+    $npoints = scalar @points;
+    my %in_line;
+    for (my $i = 1; $i < $npoints; $i += 1) {
+        # warn(Dumper($points[$i]) . "\n");
+        my ($x0, $y0) = ($points[$i]->{'x_m'}, $points[$i]->{'y_m'});
+        # warn(sprintf("i = %d; (x0, y0) = (%f, %f)\n", $i, $x0, $y0));
+        for (my $j = 3; $j < $npoints; $j += 1) {
+            my ($x1, $y1) = ($points[$j]->{'x_m'}, $points[$j]->{'y_m'});
+            # warn(sprintf("j = %d; (x1, y1) = (%f, %f)\n", $j, $x1, $y1));
+            my $is_line = 1;
+            for (my $k = $i + 1; $k < $j; $k += 1) {
+                my ($x, $y) = ($points[$k]->{'x_m'}, $points[$k]->{'y_m'});
+                # warn(sprintf("k = %d; (x, y) = (%f, %f)\n", $k, $x, $y));
+                my $dist = $self->distance_from_line($x, $y, $x0, $y0, $x1, $y1);
+                if ($dist >= COMPRESS_DISTANCE_M) {
+                    $is_line = 0;
+                    last;
+                }
+            }
+            if ($is_line) {
+                for (my $k = $i + 1; $k < $j; $k += 1) {
+                    $in_line{$k} = 1;
+                }
+            } else {
+                $i = $j;
+            }
+        }
+    }
+
+    foreach my $k (sort { $b <=> $a } keys %in_line) {
+        $count_removed += 1;
+        splice(@points, $k, 1);
+    }
+
+    if ($count_removed) {
+        # warn(sprintf("%d points removed\n", $count_removed));
+    }
+    return @points;
+}
+
+use Math::Trig qw(:pi);
+use constant PI_OVER_180 => pi / 180;
+use constant EARTH_RADIAN_IN_M => 6378137;
+
+sub lon_lat_deg_to_proj {
+    my ($self, $lon_deg, $lat_deg) = @_;
+    my $lon_rad = $lon_deg * PI_OVER_180;
+    my $lat_rad = $lat_deg * PI_OVER_180;
+    my $y_proj = log(abs((1 + sin($lat_rad)) / cos($lat_rad)));
+    my $x_proj = $lon_rad;
+    return ($x_proj, $y_proj);
+}
+
+sub lon_lat_deg_to_m {
+    my ($self, $lon_deg, $lat_deg) = @_;
+    my ($x_proj, $y_proj) = $self->lon_lat_deg_to_proj($lon_deg, $lat_deg);
+    my $y_m = ($y_proj - $self->{center_y_proj}) * EARTH_RADIAN_IN_M;
+    my $x_m = ($x_proj - $self->{center_x_proj}) * EARTH_RADIAN_IN_M * cos($self->{center_lat_rad});
+    return ($x_m, $y_m);
+}
+
+use List::Util qw(min max);
+
+sub get_center_deg {
+    my ($self) = @_;
+    my ($maxx, $maxy, $minx, $miny);
+    my @routes = $self->select_all_routes();
+    foreach my $route (@routes) {
+        my @shape_ids = $self->select_route_shape_ids($route->{route_id});
+        foreach my $shape_id (@shape_ids) {
+            my @points = $self->cached_shape_points($shape_id);
+            foreach my $point (@points) {
+                my $x = $point->{shape_pt_lon};
+                my $y = $point->{shape_pt_lat};
+                $maxx = defined $maxx ? max($maxx, $x) : $x;
+                $minx = defined $minx ? min($minx, $x) : $x;
+                $maxy = defined $maxy ? max($maxy, $y) : $y;
+                $miny = defined $miny ? min($miny, $y) : $y;
+            }
+        }
+    }
+    my $centerx = ($maxx + $minx) / 2;
+    my $centery = ($maxy + $miny) / 2;
+    # warn(sprintf("center = (%f, %f)\n", $centerx, $centery));
+    return ($centerx, $centery);
+}
+
+sub compute_center {
+    my ($self) = @_;
+    my ($center_lon_deg, $center_lat_deg) = $self->get_center_deg();
+    $self->{center_lon_deg} = $center_lon_deg;
+    $self->{center_lat_deg} = $center_lat_deg;
+    # warn(sprintf("center = (%f, %f)\n", $center_lon_deg, $center_lat_deg));
+    $self->{center_lon_rad} = $center_lon_deg * PI_OVER_180;
+    $self->{center_lat_rad} = $center_lat_deg * PI_OVER_180;
+    my ($center_x_proj, $center_y_proj) = $self->lon_lat_deg_to_proj($center_lon_deg, $center_lat_deg);
+    $self->{center_x_proj} = $center_x_proj;
+    $self->{center_y_proj} = $center_y_proj;
+    # warn(sprintf("center proj = (%f, %f)\n", $center_x_proj, $center_y_proj));
+}
+
+sub compute_points_in_m {
+    my ($self, @points) = @_;
+    if (scalar @points) {
+        $self->add_m_to_points(@points);
+        return;
+    }
+    my @routes = $self->select_all_routes();
+    foreach my $route (@routes) {
+        my @shape_ids = $self->select_route_shape_ids($route->{route_id});
+        foreach my $shape_id (@shape_ids) {
+            my @points = $self->cached_shape_points($shape_id);
+            $self->add_m_to_points(@points);
+        }
+    }
+}
+
+sub add_m_to_points {
+    my ($self, @points) = @_;
+    foreach my $point (@points) {
+        my $lon_deg = $point->{shape_pt_lon};
+        my $lat_deg = $point->{shape_pt_lat};
+        my ($x_m, $y_m) = $self->lon_lat_deg_to_m($lon_deg, $lat_deg);
+        warn if !defined $x_m;
+        warn if !defined $y_m;
+        $point->{'x_m'} = $x_m;
+        $point->{'y_m'} = $y_m;
+    }
+}
+
+sub distance_from_line {
+    my ($self, $x, $y, $x1, $y1, $x2, $y2) = @_;
+
+    my $sqrt = sqrt(($y2 - $y1) ** 2 + ($x2 - $x1) ** 2);
+    if ($sqrt == 0) {
+        return sqrt(($x1 - $x) ** 2 + ($y1 - $y) ** 2);
+    }
+
+    # https://en.wikipedia.org/wiki/Distance_from_a_point_to_a_line
+    return abs(($y2 - $y1) * $x - ($x2 - $x1) * $y + $x2 * $y1 - $y2 * $x1) / $sqrt;
+
 }
 
 sub add_kml_routes {
@@ -961,6 +1140,17 @@ sub add_node_with_cdata {
     $parent->appendChild($node);
     $node->appendChild($cdata);
     return $node;
+}
+
+sub cached_shape_points {
+    my ($self, $shape_id) = @_;
+    $self->{_cached_shape_points} //= {};
+    if (exists $self->{_cached_shape_points}->{$shape_id}) {
+        return @{$self->{_cached_shape_points}->{$shape_id}};
+    }
+    my @points = $self->select_shape_points($shape_id);
+    $self->{_cached_shape_points}->{$shape_id} = [@points];
+    return @points;
 }
 
 sub select_all_agencies {
@@ -1164,8 +1354,6 @@ END
     my $row = $sth->fetchrow_hashref();
     return $row->{id};
 }
-
-
 
 =head1 SEE ALSO
 
