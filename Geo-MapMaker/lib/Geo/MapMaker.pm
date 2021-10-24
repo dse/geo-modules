@@ -84,10 +84,13 @@ BEGIN {
 
                   _scale_px_per_er
 
+                  map_boundaries
                   north_lat_deg
                   south_lat_deg
                   east_lon_deg
                   west_lon_deg
+
+                  extend
 
                   center_lat_deg
                   center_lon_deg
@@ -197,9 +200,17 @@ sub new {
         $self->{paper_margin_y_px} = $dim;
     }
 
+    if ($options{map_boundaries}) {
+        foreach my $thing (qw(scale center_lat_deg center_lon_deg scale_basis_lat_deg north_lat_deg south_lat_deg west_lon_deg east_lon_deg)) {
+            $options{$thing} //= $options{map_boundaries}{$thing};
+        }
+    }
+
+    $self->{extend} = delete $options{extend};
+
     {
-        my $center_lat_deg      = delete $options{center_lat_deg}; # e.g., 38.2
-        my $center_lon_deg      = delete $options{center_lon_deg}; # e.g., -85.7
+        my $center_lat_deg      = delete $options{center_lat_deg};
+        my $center_lon_deg      = delete $options{center_lon_deg};
         my $scale               = delete $options{scale}; # 1:45,000 would be 45000
         my $scale_basis_lat_deg = delete $options{scale_basis_lat_deg};
 
@@ -208,13 +219,10 @@ sub new {
         my $east_lon_deg        = delete $options{east_lon_deg};
         my $west_lon_deg        = delete $options{west_lon_deg};
 
-        if (defined $north_lat_deg && defined $south_lat_deg &&
-                defined $east_lon_deg && defined $west_lon_deg) {
-            $self->set_from_boundaries($north_lat_deg, $south_lat_deg,
-                                       $west_lon_deg, $east_lon_deg);
+        if (defined $north_lat_deg && defined $south_lat_deg && defined $east_lon_deg && defined $west_lon_deg) {
+            $self->set_from_boundaries($north_lat_deg, $south_lat_deg, $west_lon_deg, $east_lon_deg);
         } elsif (defined $center_lat_deg && defined $center_lon_deg && defined $scale) {
-            $self->set_from_center_and_scale($center_lat_deg, $center_lon_deg,
-                                             $scale, $scale_basis_lat_deg);
+            $self->set_from_center_and_scale($center_lat_deg, $center_lon_deg, $scale, $scale_basis_lat_deg);
         } else {
             die(":-(\n");
         }
@@ -261,14 +269,31 @@ sub set_from_boundaries {
     my $scale_x = ($east_lon_deg - $west_lon_deg) / $drawing_width_px * $px_per_er * D2R * $cos_center_lat;
     my $scale_y = ($north_lat_er - $south_lat_er) / $drawing_height_px * $px_per_er * $cos_center_lat;
     my $scale;
-    if ($scale_x > $scale_y) {
-        $scale = $scale_x;
-        $drawing_height_px = $drawing_height_px * $scale_y / $scale_x;
-        $self->{paper_margin_y_px} = ($self->{paper_height_px} - $drawing_height_px) / 2;
+
+    if ($self->{extend}) {
+        if ($scale_x > $scale_y) {
+            # warn("map does not extend all the way to top and bottom borders\n");
+            $scale = $scale_x;
+            # FIXME
+        } else {
+            # warn("map does not extend all the way to left and right borders\n");
+            $scale = $scale_y;
+            my $er = $drawing_width_px / $px_per_er * $scale;
+            $west_lon_deg = $center_lon_deg - $er / D2R;
+            $east_lon_deg = $center_lon_deg + $er / D2R;
+        }
     } else {
-        $scale = $scale_y;
-        $drawing_width_px = $drawing_width_px * $scale_x / $scale_y;
-        $self->{paper_margin_x_px} = ($self->{paper_width_px} - $drawing_width_px) / 2;
+        if ($scale_x > $scale_y) {
+            # warn("map does not extend all the way to top and bottom borders\n");
+            $scale = $scale_x;
+            $drawing_height_px = $drawing_height_px * $scale_y / $scale_x;
+            $self->{paper_margin_y_px} = ($self->{paper_height_px} - $drawing_height_px) / 2;
+        } else {
+            # warn("map does not extend all the way to left and right borders\n");
+            $scale = $scale_y;
+            $drawing_width_px = $drawing_width_px * $scale_x / $scale_y;
+            $self->{paper_margin_x_px} = ($self->{paper_width_px} - $drawing_width_px) / 2;
+        }
     }
 
     $self->{south_lat_deg} = $south_lat_deg;
