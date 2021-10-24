@@ -25,10 +25,12 @@ use fields qw(_osm_xml_filenames
               _object_tag_value_count
               _layer_object_count
 
+              osm_map_boundaries
               osm_data_north_lat_deg
               osm_data_south_lat_deg
               osm_data_east_lon_deg
               osm_data_west_lon_deg
+
               osm_data_source
 
               _map_tile_nodes
@@ -62,6 +64,7 @@ use Sort::Naturally;
 use Text::Trim;
 use XML::Fast;
 use Hash::Ordered;
+use File::Path qw(mkpath);
 
 # can be a regexp or an arrayref of tile numbers
 our $TEST_WITH_LIMITED_TILES = 0;
@@ -84,8 +87,126 @@ sub update_osm {
     if ($source) {
         $self->update_osm_from_source($force);
     } else {
-        die("OSM XML API no longer supported\n");
+        $self->update_osm_from_osm($force);
     }
+}
+
+sub map_url {
+    my ($self, $west_deg, $south_deg, $east_deg, $north_deg) = @_;
+    return sprintf("http://api.openstreetmap.org/api/0.6/map?bbox=%.8f,%.8f,%.8f,%.8f",
+                   $west_deg, $south_deg, $east_deg, $north_deg);
+}
+sub map_txt_filename {
+    my ($self, $west_deg, $south_deg, $east_deg, $north_deg) = @_;
+    return sprintf("%s/.geo-mapmaker-osm/map_%.8f_%.8f_%.8f_%.8f_bbox.txt",
+                   $ENV{HOME}, $west_deg, $south_deg, $east_deg, $north_deg);
+}
+sub map_xml_filename {
+    my ($self, $west_deg, $south_deg, $east_deg, $north_deg) = @_;
+    return sprintf("%s/.geo-mapmaker-osm/map_%.8f_%.8f_%.8f_%.8f_bbox.xml",
+                   $ENV{HOME}, $west_deg, $south_deg, $east_deg, $north_deg);
+}
+
+sub update_osm_from_osm {
+    my ($self, $force, $west_deg, $south_deg, $east_deg, $north_deg, $split_direction) = @_;
+
+    my $force_mirror = 1;
+
+    $west_deg  //= $self->west_osm_data_boundary_deg();
+    $south_deg //= $self->south_osm_data_boundary_deg();
+    $east_deg  //= $self->east_osm_data_boundary_deg();
+    $north_deg //= $self->north_osm_data_boundary_deg();
+    my $center_lat = ($north_deg + $south_deg) / 2;
+    my $center_lon = ($west_deg + $east_deg) / 2;
+
+    my $url = $self->map_url($west_deg, $south_deg, $east_deg, $north_deg);
+    my $txt_filename = $self->map_txt_filename($west_deg, $south_deg, $east_deg, $north_deg);
+    my $xml_filename = $self->map_xml_filename($west_deg, $south_deg, $east_deg, $north_deg);
+
+    if ($force_mirror && -e $xml_filename) {
+        if ($self->file_is_split($xml_filename)) {
+            $self->update_osm_from_osm__split(
+                $force, $west_deg, $south_deg, $east_deg, $north_deg, $split_direction
+            );
+            return;
+        }
+        push(@{$self->{_osm_xml_filenames}}, $xml_filename);
+        print STDERR ("+1 $xml_filename\n");
+        return;
+    }
+
+    mkpath(dirname($xml_filename));
+
+    my $ua = LWP::UserAgent->new();
+    warn("Requesting $url ...\n");
+    my $response = $ua->mirror($url, $xml_filename);
+    my $content = $response->decoded_content;
+    warn(sprintf("    %s %s\n", $response->code(), $response->status_line()));
+    my $rc = $response->code();
+    if ($rc == RC_NOT_MODIFIED) {
+        if ($self->file_is_split($xml_filename)) {
+            $self->update_osm_from_osm__split(
+                $force, $west_deg, $south_deg, $east_deg, $north_deg, $split_direction
+            );
+            return;
+        }
+        push(@{$self->{_osm_xml_filenames}}, $xml_filename);
+        print STDERR ("+2 $xml_filename\n");
+        return;
+    }
+    if (is_success($rc)) {
+        push(@{$self->{_osm_xml_filenames}}, $xml_filename);
+        print STDERR ("+3 $xml_filename\n");
+        return;
+    }
+    if ($rc == 400 && $content =~ m{^You requested too many nodes\b}) {
+        $self->update_osm_from_osm__split(
+            $force, $west_deg, $south_deg, $east_deg, $north_deg, $split_direction
+        );
+        return;
+    }
+    die("exiting\n");
+}
+
+sub update_osm_from_osm__split {
+    my ($self, $force, $west_deg, $south_deg, $east_deg, $north_deg, $split_direction) = @_;
+    $split_direction //= 'horizontal';
+    my $next_split_direction = $split_direction eq 'horizontal' ? 'vertical' : 'horizontal';
+
+    my ($w1, $s1, $e1, $n1) = ($west_deg, $south_deg, $east_deg, $north_deg);
+    my ($w2, $s2, $e2, $n2) = ($west_deg, $south_deg, $east_deg, $north_deg);
+
+    if ($split_direction eq 'horizontal') {
+        my $center = ($south_deg + $north_deg) / 2;
+        ($s1, $n1) = ($south_deg, $center);
+        ($s2, $n2) = ($center, $north_deg);
+    } else {
+        my $center = ($west_deg + $east_deg) / 2;
+        ($w1, $e1) = ($west_deg, $center);
+        ($w2, $e2) = ($center, $east_deg);
+    }
+
+    my $xml_filename = $self->map_xml_filename($west_deg, $south_deg, $east_deg, $north_deg);
+    my $fh;
+    open($fh, '>', $xml_filename) or die("$xml_filename: $!\n");
+    print $fh "#%SPLIT%#\n";
+    printf $fh ("%s\n", $self->map_xml_filename($w1, $s1, $e1, $n1));
+    printf $fh ("%s\n", $self->map_xml_filename($w2, $s2, $e2, $n2));
+    close($fh);
+
+    $self->update_osm_from_osm($force, $w1, $s1, $e1, $n1, $next_split_direction);
+    $self->update_osm_from_osm($force, $w2, $s2, $e2, $n2, $next_split_direction);
+}
+
+sub file_is_split {
+    my ($self, $filename) = @_;
+    my $fh;
+    open($fh, '<', $filename) or return;
+    my $scalar;
+    my $bytes = read($fh, $scalar, 9);
+    return if !defined $bytes || $bytes < 9;
+    print("[$scalar]\n");
+    return $scalar eq '#%SPLIT%#';
 }
 
 sub update_osm_from_source {
@@ -476,8 +597,14 @@ sub convert_node_coordinates {
     my $lon_deg = 0 + $node->{-lon};
     my $lat_deg = 0 + $node->{-lat};
     my ($svgx, $svgy) = $self->lon_lat_deg_to_svg($lon_deg, $lat_deg);
-    my $xzone = $lon_deg < $self->{west_lon_deg}  ? -1 : $lon_deg > $self->{east_lon_deg}  ? 1 : 0;
-    my $yzone = $lat_deg < $self->{south_lat_deg} ? -1 : $lat_deg > $self->{north_lat_deg} ? 1 : 0;
+
+    my $west_lon_deg  = $self->{west_lon_deg};
+    my $east_lon_deg  = $self->{east_lon_deg};
+    my $south_lat_deg = $self->{south_lat_deg};
+    my $north_lat_deg = $self->{north_lat_deg};
+
+    my $xzone = $lon_deg < $west_lon_deg  ? -1 : $lon_deg > $east_lon_deg  ? 1 : 0;
+    my $yzone = $lat_deg < $south_lat_deg ? -1 : $lat_deg > $north_lat_deg ? 1 : 0;
     my $result = [$svgx, $svgy, $xzone, $yzone];
     return $result;
 }
@@ -925,7 +1052,9 @@ sub west_osm_data_boundary_deg {
 	# FIXME
 	die("non-zero orientation not supported yet");
     } else {
-	return ($self->{osm_data_west_lon_deg}  // $self->{west_lon_deg});
+        return (eval { $self->{osm_map_boundaries}->{west_lon_deg} } //
+                $self->{osm_data_west_lon_deg} //
+                $self->{west_lon_deg});
     }
 }
 
@@ -936,7 +1065,9 @@ sub east_osm_data_boundary_deg {
 	# FIXME
 	die("non-zero orientation not supported yet");
     } else {
-	return ($self->{osm_data_east_lon_deg}  // $self->{east_lon_deg});
+        return (eval { $self->{osm_map_boundaries}->{east_lon_deg} } //
+                $self->{osm_data_east_lon_deg} //
+                $self->{east_lon_deg});
     }
 }
 
@@ -947,7 +1078,9 @@ sub north_osm_data_boundary_deg {
 	# FIXME
 	die("non-zero orientation not supported yet");
     } else {
-	return ($self->{osm_data_north_lat_deg} // $self->{north_lat_deg});
+        return (eval { $self->{osm_map_boundaries}->{north_lat_deg} } //
+                $self->{osm_data_north_lat_deg} //
+                $self->{north_lat_deg});
     }
 }
 
@@ -958,7 +1091,9 @@ sub south_osm_data_boundary_deg {
 	# FIXME
 	die("non-zero orientation not supported yet");
     } else {
-	return ($self->{osm_data_south_lat_deg} // $self->{south_lat_deg});
+        return (eval { $self->{osm_map_boundaries}->{south_lat_deg} } //
+                $self->{osm_data_south_lat_deg} //
+                $self->{south_lat_deg});
     }
 }
 
